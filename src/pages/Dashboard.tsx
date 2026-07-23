@@ -19,6 +19,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/contexts/AuthContext';
 
 /* Mock Data */
 const kpiData = [
@@ -87,6 +88,9 @@ const upcomingDeadlines = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { profile, user } = useAuth();
+  const displayName =
+    profile?.full_name?.trim().split(' ')[0] ?? user?.email?.split('@')[0] ?? 'käyttäjä';
 
   return (
     <div className="space-y-6">
@@ -94,7 +98,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Yleisnäkymä</h1>
-          <p className="text-gray-500 mt-1">Tervetuloa takaisin, Jethro!</p>
+          <p className="text-gray-500 mt-1">Tervetuloa takaisin, {displayName}!</p>
         </div>
         <div className="flex items-center gap-3">
           <Badge className="bg-red-100 text-red-800 flex items-center gap-1">

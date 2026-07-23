@@ -18,13 +18,18 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // Cap local parallelism: every test performs a real Supabase sign-in, and
+  // 6+ concurrent auth/profile requests made profile loading flaky.
+  workers: process.env.CI ? 1 : 2,
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
+  // Auth, profile and org data load over the network from a real Supabase
+  // project — allow more time than the 5s default for UI to settle.
+  expect: { timeout: 15_000 },
   projects: [
     {
       name: 'chromium',

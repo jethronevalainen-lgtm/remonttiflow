@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Bell, Menu, ChevronDown, Check } from 'lucide-react';
+import { Search, Bell, Menu, ChevronDown, Check, LogOut, Building2 } from 'lucide-react';
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from '@/contexts/AuthContext';
-import type { UserRole } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { BRAND } from '@/config/brand';
 
 const routeLabels: Record<string, string> = {
@@ -36,21 +36,30 @@ const notifications = [
   { id: 3, text: 'Matti M. kirjasi 8 tuntia', time: '1 tunti sitten', read: true },
 ];
 
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 interface HeaderProps {
   onMenuClick: () => void;
 }
 
 export default function Header({ onMenuClick }: HeaderProps) {
   const location = useLocation();
-  const { user, login } = useAuth();
+  const { user, profile, signOut } = useAuth();
+  const { organizations, currentOrg, currentRole, setCurrentOrg } = useOrganization();
   const [showNotifs, setShowNotifs] = useState(false);
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
+  const [showOrgMenu, setShowOrgMenu] = useState(false);
   const [searchVal, setSearchVal] = useState('');
   const [notifs, setNotifs] = useState(notifications);
 
   const label = routeLabels[location.pathname] || BRAND.name;
   const unreadCount = notifs.filter(n => !n.read).length;
-  const roles: UserRole[] = ['admin', 'supervisor', 'worker'];
+  const displayName = profile?.full_name ?? user?.email ?? '';
+  const hasMultipleOrgs = organizations.length > 1;
 
   return (
     <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 flex-shrink-0 z-20 relative">
@@ -73,22 +82,29 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
       <div className="flex items-center gap-2">
         <div className="relative">
-          <button onClick={() => setShowRoleMenu(!showRoleMenu)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-            <div className={`w-2.5 h-2.5 rounded-full ${user ? ROLE_COLORS[user.role] : 'bg-gray-400'}`} />
-            <span className="text-sm font-medium text-gray-700 hidden sm:inline">{user ? ROLE_LABELS[user.role] : 'Rooli'}</span>
-            <ChevronDown size={14} className="text-gray-400" />
-          </button>
+          {hasMultipleOrgs ? (
+            <button onClick={() => setShowOrgMenu(!showOrgMenu)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+              <Building2 size={14} className="text-gray-400" />
+              <span className="text-sm font-medium text-gray-700 hidden sm:inline max-w-[160px] truncate">{currentOrg?.name ?? 'Organisaatio'}</span>
+              <ChevronDown size={14} className="text-gray-400" />
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5">
+              <Building2 size={14} className="text-gray-400" />
+              <span className="text-sm font-medium text-gray-700 hidden sm:inline max-w-[160px] truncate">{currentOrg?.name ?? 'Organisaatio'}</span>
+            </div>
+          )}
           <AnimatePresence>
-            {showRoleMenu && (
+            {hasMultipleOrgs && showOrgMenu && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowRoleMenu(false)} />
-                <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50">
-                  <p className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Vaihda roolia</p>
-                  {roles.map(role => (
-                    <button key={role} onClick={() => { login(role); setShowRoleMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left">
-                      <div className={`w-3 h-3 rounded-full ${ROLE_COLORS[role]}`} />
-                      <p className="text-sm font-medium text-gray-800">{ROLE_LABELS[role]}</p>
-                      {user?.role === role && <Check size={14} className="ml-auto text-orange-500" />}
+                <div className="fixed inset-0 z-40" onClick={() => setShowOrgMenu(false)} />
+                <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50">
+                  <p className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Vaihda organisaatiota</p>
+                  {organizations.map(org => (
+                    <button key={org.id} onClick={() => { setCurrentOrg(org.id); setShowOrgMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left">
+                      <Building2 size={14} className="text-gray-400 flex-shrink-0" />
+                      <p className="text-sm font-medium text-gray-800 truncate">{org.name}</p>
+                      {currentOrg?.id === org.id && <Check size={14} className="ml-auto text-orange-500 flex-shrink-0" />}
                     </button>
                   ))}
                 </motion.div>
@@ -96,6 +112,13 @@ export default function Header({ onMenuClick }: HeaderProps) {
             )}
           </AnimatePresence>
         </div>
+
+        {currentRole && (
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-200">
+            <div className={`w-2.5 h-2.5 rounded-full ${ROLE_COLORS[currentRole]}`} />
+            <span className="text-sm font-medium text-gray-700">{ROLE_LABELS[currentRole]}</span>
+          </div>
+        )}
 
         <div className="relative">
           <button onClick={() => setShowNotifs(!showNotifs)} className="relative w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600 transition-colors">
@@ -125,9 +148,21 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </AnimatePresence>
         </div>
 
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-md">
-          <span className="text-white text-sm font-bold">{user?.initials || '?'}</span>
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-md">
+            <span className="text-white text-sm font-bold">{initialsOf(displayName)}</span>
+          </div>
+          <span className="text-sm font-medium text-gray-700 hidden lg:inline max-w-[160px] truncate">{displayName}</span>
         </div>
+
+        <button
+          onClick={() => { void signOut(); }}
+          title="Kirjaudu ulos"
+          className="flex items-center gap-2 px-3 h-9 rounded-lg hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
+        >
+          <LogOut size={16} />
+          <span className="text-sm font-medium hidden xl:inline">Kirjaudu ulos</span>
+        </button>
       </div>
     </header>
   );
