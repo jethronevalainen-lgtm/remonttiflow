@@ -20,10 +20,10 @@ describe('logger (dev mode)', () => {
     vi.restoreAllMocks();
   });
 
-  it("log('debug', ...) routes to console.debug with the [RemonttiFlow] prefix", () => {
+  it("log('debug', ...) routes to console.debug with the [VaKantti] prefix", () => {
     log('debug', 'vianjäljitys');
     expect(debugSpy).toHaveBeenCalledTimes(1);
-    expect(debugSpy).toHaveBeenCalledWith('[RemonttiFlow] vianjäljitys');
+    expect(debugSpy).toHaveBeenCalledWith('[VaKantti] vianjäljitys');
     expect(infoSpy).not.toHaveBeenCalled();
     expect(warnSpy).not.toHaveBeenCalled();
     expect(errorSpy).not.toHaveBeenCalled();
@@ -32,33 +32,33 @@ describe('logger (dev mode)', () => {
   it("log('info', ...) routes to console.info", () => {
     log('info', 'tieto');
     expect(infoSpy).toHaveBeenCalledTimes(1);
-    expect(infoSpy).toHaveBeenCalledWith('[RemonttiFlow] tieto');
+    expect(infoSpy).toHaveBeenCalledWith('[VaKantti] tieto');
     expect(debugSpy).not.toHaveBeenCalled();
   });
 
   it("log('warn', ...) routes to console.warn", () => {
     log('warn', 'varoitus');
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith('[RemonttiFlow] varoitus');
+    expect(warnSpy).toHaveBeenCalledWith('[VaKantti] varoitus');
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it("log('error', ...) routes to console.error", () => {
     log('error', 'virhe');
     expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(errorSpy).toHaveBeenCalledWith('[RemonttiFlow] virhe');
+    expect(errorSpy).toHaveBeenCalledWith('[VaKantti] virhe');
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('passes the context object as a second argument when provided', () => {
     const context = { code: 500, detail: 'palvelinvirhe' };
     log('error', 'pyyntö epäonnistui', context);
-    expect(errorSpy).toHaveBeenCalledWith('[RemonttiFlow] pyyntö epäonnistui', context);
+    expect(errorSpy).toHaveBeenCalledWith('[VaKantti] pyyntö epäonnistui', context);
   });
 
   it('omits the second argument when context is undefined', () => {
     log('info', 'ei kontekstia');
-    expect(infoSpy).toHaveBeenCalledWith('[RemonttiFlow] ei kontekstia');
+    expect(infoSpy).toHaveBeenCalledWith('[VaKantti] ei kontekstia');
     expect(infoSpy.mock.calls[0]).toHaveLength(1);
   });
 
@@ -67,15 +67,15 @@ describe('logger (dev mode)', () => {
     logger.info('i');
     logger.warn('w');
     logger.error('e');
-    expect(debugSpy).toHaveBeenCalledWith('[RemonttiFlow] d');
-    expect(infoSpy).toHaveBeenCalledWith('[RemonttiFlow] i');
-    expect(warnSpy).toHaveBeenCalledWith('[RemonttiFlow] w');
-    expect(errorSpy).toHaveBeenCalledWith('[RemonttiFlow] e');
+    expect(debugSpy).toHaveBeenCalledWith('[VaKantti] d');
+    expect(infoSpy).toHaveBeenCalledWith('[VaKantti] i');
+    expect(warnSpy).toHaveBeenCalledWith('[VaKantti] w');
+    expect(errorSpy).toHaveBeenCalledWith('[VaKantti] e');
   });
 
   it('logger methods forward the context object', () => {
     const ctx = { err: new Error('boom') };
     logger.error('kaatui', ctx);
-    expect(errorSpy).toHaveBeenCalledWith('[RemonttiFlow] kaatui', ctx);
+    expect(errorSpy).toHaveBeenCalledWith('[VaKantti] kaatui', ctx);
   });
 });
