@@ -5,7 +5,8 @@ Lähde: REMONTTIFLOW — PRO masterprompt. Baseline: `docs/BASELINE_REPORT.md` (
 ## Vaihe 0 — Baseline ✅ VALMIS
 Rinnakkainen 5-agenttinen auditointi suoritettu. Havainnot baseline-raportissa.
 
-## PR 1 — `chore/stabilize-ci-and-tests` (tämä sessio)
+## PR 1 — `chore/stabilize-ci-and-tests` ✅ VALMIS → PR #1 (avoinna)
+## PR 2 — `refactor/brand-and-app-foundation` ✅ VALMIS → PR #2 (avoinna, base: PR 1)
 Stage-gate: kaikki aallot vihreänä ennen commitia.
 
 - Aalto 1a (rinnakkain, eri tiedostot):
