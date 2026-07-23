@@ -1,184 +1,231 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, HardHat, FolderKanban, ClipboardCheck, CalendarClock,
-  Clock, Car, ShieldCheck, Users, MessageSquare, Wrench, UserCircle,
-  FileText, BarChart3, ChevronDown, ChevronLeft, Sparkles, ChevronRight,
+  LayoutDashboard,
+  FolderKanban,
+  CalendarDays,
+  BookOpen,
+  Calculator,
+  Ruler,
+  Recycle,
+  ClipboardList,
+  Clock,
+  Timer,
+  Route,
+  ShieldCheck,
+  Users,
+  UserCircle,
+  MessageSquare,
+  Wrench,
+  FileText,
+  BarChart3,
+  BrainCircuit,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  X,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
+/* ─── Types ─── */
 interface NavItem {
   label: string;
-  icon: React.ComponentType<{ className?: string; size?: number }>;
+  icon: typeof LayoutDashboard;
   path: string;
   children?: { label: string; path: string }[];
 }
 
-const navSections = [
+/* ─── Navigation items ─── */
+const navItems: NavItem[] = [
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
   {
-    items: [
-      { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-      { label: 'Työnjohto', icon: HardHat, path: '/tyonjohto' },
+    label: 'Työnjohto',
+    icon: FolderKanban,
+    path: '/tyonjohto',
+    children: [
+      { label: 'Projektit', path: '/projektit' },
+      { label: 'Aikataulutus', path: '/aikataulutus' },
+      { label: 'Päiväkirjat', path: '/paivakirjat' },
     ],
   },
-  {
-    title: 'Projektit',
-    items: [
-      {
-        label: 'Projektit', icon: FolderKanban, path: '/projektit',
-        children: [
-          { label: 'Projektit', path: '/projektit' },
-          { label: 'Aikataulutus', path: '/aikataulutus' },
-          { label: 'Päiväkirjat', path: '/paivakirjat' },
-          { label: 'Laskenta', path: '/laskenta' },
-          { label: 'Määrälaskenta', path: '/maaralaskenta' },
-          { label: 'Jätehuolto', path: '/jatehuolto' },
-        ],
-      },
-    ],
-  },
-  {
-    title: 'Hallinta',
-    items: [
-      { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
-      { label: 'Työvuorokalenteri', icon: CalendarClock, path: '/tyovuorokalenteri' },
-      { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
-      { label: 'Matkakulut & Ajo', icon: Car, path: '/matkakulut' },
-      { label: 'Työturvallisuus', icon: ShieldCheck, path: '/tyoturvallisuus' },
-    ],
-  },
-  {
-    title: 'Asiakkaat',
-    items: [
-      { label: 'CRM', icon: MessageSquare, path: '/crm' },
-      { label: 'Asiakkaat', icon: Users, path: '/asiakkaat' },
-    ],
-  },
-  {
-    title: 'Työkalut',
-    items: [
-      { label: 'AI', icon: Sparkles, path: '/ai' },
-      { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
-      { label: 'Kalusto', icon: Wrench, path: '/kalusto' },
-      { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto' },
-      { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
-      { label: 'Raportit', icon: BarChart3, path: '/raportit' },
-    ],
-  },
+  { label: 'Laskenta', icon: Calculator, path: '/laskenta' },
+  { label: 'Määrälaskenta', icon: Ruler, path: '/maaralaskenta' },
+  { label: 'Jätehuolto', icon: Recycle, path: '/jatehuolto' },
+  { label: 'Työmääräykset', icon: ClipboardList, path: '/tyomaaraykset' },
+  { label: 'Työvuorokalenteri', icon: CalendarDays, path: '/tyovuorokalenteri' },
+  { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
+  { label: 'Matkakulut & Ajo', icon: Route, path: '/matkakulut' },
+  { label: 'Työturvallisuus', icon: ShieldCheck, path: '/tyoturvallisuus' },
+  { label: 'CRM', icon: Users, path: '/crm' },
+  { label: 'Asiakkaat', icon: UserCircle, path: '/asiakkaat' },
+  { label: 'AI', icon: BrainCircuit, path: '/ai' },
+  { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
+  { label: 'Kalusto', icon: Wrench, path: '/kalusto' },
+  { label: 'Henkilöstö', icon: BookOpen, path: '/henkilosto' },
+  { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
+  { label: 'Raportit', icon: BarChart3, path: '/raportit' },
 ];
 
-interface NavbarProps {
-  collapsed: boolean;
-  onToggleCollapse: () => void;
-}
+export default function Navbar() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
-export default function Navbar({ collapsed, onToggleCollapse }: NavbarProps) {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({ Projektit: true });
-
-  const toggleMenu = (label: string) => setExpandedMenus(prev => ({ ...prev, [label]: !prev[label] }));
-  const isActive = (path: string) => location.pathname === path;
+  const toggleGroup = (label: string) => {
+    setExpandedGroups((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
 
   return (
-    <motion.aside
-      className="flex flex-col h-screen bg-bg-dark-elevated border-r border-bg-dark-border flex-shrink-0 overflow-hidden"
-      animate={{ width: collapsed ? 64 : 260 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-      style={{ zIndex: 10 }}
-    >
-      {/* Logo */}
-      <div className="flex items-center h-14 px-3 border-b border-bg-dark-border flex-shrink-0">
-        <div className="flex items-center gap-3 overflow-hidden flex-1">
-          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-sm font-inter">VK</span>
-          </div>
-          <AnimatePresence>
+    <>
+      {/* Mobile overlay */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+            onClick={() => setMobileOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Mobile hamburger */}
+      <button
+        onClick={() => setMobileOpen(!mobileOpen)}
+        className="fixed top-3 left-3 z-50 lg:hidden w-10 h-10 flex items-center justify-center rounded-lg bg-white border border-[#E2E8F0] shadow-sm"
+      >
+        {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+
+      {/* Sidebar */}
+      <motion.aside
+        initial={false}
+        animate={{ width: collapsed ? 64 : 260 }}
+        transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+        className={`fixed lg:static top-0 left-0 h-screen bg-[#0F172A] flex flex-col z-50 flex-shrink-0 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } transition-transform duration-300`}
+      >
+        {/* Logo area */}
+        <div className="h-14 flex items-center justify-between px-4 border-b border-white/10 flex-shrink-0">
+          <AnimatePresence mode="wait">
             {!collapsed && (
-              <motion.span initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2 }}
-                className="text-text-on-dark font-semibold text-base font-inter whitespace-nowrap">
-                VaKantti
+              <motion.span
+                key="logo"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="text-lg font-bold text-white tracking-tight"
+              >
+                RemonttiFlow
               </motion.span>
             )}
           </AnimatePresence>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="hidden lg:flex w-7 h-7 items-center justify-center rounded-md bg-white/10 text-white/70 hover:bg-white/20 transition-colors"
+          >
+            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
         </div>
-        <button onClick={onToggleCollapse} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-bg-dark-border text-text-muted transition-colors">
-          <motion.span animate={{ rotate: collapsed ? 180 : 0 }} transition={{ duration: 0.2 }}>
-            <ChevronLeft size={16} />
-          </motion.span>
-        </button>
-      </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2 space-y-1">
-        {navSections.map((section, sIdx) => (
-          <div key={sIdx} className="mb-4">
-            {section.title && !collapsed && (
-              <div className="px-3 mb-2 mt-4">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-text-muted">{section.title}</span>
-              </div>
-            )}
-            {section.items.map(item => {
-              const active = isActive(item.path);
-              const hasChildren = !!item.children;
-              const menuOpen = hasChildren && expandedMenus[item.label];
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const hasChildren = item.children && item.children.length > 0;
+            const isExpanded = expandedGroups[item.label];
 
+            if (hasChildren) {
               return (
                 <div key={item.path}>
                   <button
-                    onClick={() => hasChildren ? toggleMenu(item.label) : navigate(item.path)}
-                    className={cn('w-full flex items-center gap-3 h-10 px-3 rounded-lg text-sm font-medium transition-colors duration-150 relative group',
-                      active && !hasChildren ? 'bg-primary-light text-primary border-l-[3px] border-primary' : 'text-text-on-dark-muted hover:bg-bg-dark-border hover:text-text-on-dark border-l-[3px] border-transparent')}
+                    onClick={() => toggleGroup(item.label)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      isExpanded
+                        ? 'bg-white/10 text-white'
+                        : 'text-white/70 hover:bg-white/10 hover:text-white'
+                    }`}
+                    title={collapsed ? item.label : undefined}
                   >
-                    <item.icon className={cn('flex-shrink-0', active && !hasChildren ? 'text-primary' : 'text-text-muted')} size={20} />
-                    <AnimatePresence>
-                      {!collapsed && (
-                        <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex-1 text-left whitespace-nowrap overflow-hidden text-[13px]">
-                          {item.label}
+                    <Icon size={20} className="flex-shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1 text-left">{item.label}</span>
+                        <motion.span
+                          animate={{ rotate: isExpanded ? 90 : 0 }}
+                          className="text-white/50"
+                        >
+                          <ChevronRight size={14} />
                         </motion.span>
-                      )}
-                    </AnimatePresence>
-                    {hasChildren && !collapsed && <motion.span animate={{ rotate: menuOpen ? 180 : 0 }} transition={{ duration: 0.2 }}><ChevronDown size={14} className="text-text-muted" /></motion.span>}
-                    {collapsed && <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2.5 py-1.5 bg-bg-dark-elevated text-text-on-dark text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 border border-bg-dark-border">{item.label}</div>}
+                      </>
+                    )}
                   </button>
                   <AnimatePresence>
-                    {hasChildren && menuOpen && !collapsed && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-                        <div className="ml-6 pl-4 border-l border-bg-dark-border mt-1 space-y-1">
-                          {item.children?.map(sub => (
-                            <button key={sub.path} onClick={() => navigate(sub.path)}
-                              className={cn('w-full flex items-center h-9 px-3 rounded-md text-[13px] transition-colors', isActive(sub.path) ? 'bg-primary-light text-primary' : 'text-text-on-dark-muted hover:bg-bg-dark-border hover:text-text-on-dark')}>
-                              {sub.label}
-                            </button>
-                          ))}
-                        </div>
+                    {isExpanded && !collapsed && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        {item.children?.map((sub) => (
+                          <NavLink
+                            key={sub.path}
+                            to={sub.path}
+                            onClick={() => setMobileOpen(false)}
+                            className={({ isActive }) =>
+                              `flex items-center gap-3 px-3 py-2 ml-6 rounded-lg text-sm transition-colors ${
+                                isActive
+                                  ? 'bg-primary/20 text-primary font-medium'
+                                  : 'text-white/50 hover:text-white hover:bg-white/5'
+                              }`
+                            }
+                          >
+                            <span>{sub.label}</span>
+                          </NavLink>
+                        ))}
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
               );
-            })}
-          </div>
-        ))}
-      </nav>
+            }
 
-      {/* User */}
-      <div className="flex-shrink-0 border-t border-bg-dark-border p-3">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-9 h-9 rounded-full bg-primary-light border border-primary/20 flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-semibold text-primary">MM</span>
-          </div>
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="min-w-0">
-                <p className="text-sm font-medium text-text-on-dark truncate">Matti Meikäläinen</p>
-                <p className="text-xs text-text-muted truncate">Työnjohtaja</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-primary/20 text-primary'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  }`
+                }
+                title={collapsed ? item.label : undefined}
+              >
+                <Icon size={20} className="flex-shrink-0" />
+                {!collapsed && <span>{item.label}</span>}
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        {/* Bottom: Collapse toggle */}
+        <div className="p-2 border-t border-white/10 flex-shrink-0">
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="hidden lg:flex w-full items-center justify-center gap-2 px-3 py-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors text-sm"
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            {!collapsed && <span>Piilota valikko</span>}
+          </button>
         </div>
-      </div>
-    </motion.aside>
+      </motion.aside>
+    </>
   );
 }
