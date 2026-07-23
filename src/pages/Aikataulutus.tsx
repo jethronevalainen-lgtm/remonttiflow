@@ -1,307 +1,424 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  CalendarDays,
+  Calendar,
+  Clock,
+  Users,
+  AlertTriangle,
+  ChevronLeft,
   ChevronRight,
   Plus,
+  Filter,
+  GanttChart,
+  List,
+  ArrowRight
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-/* ─── Mock Data ─── */
-const phases = [
-  { id: 1, project: 'Tampere, Hatanpää', phase: 'Perustukset', start: 0, duration: 4, color: '#3B82F6' },
-  { id: 2, project: 'Tampere, Hatanpää', phase: 'Runko', start: 4, duration: 8, color: '#F97316' },
-  { id: 3, project: 'Tampere, Hatanpää', phase: 'Katto', start: 12, duration: 3, color: '#22C55E' },
-  { id: 4, project: 'Tampere, Hatanpää', phase: 'LVI', start: 14, duration: 6, color: '#8B5CF6' },
-  { id: 5, project: 'Tampere, Hatanpää', phase: 'Sähkö', start: 14, duration: 5, color: '#EC4899' },
-  { id: 6, project: 'Tampere, Hatanpää', phase: 'Viimeistely', start: 19, duration: 4, color: '#F59E0B' },
+interface WorkPhase {
+  id: string;
+  name: string;
+  projectId: string;
+  projectName: string;
+  startDate: string;
+  endDate: string;
+  status: 'planned' | 'in_progress' | 'completed' | 'delayed';
+  responsible: string;
+  completion: number;
+  dependencies: string[];
+}
 
-  { id: 7, project: 'Espoo, Suurpelto', phase: 'Perustukset', start: 2, duration: 5, color: '#3B82F6' },
-  { id: 8, project: 'Espoo, Suurpelto', phase: 'Runko', start: 7, duration: 10, color: '#F97316' },
-  { id: 9, project: 'Espoo, Suurpelto', phase: 'LVI', start: 16, duration: 6, color: '#8B5CF6' },
-  { id: 10, project: 'Espoo, Suurpelto', phase: 'Sähkö', start: 17, duration: 5, color: '#EC4899' },
-  { id: 11, project: 'Espoo, Suurpelto', phase: 'Viimeistely', start: 21, duration: 5, color: '#F59E0B' },
+interface Milestone {
+  id: string;
+  name: string;
+  projectId: string;
+  projectName: string;
+  date: string;
+  type: 'inspection' | 'delivery' | 'completion' | 'payment';
+  completed: boolean;
+}
 
-  { id: 12, project: 'Helsinki, Kruununhaka', phase: 'Perustukset', start: 4, duration: 4, color: '#3B82F6' },
-  { id: 13, project: 'Helsinki, Kruununhaka', phase: 'Runko', start: 8, duration: 7, color: '#F97316' },
-  { id: 14, project: 'Helsinki, Kruununhaka', phase: 'LVI', start: 15, duration: 5, color: '#8B5CF6' },
-  { id: 15, project: 'Helsinki, Kruununhaka', phase: 'Sähkö', start: 15, duration: 4, color: '#EC4899' },
-  { id: 16, project: 'Helsinki, Kruununhaka', phase: 'Viimeistely', start: 19, duration: 6, color: '#F59E0B' },
-
-  { id: 17, project: 'Vantaa, Tikkurila', phase: 'Perustukset', start: 6, duration: 4, color: '#3B82F6' },
-  { id: 18, project: 'Vantaa, Tikkurila', phase: 'Runko', start: 10, duration: 8, color: '#F97316' },
-  { id: 19, project: 'Vantaa, Tikkurila', phase: 'LVI', start: 17, duration: 5, color: '#8B5CF6' },
-  { id: 20, project: 'Vantaa, Tikkurila', phase: 'Viimeistely', start: 21, duration: 4, color: '#F59E0B' },
+const workPhases: WorkPhase[] = [
+  {
+    id: '1',
+    name: 'Purkutyöt',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    startDate: '2026-01-05',
+    endDate: '2026-01-10',
+    status: 'completed',
+    responsible: 'Timo K.',
+    completion: 100,
+    dependencies: []
+  },
+  {
+    id: '2',
+    name: 'Putkityöt',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    startDate: '2026-01-11',
+    endDate: '2026-01-18',
+    status: 'delayed',
+    responsible: 'Mika M.',
+    completion: 60,
+    dependencies: ['1']
+  },
+  {
+    id: '3',
+    name: 'Sähkötyöt',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    startDate: '2026-01-15',
+    endDate: '2026-01-22',
+    status: 'in_progress',
+    responsible: 'SähköM Oy',
+    completion: 30,
+    dependencies: ['1']
+  },
+  {
+    id: '4',
+    name: 'Vesieristys',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    startDate: '2026-01-19',
+    endDate: '2026-01-24',
+    status: 'planned',
+    responsible: 'Laura K.',
+    completion: 0,
+    dependencies: ['2']
+  },
+  {
+    id: '5',
+    name: 'Laatoitus',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    startDate: '2026-01-25',
+    endDate: '2026-02-05',
+    status: 'planned',
+    responsible: 'Jussi P.',
+    completion: 0,
+    dependencies: ['3', '4']
+  }
 ];
 
-const projects = ['Tampere, Hatanpää', 'Espoo, Suurpelto', 'Helsinki, Kruununhaka', 'Vantaa, Tikkurila'];
-
-const monthLabels = [
-  'Tammi 2025', 'Helmi 2025', 'Maalis 2025', 'Huhti 2025', 'Touko 2025', 'Kesä 2025',
-  'Heinä 2025', 'Elo 2025', 'Syys 2025', 'Loka 2025', 'Marras 2025', 'Joulu 2025',
-  'Tammi 2026', 'Helmi 2026', 'Maalis 2026', 'Huhti 2026', 'Touko 2026', 'Kesä 2026',
+const milestones: Milestone[] = [
+  {
+    id: '1',
+    name: 'Putkityön tarkastus',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    date: '2026-01-18',
+    type: 'inspection',
+    completed: false
+  },
+  {
+    id: '2',
+    name: 'Sähkötyön välitarkastus',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    date: '2026-01-19',
+    type: 'inspection',
+    completed: false
+  },
+  {
+    id: '3',
+    name: 'Välitoimitus - materiaalit',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    date: '2026-01-20',
+    type: 'delivery',
+    completed: false
+  }
 ];
 
-const legendItems = [
-  { label: 'Suunnittelu', color: '#3B82F6' },
-  { label: 'Rakennus', color: '#F97316' },
-  { label: 'LVI', color: '#8B5CF6' },
-  { label: 'Sähkö', color: '#EC4899' },
-  { label: 'Viimeistely', color: '#F59E0B' },
-];
+const getStatusBadge = (status: string) => {
+  switch (status) {
+    case 'planned':
+      return <Badge className="bg-gray-100 text-gray-800">Suunniteltu</Badge>;
+    case 'in_progress':
+      return <Badge className="bg-blue-100 text-blue-800">Käynnissä</Badge>;
+    case 'completed':
+      return <Badge className="bg-green-100 text-green-800">Valmis</Badge>;
+    case 'delayed':
+      return <Badge className="bg-red-100 text-red-800">Viivästynyt</Badge>;
+    default:
+      return null;
+  }
+};
 
-/* ─── Component ─── */
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'planned': return 'bg-gray-200';
+    case 'in_progress': return 'bg-blue-500';
+    case 'completed': return 'bg-green-500';
+    case 'delayed': return 'bg-red-500';
+    default: return 'bg-gray-200';
+  }
+};
+
+const getMilestoneIcon = (type: string) => {
+  switch (type) {
+    case 'inspection': return <AlertTriangle className="w-4 h-4 text-orange-500" />;
+    case 'delivery': return <ArrowRight className="w-4 h-4 text-blue-500" />;
+    case 'completion': return <Calendar className="w-4 h-4 text-green-500" />;
+    case 'payment': return <Clock className="w-4 h-4 text-purple-500" />;
+    default: return <Calendar className="w-4 h-4" />;
+  }
+};
+
 export default function Aikataulutus() {
-  const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  const [selectedProject, setSelectedProject] = useState('all');
+  const [viewMode, setViewMode] = useState<'gantt' | 'list'>('gantt');
+  const [currentWeek, setCurrentWeek] = useState(3); // Week 3 of 2026
 
-  const colCount = viewMode === 'month' ? 18 : 18 * 4;
-  const colWidth = viewMode === 'month' ? 80 : 30;
+  const filteredPhases = selectedProject === 'all'
+    ? workPhases
+    : workPhases.filter(p => p.projectId === selectedProject);
+
+  const filteredMilestones = selectedProject === 'all'
+    ? milestones
+    : milestones.filter(m => m.projectId === selectedProject);
+
+  // Calculate week dates
+  const getWeekDates = (weekNum: number) => {
+    const start = new Date(2026, 0, (weekNum - 1) * 7 + 1);
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      dates.push(d);
+    }
+    return dates;
+  };
+
+  const weekDates = getWeekDates(currentWeek);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-      className="space-y-6"
-    >
-      {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 text-body-sm text-text-secondary mb-1">
-            <span>Dashboard</span>
-            <ChevronRight size={14} />
-            <span>Projektit</span>
-            <ChevronRight size={14} />
-            <span className="text-text-primary font-medium">Aikataulutus</span>
-          </div>
-          <h1 className="text-hero text-text-primary">Aikataulutus</h1>
-          <p className="text-body-sm text-text-secondary mt-1">Projektien aikataulun Gantt-kaavionäkymä</p>
+          <h1 className="text-2xl font-bold text-gray-900">Aikataulutus</h1>
+          <p className="text-gray-500 mt-1">Projektien aikataulut ja työvaiheet</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-bg-light rounded-lg border border-[#E2E8F0] overflow-hidden">
-            <button
-              onClick={() => setViewMode('month')}
-              className={cn(
-                'px-3 py-2 text-sm font-medium transition-colors',
-                viewMode === 'month' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
-              )}
-            >
-              Kuukausi
-            </button>
-            <button
-              onClick={() => setViewMode('week')}
-              className={cn(
-                'px-3 py-2 text-sm font-medium transition-colors',
-                viewMode === 'week' ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
-              )}
-            >
-              Viikko
-            </button>
-          </div>
-          <Button variant="outline" size="sm" className="gap-1">
-            <CalendarDays size={14} /> Tänään
+        <div className="flex items-center gap-3">
+          <Button variant="outline" className="flex items-center gap-2">
+            <Filter className="w-4 h-4" />
+            Suodata
           </Button>
-          <Button className="bg-primary hover:bg-primary-hover text-white gap-2">
-            <Plus size={16} /> Uusi vaihe
+          <Button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
+            <Plus className="w-4 h-4" />
+            Uusi työvaihe
           </Button>
         </div>
       </div>
 
-      {/* ── Gantt Chart ── */}
-      <Card className="border border-[#E2E8F0] shadow-card overflow-hidden">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <div style={{ minWidth: 200 + colCount * colWidth }}>
-              {/* Timeline Header */}
-              <div className="flex border-b border-[#E2E8F0]">
-                {/* Sticky project column header */}
-                <div className="w-[200px] flex-shrink-0 p-4 bg-bg-light border-r border-[#E2E8F0] font-semibold text-sm text-text-primary sticky left-0 z-10">
-                  Projektit / Vaiheet
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Aktiiviset projektit', value: '5', icon: GanttChart, color: 'text-blue-600' },
+          { label: 'Viikon työvaiheet', value: '12', icon: Calendar, color: 'text-green-600' },
+          { label: 'Viivästyneet', value: '2', icon: AlertTriangle, color: 'text-red-600' },
+          { label: 'Tämän viikon kilometrit', value: '0 €', icon: Clock, color: 'text-purple-600' },
+        ].map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.1 }}
+          >
+            <Card>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">{stat.label}</p>
+                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
                 </div>
-                {/* Time columns */}
-                <div className="flex">
-                  {viewMode === 'month' ? (
-                    monthLabels.map((m, i) => (
+                <stat.icon className={`w-8 h-8 ${stat.color} opacity-20`} />
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      <Tabs defaultValue="timeline" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="timeline">Aikajana</TabsTrigger>
+          <TabsTrigger value="phases">Työvaiheet</TabsTrigger>
+          <TabsTrigger value="milestones">Virstanpylväät</TabsTrigger>
+        </TabsList>
+
+        {/* Timeline Tab */}
+        <TabsContent value="timeline" className="space-y-4">
+          {/* Week Navigation */}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentWeek(prev => Math.max(1, prev - 1))}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <div className="text-center">
+              <h3 className="font-semibold">Viikko {currentWeek}, 2026</h3>
+              <p className="text-sm text-gray-500">
+                {weekDates[0].toLocaleDateString('fi-FI')} - {weekDates[6].toLocaleDateString('fi-FI')}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentWeek(prev => prev + 1)}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Calendar Grid */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="grid grid-cols-8 border-b">
+                <div className="p-3 border-r font-semibold text-sm">Työvaihe</div>
+                {['Ma', 'Ti', 'Ke', 'To', 'Pe', 'La', 'Su'].map((day, i) => (
+                  <div key={day} className="p-3 text-center font-semibold text-sm border-r last:border-r-0">
+                    <div>{day}</div>
+                    <div className="text-xs text-gray-500">{weekDates[i].getDate()}</div>
+                  </div>
+                ))}
+              </div>
+              {filteredPhases.map((phase) => (
+                <div key={phase.id} className="grid grid-cols-8 border-b last:border-b-0">
+                  <div className="p-3 border-r text-sm">
+                    <div className="font-medium truncate">{phase.name}</div>
+                    <div className="text-xs text-gray-500">{phase.responsible}</div>
+                  </div>
+                  {weekDates.map((date, i) => {
+                    const dateStr = date.toISOString().split('T')[0];
+                    const isActive = dateStr >= phase.startDate && dateStr <= phase.endDate;
+                    return (
                       <div
                         key={i}
-                        className={cn(
-                          'flex-shrink-0 border-r border-[#F1F5F9] px-2 py-4 text-center text-caption text-text-muted font-medium uppercase tracking-wider',
-                          i % 2 === 0 ? 'bg-bg-light' : 'bg-white'
-                        )}
-                        style={{ width: colWidth }}
-                      >
-                        {m}
-                      </div>
-                    ))
-                  ) : (
-                    Array.from({ length: colCount }, (_, i) => {
-                      const monthIdx = Math.floor(i / 4);
-                      const weekInMonth = (i % 4) + 1;
-                      return (
-                        <div
-                          key={i}
-                          className={cn(
-                            'flex-shrink-0 border-r border-[#F1F5F9] px-1 py-4 text-center text-[10px] text-text-muted font-medium',
-                            i % 2 === 0 ? 'bg-bg-light' : 'bg-white'
-                          )}
-                          style={{ width: colWidth }}
-                        >
-                          <div className="text-[9px] text-text-muted uppercase">{monthLabels[monthIdx]?.split(' ')[0]}</div>
-                          <div>v{weekInMonth}</div>
-                        </div>
-                      );
-                    })
-                  )}
+                        className={`p-3 border-r last:border-r-0 ${
+                          isActive ? getStatusColor(phase.status) + ' opacity-60' : ''
+                        }`}
+                      />
+                    );
+                  })}
                 </div>
-              </div>
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-              {/* Project rows */}
-              {projects.map((project, pi) => {
-                const projectPhases = phases.filter(p => p.project === project);
-                return (
-                  <motion.div
-                    key={project}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: pi * 0.08, duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-                    className="flex border-b border-[#F1F5F9]"
-                  >
-                    {/* Project name cell */}
-                    <div className="w-[200px] flex-shrink-0 p-4 bg-bg-light border-r border-[#E2E8F0] sticky left-0 z-10">
-                      <p className="text-sm font-semibold text-text-primary truncate">{project}</p>
-                      <p className="text-caption text-text-muted mt-0.5">{projectPhases.length} vaihetta</p>
-                    </div>
-                    {/* Gantt bars area */}
-                    <div className="relative flex" style={{ height: 60 + projectPhases.length * 32 }}>
-                      {/* Grid lines */}
-                      <div className="absolute inset-0 flex">
-                        {Array.from({ length: colCount }, (_, i) => (
-                          <div
-                            key={i}
-                            className={cn(
-                              'flex-shrink-0 border-r border-[#F1F5F9]',
-                              i % 2 === 0 ? 'bg-transparent' : 'bg-[#FAFBFC]'
-                            )}
-                            style={{ width: colWidth }}
-                          />
-                        ))}
-                      </div>
-                      {/* Phase bars */}
-                      <svg className="absolute inset-0" style={{ width: colCount * colWidth, height: 60 + projectPhases.length * 32 }}>
-                        {/* Today line */}
-                        <line
-                          x1={6 * colWidth}
-                          y1={0}
-                          x2={6 * colWidth}
-                          y2={60 + projectPhases.length * 32}
-                          stroke="#EF4444"
-                          strokeWidth={1}
-                          strokeDasharray="4 4"
-                        />
-                        {projectPhases.map((phase, fi) => {
-                          const unitWidth = viewMode === 'month' ? colWidth : colWidth;
-                          const x = phase.start * unitWidth + 4;
-                          const w = phase.duration * unitWidth - 8;
-                          const y = 16 + fi * 32;
-                          return (
-                            <g key={phase.id}>
-                              {/* Dependency line to next phase */}
-                              {fi < projectPhases.length - 1 && (
-                                <line
-                                  x1={x + w}
-                                  y1={y + 12}
-                                  x2={projectPhases[fi + 1].start * unitWidth + 4}
-                                  y2={16 + (fi + 1) * 32 + 12}
-                                  stroke="#94A3B8"
-                                  strokeWidth={1}
-                                  strokeDasharray="3 3"
-                                  markerEnd="url(#arrowhead)"
-                                />
-                              )}
-                              {/* Bar */}
-                              <motion.rect
-                                initial={{ width: 0 }}
-                                animate={{ width: w }}
-                                transition={{ delay: pi * 0.08 + fi * 0.05, duration: 0.4, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-                                x={x}
-                                y={y}
-                                height={24}
-                                rx={6}
-                                fill={phase.color}
-                                opacity={0.9}
-                              />
-                              {/* Phase label */}
-                              {w > 50 && (
-                                <text
-                                  x={x + w / 2}
-                                  y={y + 16}
-                                  textAnchor="middle"
-                                  fill="white"
-                                  fontSize={10}
-                                  fontWeight={600}
-                                >
-                                  {phase.phase}
-                                </text>
-                              )}
-                            </g>
-                          );
-                        })}
-                        {/* Arrow marker definition */}
-                        <defs>
-                          <marker id="arrowhead" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto">
-                            <polygon points="0 0, 6 2, 0 4" fill="#94A3B8" />
-                          </marker>
-                        </defs>
-                      </svg>
-                    </div>
-                  </motion.div>
-                );
-              })}
+        {/* Phases Tab */}
+        <TabsContent value="phases" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Button
+                variant={viewMode === 'gantt' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('gantt')}
+              >
+                <GanttChart className="w-4 h-4 mr-1" />
+                Gantt
+              </Button>
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('list')}
+              >
+                <List className="w-4 h-4 mr-1" />
+                Lista
+              </Button>
             </div>
           </div>
 
-          {/* Legend */}
-          <div className="flex items-center gap-4 px-6 py-3 border-t border-[#E2E8F0] bg-bg-light flex-wrap">
-            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">Selite:</span>
-            {legendItems.map(item => (
-              <span key={item.label} className="flex items-center gap-1.5 text-body-sm text-text-secondary">
-                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: item.color }} />
-                {item.label}
-              </span>
+          <div className="space-y-3">
+            {filteredPhases.map((phase) => (
+              <motion.div
+                key={phase.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+              >
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-semibold">{phase.name}</h3>
+                          {getStatusBadge(phase.status)}
+                        </div>
+                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(phase.startDate).toLocaleDateString('fi-FI')} - {new Date(phase.endDate).toLocaleDateString('fi-FI')}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Users className="w-3 h-3" />
+                            {phase.responsible}
+                          </span>
+                          <span>{phase.completion}% valmis</span>
+                        </div>
+                      </div>
+                      <div className="w-32">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${getStatusColor(phase.status)}`}
+                            style={{ width: `${phase.completion}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {phase.dependencies.length > 0 && (
+                      <div className="mt-2 text-sm text-gray-500">
+                        Riippuvuudet: {phase.dependencies.join(', ')}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
             ))}
-            <span className="flex items-center gap-1.5 text-body-sm text-text-secondary ml-4">
-              <span className="w-px h-4 border-l border-dashed border-danger" /> Tänään
-            </span>
           </div>
-        </CardContent>
-      </Card>
+        </TabsContent>
 
-      {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border border-[#E2E8F0] shadow-card">
-          <CardContent className="p-4">
-            <p className="text-caption text-text-muted uppercase tracking-wider mb-1">Aikataulussa</p>
-            <p className="text-h1 text-success">3 / 4</p>
-            <p className="text-body-sm text-text-secondary">projektia aikataulussa</p>
-          </CardContent>
-        </Card>
-        <Card className="border border-[#E2E8F0] shadow-card">
-          <CardContent className="p-4">
-            <p className="text-caption text-text-muted uppercase tracking-wider mb-1">Kokonaiskesto</p>
-            <p className="text-h1 text-primary">18 kk</p>
-            <p className="text-body-sm text-text-secondary">Tammi 2025 – Kesä 2026</p>
-          </CardContent>
-        </Card>
-        <Card className="border border-[#E2E8F0] shadow-card">
-          <CardContent className="p-4">
-            <p className="text-caption text-text-muted uppercase tracking-wider mb-1">Aktiivisia vaiheita</p>
-            <p className="text-h1 text-info">{phases.length}</p>
-            <p className="text-body-sm text-text-secondary">kaikissa projekteissa</p>
-          </CardContent>
-        </Card>
-      </div>
-    </motion.div>
+        {/* Milestones Tab */}
+        <TabsContent value="milestones" className="space-y-4">
+          <div className="space-y-3">
+            {filteredMilestones.map((milestone) => (
+              <motion.div
+                key={milestone.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <Card className={milestone.completed ? 'border-green-300 bg-green-50/30' : ''}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-2 rounded-full ${milestone.completed ? 'bg-green-100' : 'bg-gray-100'}`}>
+                        {getMilestoneIcon(milestone.type)}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className={`font-semibold ${milestone.completed ? 'text-green-800' : 'text-gray-900'}`}>
+                          {milestone.name}
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          {milestone.projectName} • {new Date(milestone.date).toLocaleDateString('fi-FI')}
+                        </p>
+                      </div>
+                      {milestone.completed ? (
+                        <Badge className="bg-green-100 text-green-800">Suoritettu</Badge>
+                      ) : (
+                        <Badge className="bg-gray-100 text-gray-800">Odottaa</Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
