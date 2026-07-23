@@ -1,107 +1,324 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Wrench, Settings, AlertTriangle, Clock, Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import {
+  Wrench,
+  Plus,
+  Search,
+  Filter,
+  Phone,
+  Mail,
+  MapPin,
+  Calendar,
+  Clock,
+  Euro,
+  Star,
+  AlertTriangle,
+  CheckCircle2,
+  Edit2,
+  Trash2,
+  ArrowUpDown,
+  Settings,
+  Truck,
+  Hammer,
+  Drill,
+  FileText
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Separator } from '@/components/ui/separator';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface Equipment {
   id: string;
   name: string;
   type: string;
-  serial: string;
-  location: string;
-  status: string;
-  lastMaintenance: string;
-  hoursUsed: number;
+  manufacturer: string;
+  model: string;
+  serialNumber: string;
+  year: number;
+  purchaseDate: string;
+  purchasePrice: number;
+  status: 'available' | 'in_use' | 'maintenance' | 'broken';
+  currentProject?: string;
+  lastService: string;
+  nextService: string;
+  notes: string;
 }
 
-const EQUIPMENT: Equipment[] = [
-  { id: 'EQ-001', name: 'Komatsu PC138', type: 'Kaivinkone', serial: 'SN-2023-001', location: 'Tampere', status: 'Käytössä', lastMaintenance: '15.3.2026', hoursUsed: 1240 },
-  { id: 'EQ-002', name: 'Volvo EC220E', type: 'Kaivinkone', serial: 'SN-2022-015', location: 'Espoo', status: 'Käytössä', lastMaintenance: '22.4.2026', hoursUsed: 2890 },
-  { id: 'EQ-003', name: 'Scania G450', type: 'Kuorma-auto', serial: 'SN-2021-003', location: 'Helsinki', status: 'Vapaa', lastMaintenance: '10.5.2026', hoursUsed: 4560 },
-  { id: 'EQ-004', name: 'Hilti TE 2000', type: 'Työkalu', serial: 'SN-2024-112', location: 'Tampere', status: 'Käytössä', lastMaintenance: '1.7.2026', hoursUsed: 180 },
-  { id: 'EQ-005', name: 'PERI UP', type: 'Telineet', serial: 'SN-2023-045', location: 'Espoo', status: 'Käytössä', lastMaintenance: '12.4.2026', hoursUsed: 720 },
-  { id: 'EQ-006', name: 'Toyota Hilux', type: 'Pakettiauto', serial: 'SN-2022-008', location: 'Turku', status: 'Käytössä', lastMaintenance: '28.6.2026', hoursUsed: 2340 },
-  { id: 'EQ-007', name: 'Bosch GSH 16', type: 'Työkalu', serial: 'SN-2024-089', location: 'Helsinki', status: 'Huollossa', lastMaintenance: '18.7.2026', hoursUsed: 95 },
-  { id: 'EQ-008', name: 'Liebherr LTM 1050', type: 'Nosturi', serial: 'SN-2021-002', location: 'Tampere', status: 'Vuokralla', lastMaintenance: '10.3.2026', hoursUsed: 890 },
-  { id: 'EQ-009', name: 'Mercedes Sprinter', type: 'Pakettiauto', serial: 'SN-2023-012', location: 'Vantaa', status: 'Vapaa', lastMaintenance: '5.7.2026', hoursUsed: 1560 },
-  { id: 'EQ-010', name: 'Atlas Copco XATS 156', type: 'Kompressori', serial: 'SN-2022-007', location: 'Espoo', status: 'Käytössä', lastMaintenance: '15.5.2026', hoursUsed: 670 },
+interface MaintenanceRecord {
+  id: string;
+  equipmentId: string;
+  equipmentName: string;
+  date: string;
+  type: 'routine' | 'repair' | 'inspection';
+  description: string;
+  cost: number;
+  performedBy: string;
+}
+
+const initialEquipment: Equipment[] = [
+  {
+    id: '1',
+    name: 'Pyörölaikka',
+    type: 'Sähkötyökalu',
+    manufacturer: 'Makita',
+    model: 'DGA504',
+    serialNumber: 'SN123456',
+    year: 2023,
+    purchaseDate: '2023-03-15',
+    purchasePrice: 350,
+    status: 'available',
+    lastService: '2025-12-01',
+    nextService: '2026-03-01',
+    notes: 'Hyvässä kunnossa'
+  },
+  {
+    id: '2',
+    name: 'Porakone',
+    type: 'Sähkötyökalu',
+    manufacturer: 'Bosch',
+    model: 'GBH 2-28 F',
+    serialNumber: 'SN789012',
+    year: 2022,
+    purchaseDate: '2022-06-20',
+    purchasePrice: 450,
+    status: 'in_use',
+    currentProject: 'Rivitalo A',
+    lastService: '2025-11-15',
+    nextService: '2026-02-15',
+    notes: 'Poraustehokas'
+  },
+  {
+    id: '3',
+    name: 'Pakettiauto',
+    type: 'Kuljetus',
+    manufacturer: 'Ford',
+    model: 'Transit',
+    serialNumber: 'ABC-123',
+    year: 2021,
+    purchaseDate: '2021-01-10',
+    purchasePrice: 25000,
+    status: 'in_use',
+    currentProject: 'Kerrostalo B',
+    lastService: '2025-10-20',
+    nextService: '2026-01-20',
+    notes: 'Hyvä kuljetusauto'
+  },
+  {
+    id: '4',
+    name: 'Laikkaleikkuri',
+    type: 'Sähkötyökalu',
+    manufacturer: 'Husqvarna',
+    model: 'K-770',
+    serialNumber: 'SN345678',
+    year: 2024,
+    purchaseDate: '2024-02-01',
+    purchasePrice: 1200,
+    status: 'maintenance',
+    lastService: '2026-01-10',
+    nextService: '2026-04-10',
+    notes: 'Terän vaihto ja huolto'
+  },
+  {
+    id: '5',
+    name: 'Imuri',
+    type: 'Siivous',
+    manufacturer: 'Nilfisk',
+    model: 'Attix 30-01',
+    serialNumber: 'SN901234',
+    year: 2023,
+    purchaseDate: '2023-05-15',
+    purchasePrice: 550,
+    status: 'available',
+    lastService: '2025-12-10',
+    nextService: '2026-03-10',
+    notes: 'Teollisuusimuri'
+  }
 ];
 
-const STATUS_COLORS: Record<string, string> = {
-  'Käytössä': '#22C55E',
-  'Vapaa': '#3B82F6',
-  'Huollossa': '#F59E0B',
-  'Vuokralla': '#8B5CF6',
+const maintenanceRecords: MaintenanceRecord[] = [
+  { id: '1', equipmentId: '1', equipmentName: 'Pyörölaikka', date: '2025-12-01', type: 'routine', description: 'Vuosihuolto', cost: 50, performedBy: 'Makita Service' },
+  { id: '2', equipmentId: '2', equipmentName: 'Porakone', date: '2025-11-15', type: 'repair', description: 'Hiiliharjojen vaihto', cost: 35, performedBy: 'Bosch Service' },
+  { id: '3', equipmentId: '4', equipmentName: 'Laikkaleikkuri', date: '2026-01-10', type: 'repair', description: 'Terän vaihto', cost: 180, performedBy: 'Husqvarna Service' }
+];
+
+const getStatusBadge = (status: string) => {
+  switch (status) {
+    case 'available':
+      return <Badge className="bg-green-100 text-green-800">Vapaa</Badge>;
+    case 'in_use':
+      return <Badge className="bg-blue-100 text-blue-800">Käytössä</Badge>;
+    case 'maintenance':
+      return <Badge className="bg-yellow-100 text-yellow-800">Huollossa</Badge>;
+    case 'broken':
+      return <Badge className="bg-red-100 text-red-800">Rikki</Badge>;
+    default:
+      return null;
+  }
 };
 
-const chartData = EQUIPMENT.map(eq => ({ name: eq.name.split(' ')[0], hours: eq.hoursUsed }));
+const getMaintenanceTypeBadge = (type: string) => {
+  switch (type) {
+    case 'routine':
+      return <Badge className="bg-green-100 text-green-800">Huolto</Badge>;
+    case 'repair':
+      return <Badge className="bg-red-100 text-red-800">Korjaus</Badge>;
+    case 'inspection':
+      return <Badge className="bg-blue-100 text-blue-800">Tarkastus</Badge>;
+    default:
+      return null;
+  }
+};
 
 export default function Kalusto() {
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('Kaikki');
-  const [selectedEq, setSelectedEq] = useState<Equipment | null>(null);
+  const [equipment, setEquipment] = useState<Equipment[]>(initialEquipment);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('list');
+  const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null);
 
-  const filtered = EQUIPMENT.filter(eq => {
-    const matchesSearch = !search || eq.name.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'Kaikki' || eq.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredEquipment = equipment.filter(eq =>
+    eq.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    eq.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    eq.manufacturer.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const stats = {
+    total: equipment.length,
+    available: equipment.filter(e => e.status === 'available').length,
+    inUse: equipment.filter(e => e.status === 'in_use').length,
+    maintenance: equipment.filter(e => e.status === 'maintenance').length,
+    totalValue: equipment.reduce((sum, e) => sum + e.purchasePrice, 0)
+  };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-primary">Kalusto</h1>
-        <Button className="gap-1.5 bg-primary hover:bg-primary-hover text-white"><Plus size={16} /> Lisää kalusto</Button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Kalusto</h1>
+          <p className="text-gray-500 mt-1">Työkalut, laitteet ja ajoneuvot</p>
+        </div>
+        <Button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
+          <Plus className="w-4 h-4" />
+          Lisää kalusto
+        </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card><CardContent className="p-4 flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-primary-light flex items-center justify-center"><Wrench size={20} className="text-primary" /></div><div><p className="text-sm text-text-muted">Kaluston määrä</p><p className="text-xl font-bold text-text-primary">{EQUIPMENT.length}</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-success-light flex items-center justify-center"><Settings size={20} className="text-success" /></div><div><p className="text-sm text-text-muted">Käytössä</p><p className="text-xl font-bold text-text-primary">{EQUIPMENT.filter(e => e.status === 'Käytössä').length}</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-warning-light flex items-center justify-center"><AlertTriangle size={20} className="text-warning" /></div><div><p className="text-sm text-text-muted">Huollossa</p><p className="text-xl font-bold text-text-primary">{EQUIPMENT.filter(e => e.status === 'Huollossa').length}</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-info-light flex items-center justify-center"><Clock size={20} className="text-info" /></div><div><p className="text-sm text-text-muted">Käyttötunteja yht.</p><p className="text-xl font-bold text-text-primary">{EQUIPMENT.reduce((s, e) => s + e.hoursUsed, 0).toLocaleString('fi-FI')}</p></div></CardContent></Card>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        {['Kaikki', 'Käytössä', 'Vapaa', 'Huollossa', 'Vuokralla'].map(s => (
-          <Button key={s} variant={statusFilter === s ? 'default' : 'outline'} size="sm" onClick={() => setStatusFilter(s)} className={statusFilter === s ? 'bg-primary' : ''}>{s}</Button>
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        {[
+          { label: 'Kalusto yhteensä', value: stats.total.toString(), icon: Wrench, color: 'text-blue-600' },
+          { label: 'Vapaa', value: stats.available.toString(), icon: CheckCircle2, color: 'text-green-600' },
+          { label: 'Käytössä', value: stats.inUse.toString(), icon: Settings, color: 'text-blue-600' },
+          { label: 'Huollossa', value: stats.maintenance.toString(), icon: AlertTriangle, color: 'text-yellow-600' },
+          { label: 'Kokonaisarvo', value: `${(stats.totalValue / 1000).toFixed(0)}k €`, icon: Euro, color: 'text-purple-600' },
+        ].map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.1 }}
+          >
+            <Card>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">{stat.label}</p>
+                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+                </div>
+                <stat.icon className={`w-8 h-8 ${stat.color} opacity-20`} />
+              </CardContent>
+            </Card>
+          </motion.div>
         ))}
-        <div className="flex-1" />
-        <div className="relative w-64"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" /><Input placeholder="Hae kalustoa..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
       </div>
 
-      {/* Chart */}
-      <Card><CardHeader><CardTitle className="text-base">Käyttötunnit</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={200}><BarChart data={chartData}><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis /><CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" /><Bar dataKey="hours" fill="#F97316" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="list">Kalustolista</TabsTrigger>
+          <TabsTrigger value="maintenance">Huoltohistoria</TabsTrigger>
+        </TabsList>
 
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader><TableRow><TableHead>Nimi</TableHead><TableHead>Tyyppi</TableHead><TableHead>Sarjanumero</TableHead><TableHead>Sijainti</TableHead><TableHead>Status</TableHead><TableHead>Viim. huolto</TableHead><TableHead className="text-right">Tunnit</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {filtered.map(eq => (
-                <TableRow key={eq.id} className="cursor-pointer" onClick={() => setSelectedEq(eq)}>
-                  <TableCell className="font-medium">{eq.name}</TableCell>
-                  <TableCell>{eq.type}</TableCell>
-                  <TableCell className="font-mono text-xs">{eq.serial}</TableCell>
-                  <TableCell>{eq.location}</TableCell>
-                  <TableCell><Badge style={{ backgroundColor: STATUS_COLORS[eq.status] + '20', color: STATUS_COLORS[eq.status], borderColor: STATUS_COLORS[eq.status] }}>{eq.status}</Badge></TableCell>
-                  <TableCell>{eq.lastMaintenance}</TableCell>
-                  <TableCell className="text-right font-mono">{eq.hoursUsed}</TableCell>
-                </TableRow>
+        <TabsContent value="list" className="space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Hae kalustoa..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Button variant="outline" className="flex items-center gap-2">
+              <Filter className="w-4 h-4" />
+              Suodata
+            </Button>
+          </div>
+
+          <Card>
+            <CardContent className="p-0">
+              <div className="grid grid-cols-12 gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-700">
+                <div className="col-span-2">Nimi</div>
+                <div className="col-span-1">Tyyppi</div>
+                <div className="col-span-2">Valmistaja / Malli</div>
+                <div className="col-span-1">Vuosi</div>
+                <div className="col-span-1">Hankintahinta</div>
+                <div className="col-span-1">Tila</div>
+                <div className="col-span-2">Viim. huolto / Seur.</div>
+                <div className="col-span-2">Huomautukset</div>
+              </div>
+              {filteredEquipment.map((eq) => (
+                <div
+                  key={eq.id}
+                  className="grid grid-cols-12 gap-4 p-4 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer items-center"
+                  onClick={() => setSelectedEquipment(eq)}
+                >
+                  <div className="col-span-2 font-medium">{eq.name}</div>
+                  <div className="col-span-1 text-sm">{eq.type}</div>
+                  <div className="col-span-2 text-sm">
+                    <div>{eq.manufacturer}</div>
+                    <div className="text-gray-500">{eq.model}</div>
+                  </div>
+                  <div className="col-span-1 text-sm">{eq.year}</div>
+                  <div className="col-span-1 text-sm">{eq.purchasePrice.toLocaleString('fi-FI')} €</div>
+                  <div className="col-span-1">{getStatusBadge(eq.status)}</div>
+                  <div className="col-span-2 text-sm">
+                    <div>{new Date(eq.lastService).toLocaleDateString('fi-FI')}</div>
+                    <div className="text-gray-500">{new Date(eq.nextService).toLocaleDateString('fi-FI')}</div>
+                  </div>
+                  <div className="col-span-2 text-sm text-gray-600 truncate">{eq.notes}</div>
+                </div>
               ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="maintenance" className="space-y-4">
+          <Card>
+            <CardContent className="p-0">
+              <div className="grid grid-cols-12 gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-700">
+                <div className="col-span-2">Kalusto</div>
+                <div className="col-span-1">Päivä</div>
+                <div className="col-span-1">Tyyppi</div>
+                <div className="col-span-4">Kuvaus</div>
+                <div className="col-span-1">Kustannus</div>
+                <div className="col-span-3">Suorittaja</div>
+              </div>
+              {maintenanceRecords.map((record) => (
+                <div key={record.id} className="grid grid-cols-12 gap-4 p-4 border-b last:border-b-0 hover:bg-gray-50 items-center">
+                  <div className="col-span-2 font-medium">{record.equipmentName}</div>
+                  <div className="col-span-1 text-sm">{new Date(record.date).toLocaleDateString('fi-FI')}</div>
+                  <div className="col-span-1">{getMaintenanceTypeBadge(record.type)}</div>
+                  <div className="col-span-4 text-sm">{record.description}</div>
+                  <div className="col-span-1 text-sm">{record.cost.toLocaleString('fi-FI')} €</div>
+                  <div className="col-span-3 text-sm">{record.performedBy}</div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
