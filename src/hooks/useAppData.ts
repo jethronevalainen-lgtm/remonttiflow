@@ -1,4 +1,10 @@
 import { useLocalStorage } from './useLocalStorage';
+import { BRAND } from '../config/brand';
+import type {
+  Project, WorkOrder, TimeEntry, Employee, Equipment,
+  Customer, CrmLead, DiaryEntry, SafetyItem, WasteEntry,
+  DrivingLogEntry, Announcement, Message,
+} from '../types';
 import {
   initialProjects,
   initialWorkOrders,
@@ -15,148 +21,19 @@ import {
   initialMessages,
 } from '../data/initialData';
 
-export interface Project {
-  id: string;
-  name: string;
-  customer: string;
-  status: 'Aktiivinen' | 'Suunniteltu' | 'Valmis' | 'Myöhässä';
-  startDate: string;
-  endDate: string;
-  progress: number;
-  budget: number;
-  spent: number;
-  description?: string;
-  location?: string;
-}
+// Re-export the canonical domain types so existing import sites
+// (`from '../hooks/useAppData'`) keep working unchanged.
+export type {
+  Project, WorkOrder, TimeEntry, Employee, Equipment,
+  Customer, CrmLead, DiaryEntry, SafetyItem, WasteEntry,
+  DrivingLogEntry, Announcement, Message,
+  ProjectStatus, WorkOrderPriority, WorkOrderStatus, TimeEntryStatus,
+  EmployeeStatus, EquipmentStatus, CustomerType, CustomerStatus,
+  CrmLeadStage, SafetyItemType, SafetyItemSeverity, AnnouncementPriority,
+  ShiftEmployee,
+} from '../types';
 
-export interface WorkOrder {
-  id: string;
-  title: string;
-  project: string;
-  assignee: string;
-  dueDate: string;
-  priority: 'Korkea' | 'Normaali' | 'Matala';
-  status: 'Avoin' | 'Käynnissä' | 'Odottaa' | 'Valmis' | 'Peruttu';
-  description?: string;
-  type?: string;
-}
-
-export interface TimeEntry {
-  id: string;
-  date: string;
-  employee: string;
-  project: string;
-  hours: number;
-  overtime: number;
-  description: string;
-  status: 'Hyväksytty' | 'Odottaa' | 'Hylätty';
-}
-
-export interface Employee {
-  id: string;
-  name: string;
-  role: string;
-  department: string;
-  phone: string;
-  email: string;
-  startDate: string;
-  status: 'Aktiivinen' | 'Lomalla' | 'Sapattivapaa' | 'Eroonnut';
-}
-
-export interface Equipment {
-  id: string;
-  name: string;
-  type: string;
-  serial: string;
-  location: string;
-  status: 'Käytössä' | 'Vapaa' | 'Huollossa' | 'Vuokralla';
-  lastMaintenance: string;
-}
-
-export interface Customer {
-  id: string;
-  name: string;
-  type: 'Yritys' | 'Yksityinen' | 'Taloyhtiö';
-  contactPerson: string;
-  phone: string;
-  email: string;
-  address: string;
-  projectCount: number;
-  lastContact: string;
-  status: 'Aktiivinen' | 'Epäaktiivinen';
-}
-
-export interface CrmLead {
-  id: string;
-  name: string;
-  company: string;
-  value: number;
-  stage: 'Uusi' | 'Tarjous tehty' | 'Neuvottelu' | 'Sopimus';
-  assignee: string;
-  date: string;
-}
-
-export interface DiaryEntry {
-  id: string;
-  date: string;
-  project: string;
-  author: string;
-  weather: string;
-  temperature: string;
-  workers: number;
-  workDescription: string;
-  issues?: string;
-}
-
-export interface SafetyItem {
-  id: string;
-  type: 'incident' | 'risk' | 'inspection' | 'training';
-  title: string;
-  date: string;
-  severity?: 'Lievä' | 'Keskitasoinen' | 'Vakava';
-  status: string;
-}
-
-export interface WasteEntry {
-  id: string;
-  date: string;
-  project: string;
-  wasteType: string;
-  amount: number;
-  method: string;
-  cost: number;
-}
-
-export interface DrivingLogEntry {
-  id: string;
-  date: string;
-  driver: string;
-  vehicle: string;
-  startAddress: string;
-  endAddress: string;
-  distance: number;
-  purpose: string;
-}
-
-export interface Announcement {
-  id: string;
-  title: string;
-  content: string;
-  author: string;
-  date: string;
-  priority: 'Tärkeä' | 'Normaali' | 'Info';
-}
-
-export interface Message {
-  id: string;
-  sender: string;
-  recipient: string;
-  content: string;
-  timestamp: string;
-  read: boolean;
-}
-
-const STORAGE_VERSION = 'vakantti-v1';
+const STORAGE_VERSION = BRAND.storagePrefix;
 const KEYS = {
   projects: `${STORAGE_VERSION}-projects`,
   workOrders: `${STORAGE_VERSION}-workOrders`,
@@ -220,6 +97,42 @@ export function useAppData() {
     setWorkOrders(prev => prev.filter(wo => wo.id !== id));
   };
 
+  const addCustomer = (c: Omit<Customer, 'id'>) => {
+    const newCustomer = { ...c, id: generateId('AS') };
+    setCustomers(prev => [newCustomer, ...prev]);
+    return newCustomer;
+  };
+  const updateCustomer = (id: string, patch: Partial<Customer>) => {
+    setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+  };
+  const deleteCustomer = (id: string) => {
+    setCustomers(prev => prev.filter(c => c.id !== id));
+  };
+
+  const addCrmLead = (l: Omit<CrmLead, 'id'>) => {
+    const newLead = { ...l, id: generateId('LEAD') };
+    setCrmLeads(prev => [newLead, ...prev]);
+    return newLead;
+  };
+  const updateCrmLead = (id: string, patch: Partial<CrmLead>) => {
+    setCrmLeads(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
+  };
+  const deleteCrmLead = (id: string) => {
+    setCrmLeads(prev => prev.filter(l => l.id !== id));
+  };
+
+  const addTimeEntry = (e: Omit<TimeEntry, 'id'>) => {
+    const newEntry = { ...e, id: generateId('TK') };
+    setTimeEntries(prev => [newEntry, ...prev]);
+    return newEntry;
+  };
+
+  const addSafetyItem = (s: Omit<SafetyItem, 'id'>) => {
+    const newItem = { ...s, id: generateId('TURV') };
+    setSafetyItems(prev => [newItem, ...prev]);
+    return newItem;
+  };
+
   const stats = {
     totalProjects: projects.length,
     activeProjects: projects.filter(p => p.status === 'Aktiivinen').length,
@@ -241,6 +154,9 @@ export function useAppData() {
     setSidebarCollapsed,
     addProject, updateProject, deleteProject,
     addWorkOrder, updateWorkOrder, deleteWorkOrder,
+    addCustomer, updateCustomer, deleteCustomer,
+    addCrmLead, updateCrmLead, deleteCrmLead,
+    addTimeEntry, addSafetyItem,
     setTimeEntries, setEmployees, setEquipment,
     setCustomers, setCrmLeads, setDiaryEntries,
     setSafetyItems, setWasteEntries, setDrivingLog,

@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import { useAppData, type useAppData as UseAppDataType } from '../hooks/useAppData';
+import { useAppData } from '../hooks/useAppData';
 
-const AppDataContext = createContext<ReturnType<typeof UseAppDataType> | null>(null);
+const AppDataContext = createContext<ReturnType<typeof useAppData> | null>(null);
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const data = useAppData();

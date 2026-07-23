@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Shield,
@@ -52,6 +52,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import type { SafetyItemSeverity } from '@/types';
 import {
   Select,
   SelectContent,
@@ -156,6 +158,64 @@ const koulutusData = [
 // Tarkastustyypit for risk matrix
 const todennakoisyysLabels = ['', 'Erittäin epätodennäköinen', 'Epätodennäköinen', 'Mahdollinen', 'Todennäköinen', 'Erittäin todennäköinen'];
 const vakavuusLabels = ['', 'Vähäinen', 'Pieni', 'Kohtalainen', 'Vakava', 'Erittäin vakava'];
+
+/* ─── Incident form constants & helpers ─── */
+interface IncidentFormState {
+  date: string;
+  time: string;
+  site: string;
+  type: string;
+  severity: string;
+  description: string;
+  actions: string;
+}
+
+const emptyIncidentForm: IncidentFormState = {
+  date: '',
+  time: '',
+  site: '',
+  type: '',
+  severity: '',
+  description: '',
+  actions: '',
+};
+
+const INCIDENT_TYPE_LABELS: Record<string, string> = {
+  tapaturma: 'Tapaturma',
+  vaaratilanne: 'Vaaratilanne',
+  poikkeama: 'Poikkeama',
+  havainto: 'Turvallisuushavainto',
+};
+
+const INCIDENT_SEVERITY_MAP: Record<string, SafetyItemSeverity> = {
+  lieva: 'Lievä',
+  keski: 'Keskitasoinen',
+  vakava: 'Vakava',
+};
+
+const SITE_LABELS: Record<string, string> = {
+  tampere: 'Tampere',
+  espoo: 'Espoo',
+  helsinki: 'Helsinki',
+  turku: 'Turku',
+};
+
+const SEVERITY_TO_ROW_KEY: Record<string, string> = {
+  Lievä: 'lieva',
+  Keskitasoinen: 'keskitasoinen',
+  Vakava: 'vakava',
+};
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isoToFinnishDate(iso: string): string {
+  const parts = iso.split('-');
+  if (parts.length !== 3) return iso;
+  const [y, m, d] = parts;
+  return `${Number(d)}.${Number(m)}.${y}`;
+}
 
 /* ─── Helper Components ─── */
 
@@ -295,6 +355,67 @@ export default function Tyoturvallisuus() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [valittuRiskiSolut, setValittuRiskiSolut] = useState<{t: number; v: number} | null>(null);
 
+  // Data layer: persisted safety items (localStorage via AppDataContext)
+  const { safetyItems, addSafetyItem } = useAppDataContext();
+
+  // New-incident form state
+  const [incidentForm, setIncidentForm] = useState<IncidentFormState>(() => ({
+    ...emptyIncidentForm,
+    date: todayIso(),
+  }));
+  const [incidentErrors, setIncidentErrors] = useState<string[]>([]);
+  const [incidentSavedMessage, setIncidentSavedMessage] = useState('');
+
+  // Persisted incidents converted to the tapaturmaData row shape
+  const savedIncidentRows = safetyItems
+    .filter(s => s.type === 'incident')
+    .map(s => {
+      const [tyyppi, ...rest] = s.title.split(': ');
+      return {
+        id: s.id,
+        paiva: isoToFinnishDate(s.date),
+        henkilo: '—',
+        tyyppi: rest.length > 0 ? tyyppi : 'Tapahtuma',
+        vakavuus: s.severity ? (SEVERITY_TO_ROW_KEY[s.severity] ?? 'lieva') : 'lieva',
+        kuvaus: rest.length > 0 ? rest.join(': ') : s.title,
+        toimenpiteet: '—',
+        tyomaa: '—',
+      };
+    });
+  const kaikkiTapaturmat = [...savedIncidentRows, ...tapaturmaData];
+
+  // Auto-dismiss the save confirmation
+  useEffect(() => {
+    if (!incidentSavedMessage) return;
+    const t = setTimeout(() => setIncidentSavedMessage(''), 4000);
+    return () => clearTimeout(t);
+  }, [incidentSavedMessage]);
+
+  const handleSaveIncident = () => {
+    const errors: string[] = [];
+    if (!incidentForm.date) errors.push('Valitse päivämäärä.');
+    if (!incidentForm.type) errors.push('Valitse tapahtumatyyppi.');
+    if (!incidentForm.severity) errors.push('Valitse vakavuus.');
+    if (!incidentForm.description.trim()) errors.push('Kirjoita kuvaus tapahtumasta.');
+    setIncidentErrors(errors);
+    if (errors.length > 0) return;
+
+    const tyyppiLabel = INCIDENT_TYPE_LABELS[incidentForm.type];
+    const siteLabel = incidentForm.site ? SITE_LABELS[incidentForm.site] : '';
+    const title = `${siteLabel ? `${tyyppiLabel} (${siteLabel})` : tyyppiLabel}: ${incidentForm.description.trim()}`;
+    addSafetyItem({
+      type: 'incident',
+      title,
+      date: incidentForm.date,
+      severity: INCIDENT_SEVERITY_MAP[incidentForm.severity],
+      status: 'Ilmoitettu',
+    });
+    setDialogOpen(false);
+    setIncidentForm({ ...emptyIncidentForm, date: todayIso() });
+    setIncidentErrors([]);
+    setIncidentSavedMessage('Tapahtuma tallennettu — näkyy nyt tapahtumaluettelossa.');
+  };
+
   const safetyScore = 87;
   const trendi = turvallisuusTrendi[turvallisuusTrendi.length - 1].indeksi - turvallisuusTrendi[turvallisuusTrendi.length - 2].indeksi;
 
@@ -316,7 +437,13 @@ export default function Tyoturvallisuus() {
           <p className="text-body-sm text-text-secondary mt-1">Työturvallisuuden hallinta ja seuranta</p>
         </div>
         <div className="flex items-center gap-3">
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog
+            open={dialogOpen}
+            onOpenChange={open => {
+              setDialogOpen(open);
+              if (!open) setIncidentErrors([]);
+            }}
+          >
             <DialogTrigger asChild>
               <Button className="bg-primary hover:bg-primary-hover text-white gap-2">
                 <Plus size={16} />
@@ -328,19 +455,37 @@ export default function Tyoturvallisuus() {
                 <DialogTitle className="text-h1">Ilmoita uusi tapahtuma</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-4">
+                {incidentErrors.length > 0 && (
+                  <div className="rounded-lg border border-danger/30 bg-danger-light px-3 py-2 space-y-1">
+                    {incidentErrors.map(err => (
+                      <p key={err} className="text-sm text-danger">{err}</p>
+                    ))}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Päivämäärä</Label>
-                    <Input type="date" />
+                    <Label>Päivämäärä *</Label>
+                    <Input
+                      type="date"
+                      value={incidentForm.date}
+                      onChange={e => setIncidentForm(prev => ({ ...prev, date: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Aika</Label>
-                    <Input type="time" />
+                    <Input
+                      type="time"
+                      value={incidentForm.time}
+                      onChange={e => setIncidentForm(prev => ({ ...prev, time: e.target.value }))}
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Työmaa</Label>
-                  <Select>
+                  <Select
+                    value={incidentForm.site}
+                    onValueChange={v => setIncidentForm(prev => ({ ...prev, site: v }))}
+                  >
                     <SelectTrigger><SelectValue placeholder="Valitse työmaa" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="tampere">Tampere</SelectItem>
@@ -351,8 +496,11 @@ export default function Tyoturvallisuus() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Tapahtumatyyppi</Label>
-                  <Select>
+                  <Label>Tapahtumatyyppi *</Label>
+                  <Select
+                    value={incidentForm.type}
+                    onValueChange={v => setIncidentForm(prev => ({ ...prev, type: v }))}
+                  >
                     <SelectTrigger><SelectValue placeholder="Valitse tyyppi" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="tapaturma">Tapaturma</SelectItem>
@@ -363,8 +511,11 @@ export default function Tyoturvallisuus() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Vakavuus</Label>
-                  <Select>
+                  <Label>Vakavuus *</Label>
+                  <Select
+                    value={incidentForm.severity}
+                    onValueChange={v => setIncidentForm(prev => ({ ...prev, severity: v }))}
+                  >
                     <SelectTrigger><SelectValue placeholder="Valitse vakavuus" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="lieva">Lievä</SelectItem>
@@ -374,16 +525,24 @@ export default function Tyoturvallisuus() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Kuvaus</Label>
-                  <Input placeholder="Kuvaa tapahtuma" />
+                  <Label>Kuvaus *</Label>
+                  <Input
+                    placeholder="Kuvaa tapahtuma"
+                    value={incidentForm.description}
+                    onChange={e => setIncidentForm(prev => ({ ...prev, description: e.target.value }))}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Toimenpiteet</Label>
-                  <Input placeholder="Mitkä toimenpiteet tehtiin?" />
+                  <Input
+                    placeholder="Mitkä toimenpiteet tehtiin?"
+                    value={incidentForm.actions}
+                    onChange={e => setIncidentForm(prev => ({ ...prev, actions: e.target.value }))}
+                  />
                 </div>
                 <div className="flex justify-end gap-3 pt-2">
                   <Button variant="outline" onClick={() => setDialogOpen(false)}>Peruuta</Button>
-                  <Button className="bg-primary hover:bg-primary-hover text-white" onClick={() => setDialogOpen(false)}>
+                  <Button className="bg-primary hover:bg-primary-hover text-white" onClick={handleSaveIncident}>
                     Tallenna
                   </Button>
                 </div>
@@ -396,6 +555,16 @@ export default function Tyoturvallisuus() {
           </Button>
         </div>
       </motion.div>
+
+      {/* Save confirmation */}
+      {incidentSavedMessage && (
+        <motion.div
+          variants={itemVariants}
+          className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success font-medium"
+        >
+          <CheckCircle2 size={16} /> {incidentSavedMessage}
+        </motion.div>
+      )}
 
       {/* ─── Top KPI Cards ─── */}
       <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -850,7 +1019,7 @@ export default function Tyoturvallisuus() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {tapaturmaData.map((inc) => (
+                      {kaikkiTapaturmat.map((inc) => (
                         <TableRow key={inc.id} className="hover:bg-muted/50">
                           <TableCell className="text-sm font-medium">{inc.paiva}</TableCell>
                           <TableCell className="text-sm">{inc.tyomaa}</TableCell>

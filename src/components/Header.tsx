@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Bell, Menu, ChevronDown, Check } from 'lucide-react';
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from '@/contexts/AuthContext';
 import type { UserRole } from '@/contexts/AuthContext';
+import { BRAND } from '@/config/brand';
 
 const routeLabels: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -47,7 +48,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const [searchVal, setSearchVal] = useState('');
   const [notifs, setNotifs] = useState(notifications);
 
-  const label = routeLabels[location.pathname] || 'VaKantti';
+  const label = routeLabels[location.pathname] || BRAND.name;
   const unreadCount = notifs.filter(n => !n.read).length;
   const roles: UserRole[] = ['admin', 'supervisor', 'worker'];
 
@@ -58,7 +59,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           <Menu size={20} />
         </button>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-gray-400 font-medium hidden sm:inline">VaKantti</span>
+          <span className="text-gray-400 font-medium hidden sm:inline">{BRAND.name}</span>
           <span className="text-gray-300 hidden sm:inline">/</span>
           <span className="text-gray-900 font-semibold">{label}</span>
         </div>

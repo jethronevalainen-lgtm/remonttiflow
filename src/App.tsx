@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
 import {
   Dashboard, Tyonjohto, Projektit, Aikataulutus, Paivakirjat,
@@ -59,7 +60,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <AppDataProvider>
+        <AppRoutes />
+      </AppDataProvider>
     </AuthProvider>
   );
 }

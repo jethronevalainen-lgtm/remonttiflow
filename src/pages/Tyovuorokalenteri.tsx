@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import type { ShiftEmployee } from '@/types';
 
 /* ─── Types ─── */
 type ShiftType = 'Aamu' | 'Iltavuoro' | 'Yövuoro' | 'Vapaapäivä' | 'Loma' | 'Sairaasloma';
@@ -40,14 +41,6 @@ interface Shift {
   type: ShiftType;
   project: string;
   notes?: string;
-}
-
-interface Employee {
-  id: string;
-  name: string;
-  initials: string;
-  role: string;
-  color: string;
 }
 
 /* ─── Constants ─── */
@@ -69,7 +62,7 @@ const MONTH_NAMES = [
 ];
 
 /* ─── Employees ─── */
-const EMPLOYEES: Employee[] = [
+const EMPLOYEES: ShiftEmployee[] = [
   { id: 'e1', name: 'Matti Korhonen', initials: 'MK', role: 'Rakennusmestari', color: '#F97316' },
   { id: 'e2', name: 'Jukka Lehtonen', initials: 'JL', role: 'Sähköasentaja', color: '#3B82F6' },
   { id: 'e3', name: 'Anna Lahtinen', initials: 'AL', role: 'LVI-asentaja', color: '#22C55E' },
@@ -81,7 +74,7 @@ const EMPLOYEES: Employee[] = [
 ];
 
 /* ─── Shift Data (2 weeks) ─── */
-const SHIFTS: Shift[] = [
+const INITIAL_SHIFTS: Shift[] = [
   // Week 1: June 16-22, 2025
   { id: 's1', employeeId: 'e1', employeeName: 'Matti Korhonen', employeeInitials: 'MK', date: '2025-06-16', startTime: '07:00', endTime: '15:00', type: 'Aamu', project: 'Espoon uudisrakennus' },
   { id: 's2', employeeId: 'e2', employeeName: 'Jukka Lehtonen', employeeInitials: 'JL', date: '2025-06-16', startTime: '07:00', endTime: '15:00', type: 'Aamu', project: 'Tampereen korjaustyö' },
@@ -208,6 +201,22 @@ function hoursBetween(start: string, end: string): number {
   return (eh + em / 60) - (sh + sm / 60);
 }
 
+/* ─── New-shift form constants ─── */
+interface ShiftFormState {
+  employeeId: string;
+  date: string;
+  type: ShiftType;
+  startTime: string;
+  endTime: string;
+  project: string;
+  notes: string;
+}
+
+const PROJECT_OPTIONS = ['Espoon uudisrakennus', 'Helsingin toimistorakennus', 'Tampereen korjaustyö'];
+
+// Shift types that are actual work (require a project)
+const WORK_SHIFT_TYPES: ShiftType[] = ['Aamu', 'Iltavuoro', 'Yövuoro'];
+
 /* ─── Component ─── */
 export default function Tyovuorokalenteri() {
   const today = new Date(2025, 5, 24); // June 24, 2025 as "today"
@@ -217,6 +226,82 @@ export default function Tyovuorokalenteri() {
   const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set(EMPLOYEES.map(e => e.id)));
   const [searchEmployee, setSearchEmployee] = useState('');
   const [newShiftOpen, setNewShiftOpen] = useState(false);
+
+  // Shifts as component state (session-only until the backend lands)
+  const [shifts, setShifts] = useState<Shift[]>(INITIAL_SHIFTS);
+
+  // New-shift form state
+  const [shiftForm, setShiftForm] = useState<ShiftFormState>({
+    employeeId: '',
+    date: formatDateKey(today),
+    type: 'Aamu',
+    startTime: '07:00',
+    endTime: '15:00',
+    project: '',
+    notes: '',
+  });
+  const [shiftErrors, setShiftErrors] = useState<string[]>([]);
+  const [shiftSavedMessage, setShiftSavedMessage] = useState('');
+
+  const openNewShiftDialog = () => {
+    setShiftForm({
+      employeeId: '',
+      date: selectedDay ? formatDateKey(selectedDay) : formatDateKey(today),
+      type: 'Aamu',
+      startTime: '07:00',
+      endTime: '15:00',
+      project: '',
+      notes: '',
+    });
+    setShiftErrors([]);
+    setNewShiftOpen(true);
+  };
+
+  // Auto-dismiss the save confirmation
+  useEffect(() => {
+    if (!shiftSavedMessage) return;
+    const t = setTimeout(() => setShiftSavedMessage(''), 4000);
+    return () => clearTimeout(t);
+  }, [shiftSavedMessage]);
+
+  const handleSaveShift = () => {
+    const errors: string[] = [];
+    if (!shiftForm.employeeId) errors.push('Valitse henkilö.');
+    if (!shiftForm.date) errors.push('Valitse päivämäärä.');
+    if (!shiftForm.startTime || !shiftForm.endTime) {
+      errors.push('Syötä alku- ja loppuaika.');
+    } else if (shiftForm.type !== 'Yövuoro' && shiftForm.endTime <= shiftForm.startTime) {
+      errors.push('Loppuajan on oltava alkuaikaa myöhempi (yövuoro voi päättyä seuraavana päivänä).');
+    }
+    if (WORK_SHIFT_TYPES.includes(shiftForm.type) && !shiftForm.project) {
+      errors.push('Valitse projekti työvuorolle.');
+    }
+    setShiftErrors(errors);
+    if (errors.length > 0) return;
+
+    const emp = EMPLOYEES.find(e => e.id === shiftForm.employeeId);
+    if (!emp) return;
+    const newShift: Shift = {
+      id: `s-custom-${Date.now()}`,
+      employeeId: emp.id,
+      employeeName: emp.name,
+      employeeInitials: emp.initials,
+      date: shiftForm.date,
+      startTime: shiftForm.startTime,
+      endTime: shiftForm.endTime,
+      type: shiftForm.type,
+      project: shiftForm.project || '—',
+      notes: shiftForm.notes.trim() || undefined,
+    };
+    setShifts(prev => [...prev, newShift]);
+    setNewShiftOpen(false);
+    setShiftErrors([]);
+    // Navigate the calendar to the new shift so it is immediately visible
+    const shiftDate = new Date(`${shiftForm.date}T00:00:00`);
+    setCurrentDate(shiftDate);
+    setSelectedDay(shiftDate);
+    setShiftSavedMessage('Työvuoro lisätty kalenteriin.');
+  };
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -242,11 +327,11 @@ export default function Tyovuorokalenteri() {
   }, [searchEmployee]);
 
   const getShiftsForDate = (dateKey: string): (Shift | { employeeId: string; type: ShiftType; note?: string; isSpecial: true })[] => {
-    const shifts = SHIFTS.filter(s => s.date === dateKey && selectedEmployees.has(s.employeeId));
+    const dayShiftList = shifts.filter(s => s.date === dateKey && selectedEmployees.has(s.employeeId));
     const specials = SPECIAL_DAYS[dateKey]?.filter(s => selectedEmployees.has(s.employeeId)) || [];
-    const result: (Shift | { employeeId: string; type: ShiftType; note?: string; isSpecial: true })[] = [...shifts];
+    const result: (Shift | { employeeId: string; type: ShiftType; note?: string; isSpecial: true })[] = [...dayShiftList];
     // Only add special days for employees without a shift
-    const shiftEmpIds = new Set(shifts.map(s => s.employeeId));
+    const shiftEmpIds = new Set(dayShiftList.map(s => s.employeeId));
     specials.forEach(s => {
       if (!shiftEmpIds.has(s.employeeId)) {
         result.push({ ...s, isSpecial: true });
@@ -303,11 +388,22 @@ export default function Tyovuorokalenteri() {
           <Button variant="outline" size="sm" className="gap-1.5">
             <Clock size={16} /> Mallipohjat
           </Button>
-          <Button size="sm" className="gap-1.5 bg-primary hover:bg-primary-hover text-white" onClick={() => setNewShiftOpen(true)}>
+          <Button size="sm" className="gap-1.5 bg-primary hover:bg-primary-hover text-white" onClick={openNewShiftDialog}>
             <Plus size={16} /> Uusi työvuoro
           </Button>
         </div>
       </motion.div>
+
+      {/* Save confirmation */}
+      {shiftSavedMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success font-medium"
+        >
+          {shiftSavedMessage}
+        </motion.div>
+      )}
 
       {/* ─── Calendar Toolbar ─── */}
       <motion.div
@@ -502,7 +598,7 @@ export default function Tyovuorokalenteri() {
                   {/* Day columns */}
                   {weekDays.map((d, di) => {
                     const dateKey = formatDateKey(d);
-                    const dayShifts = SHIFTS.filter(s => s.date === dateKey && selectedEmployees.has(s.employeeId));
+                    const dayShifts = shifts.filter(s => s.date === dateKey && selectedEmployees.has(s.employeeId));
                     return (
                       <div
                         key={di}
@@ -566,7 +662,7 @@ export default function Tyovuorokalenteri() {
                 <div className="divide-y divide-border">
                   {Array.from({ length: 15 }, (_, i) => i + 6).map(hour => {
                     const dateKey = formatDateKey(selectedDay);
-                    const hourShifts = SHIFTS.filter(
+                    const hourShifts = shifts.filter(
                       s =>
                         s.date === dateKey &&
                         selectedEmployees.has(s.employeeId) &&
@@ -671,7 +767,7 @@ export default function Tyovuorokalenteri() {
               <CardContent className="space-y-3">
                 {(() => {
                   const dateKey = formatDateKey(selectedDay);
-                  const dayShifts = SHIFTS.filter(s => s.date === dateKey && selectedEmployees.has(s.employeeId));
+                  const dayShifts = shifts.filter(s => s.date === dateKey && selectedEmployees.has(s.employeeId));
                   const totalHours = dayShifts.reduce((sum, s) => sum + hoursBetween(s.startTime, s.endTime), 0);
                   const offCount = (SPECIAL_DAYS[dateKey]?.filter(s => selectedEmployees.has(s.employeeId) && s.type === 'Vapaapäivä').length || 0);
                   const vacationCount = (SPECIAL_DAYS[dateKey]?.filter(s => selectedEmployees.has(s.employeeId) && s.type === 'Loma').length || 0);
@@ -720,7 +816,7 @@ export default function Tyovuorokalenteri() {
                         variant="outline"
                         size="sm"
                         className="w-full gap-1.5"
-                        onClick={() => setNewShiftOpen(true)}
+                        onClick={openNewShiftDialog}
                       >
                         <Plus size={14} /> Lisää työvuoro
                       </Button>
@@ -754,15 +850,31 @@ export default function Tyovuorokalenteri() {
       </motion.div>
 
       {/* ─── New Shift Dialog ─── */}
-      <Dialog open={newShiftOpen} onOpenChange={setNewShiftOpen}>
+      <Dialog
+        open={newShiftOpen}
+        onOpenChange={open => {
+          setNewShiftOpen(open);
+          if (!open) setShiftErrors([]);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-h2">Uusi työvuoro</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {shiftErrors.length > 0 && (
+              <div className="rounded-lg border border-danger/30 bg-danger-light px-3 py-2 space-y-1">
+                {shiftErrors.map(err => (
+                  <p key={err} className="text-sm text-danger">{err}</p>
+                ))}
+              </div>
+            )}
             <div className="space-y-2">
-              <Label>Henkilö</Label>
-              <Select>
+              <Label>Henkilö *</Label>
+              <Select
+                value={shiftForm.employeeId}
+                onValueChange={v => setShiftForm(prev => ({ ...prev, employeeId: v }))}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Valitse henkilö" />
                 </SelectTrigger>
@@ -780,12 +892,19 @@ export default function Tyovuorokalenteri() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Päivämäärä</Label>
-                <Input type="date" defaultValue={selectedDay ? formatDateKey(selectedDay) : undefined} />
+                <Label>Päivämäärä *</Label>
+                <Input
+                  type="date"
+                  value={shiftForm.date}
+                  onChange={e => setShiftForm(prev => ({ ...prev, date: e.target.value }))}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Tyyppi</Label>
-                <Select defaultValue="Aamu">
+                <Select
+                  value={shiftForm.type}
+                  onValueChange={v => setShiftForm(prev => ({ ...prev, type: v as ShiftType }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -799,35 +918,53 @@ export default function Tyovuorokalenteri() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Alkuaika</Label>
-                <Input type="time" defaultValue="07:00" />
+                <Label>Alkuaika *</Label>
+                <Input
+                  type="time"
+                  value={shiftForm.startTime}
+                  onChange={e => setShiftForm(prev => ({ ...prev, startTime: e.target.value }))}
+                />
               </div>
               <div className="space-y-2">
-                <Label>Loppuaika</Label>
-                <Input type="time" defaultValue="15:00" />
+                <Label>Loppuaika *</Label>
+                <Input
+                  type="time"
+                  value={shiftForm.endTime}
+                  onChange={e => setShiftForm(prev => ({ ...prev, endTime: e.target.value }))}
+                />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Projekti</Label>
-              <Select>
+              <Label>Projekti{WORK_SHIFT_TYPES.includes(shiftForm.type) ? ' *' : ''}</Label>
+              <Select
+                value={shiftForm.project}
+                onValueChange={v => setShiftForm(prev => ({ ...prev, project: v }))}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Valitse projekti" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="espoo">Espoon uudisrakennus</SelectItem>
-                  <SelectItem value="helsinki">Helsingin toimistorakennus</SelectItem>
-                  <SelectItem value="tampere">Tampereen korjaustyö</SelectItem>
+                  {PROJECT_OPTIONS.map(p => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Muistiinpanot</Label>
-              <Input placeholder="Valinnainen..." />
+              <Input
+                placeholder="Valinnainen..."
+                value={shiftForm.notes}
+                onChange={e => setShiftForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
             </div>
+            <p className="text-xs text-text-muted">
+              Tallentuu istuntoon — pysyvä tallennus tulee backendin myötä.
+            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewShiftOpen(false)}>Peruuta</Button>
-            <Button className="bg-primary hover:bg-primary-hover text-white" onClick={() => setNewShiftOpen(false)}>
+            <Button className="bg-primary hover:bg-primary-hover text-white" onClick={handleSaveShift}>
               Tallenna
             </Button>
           </DialogFooter>

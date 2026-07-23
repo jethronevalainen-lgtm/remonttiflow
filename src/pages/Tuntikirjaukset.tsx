@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -35,6 +35,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import type { TimeEntry, TimeEntryStatus } from '@/types';
 import {
   BarChart,
   Bar,
@@ -52,26 +54,6 @@ import {
 } from 'recharts';
 
 /* ─── Types ─── */
-type TimeEntryStatus = 'Hyväksytty' | 'Odottaa' | 'Hylätty';
-
-interface TimeEntry {
-  id: string;
-  date: string;
-  dayName: string;
-  startTime: string;
-  endTime: string;
-  project: string;
-  projectColor: string;
-  workType: string;
-  hours: number;
-  overtime: number;
-  description: string;
-  status: TimeEntryStatus;
-  personId?: string;
-  personName?: string;
-  personInitials?: string;
-}
-
 interface ApprovalRequest {
   id: string;
   personName: string;
@@ -82,38 +64,86 @@ interface ApprovalRequest {
   entries: TimeEntry[];
 }
 
+interface EntryFormState {
+  date: string;
+  startTime: string;
+  endTime: string;
+  project: string;
+  workType: string;
+  hours: string;
+  description: string;
+  submitForApproval: boolean;
+}
+
+/* ─── Form constants & helpers ─── */
+const PROJECT_OPTIONS = [
+  { value: 'Espoon uudisrakennus', color: '#F97316' },
+  { value: 'Helsingin toimistorakennus', color: '#22C55E' },
+  { value: 'Tampereen korjaustyö', color: '#3B82F6' },
+];
+
+const WORK_TYPE_OPTIONS = ['Rakennus', 'Sähkö', 'LVI', 'Maalaus', 'Eristys', 'Ylityö', 'Matka', 'Palaveri', 'Muu'];
+
+const FINNISH_DAY_NAMES = ['Su', 'Ma', 'Ti', 'Ke', 'To', 'Pe', 'La'];
+
+const emptyEntryForm: EntryFormState = {
+  date: '2025-06-25',
+  startTime: '07:00',
+  endTime: '15:00',
+  project: '',
+  workType: '',
+  hours: '8',
+  description: '',
+  submitForApproval: true,
+};
+
+function isoToFinnishDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${d}.${m}.${y}`;
+}
+
+function isoToDayName(iso: string): string {
+  return FINNISH_DAY_NAMES[new Date(`${iso}T00:00:00`).getDay()];
+}
+
+function hoursBetweenTimes(start: string, end: string): number {
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  return (eh + em / 60) - (sh + sm / 60);
+}
+
 /* ─── Mock Data ─── */
 const MY_TIME_ENTRIES: TimeEntry[] = [
-  { id: 't1', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'Seinärakenteiden purkua', status: 'Hyväksytty' },
-  { id: 't2', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '16:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 9.0, overtime: 1.0, description: 'Uusien runkopuiden asennus', status: 'Hyväksytty' },
-  { id: 't3', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähkökaapelointi kerros 2', status: 'Odottaa' },
-  { id: 't4', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'LVI-valmistelu', status: 'Odottaa' },
-  { id: 't5', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 7.5, overtime: 0, description: 'Lopputarkistus ja siivous', status: 'Odottaa' },
-  { id: 't6', date: '30.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Sisämaalaus toimisto A', status: 'Odottaa' },
-  { id: 't7', date: '1.7.2025', dayName: 'Ti', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 9.0, overtime: 1.0, description: 'Sisämaalaus toimisto B', status: 'Odottaa' },
-  { id: 't8', date: '2.7.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Pistorasioiden asennus', status: 'Odottaa' },
-  { id: 't9', date: '3.7.2025', dayName: 'To', startTime: '07:00', endTime: '15:30', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.5, overtime: 0.5, description: 'Valaistuskytkimet', status: 'Odottaa' },
-  { id: 't10', date: '4.7.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 7.0, overtime: 0, description: 'Viimeistely ja tarkistus', status: 'Odottaa' },
-  { id: 't11', date: '16.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Purkutyöt aloitettu', status: 'Hyväksytty' },
-  { id: 't12', date: '17.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Runkopuiden mittaus', status: 'Hyväksytty' },
-  { id: 't13', date: '18.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '16:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 9.5, overtime: 1.5, description: 'Kiireellinen korjaus', status: 'Hyväksytty' },
-  { id: 't14', date: '19.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Normaali työpäivä', status: 'Hyväksytty' },
-  { id: 't15', date: '20.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 7.0, overtime: 0, description: 'Viikon lopetus', status: 'Hyväksytty' },
+  { id: 't1', employee: 'Matti Korhonen', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'Seinärakenteiden purkua', status: 'Hyväksytty' },
+  { id: 't2', employee: 'Matti Korhonen', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '16:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 9.0, overtime: 1.0, description: 'Uusien runkopuiden asennus', status: 'Hyväksytty' },
+  { id: 't3', employee: 'Matti Korhonen', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähkökaapelointi kerros 2', status: 'Odottaa' },
+  { id: 't4', employee: 'Matti Korhonen', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'LVI-valmistelu', status: 'Odottaa' },
+  { id: 't5', employee: 'Matti Korhonen', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 7.5, overtime: 0, description: 'Lopputarkistus ja siivous', status: 'Odottaa' },
+  { id: 't6', employee: 'Matti Korhonen', date: '30.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Sisämaalaus toimisto A', status: 'Odottaa' },
+  { id: 't7', employee: 'Matti Korhonen', date: '1.7.2025', dayName: 'Ti', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 9.0, overtime: 1.0, description: 'Sisämaalaus toimisto B', status: 'Odottaa' },
+  { id: 't8', employee: 'Matti Korhonen', date: '2.7.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Pistorasioiden asennus', status: 'Odottaa' },
+  { id: 't9', employee: 'Matti Korhonen', date: '3.7.2025', dayName: 'To', startTime: '07:00', endTime: '15:30', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.5, overtime: 0.5, description: 'Valaistuskytkimet', status: 'Odottaa' },
+  { id: 't10', employee: 'Matti Korhonen', date: '4.7.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 7.0, overtime: 0, description: 'Viimeistely ja tarkistus', status: 'Odottaa' },
+  { id: 't11', employee: 'Matti Korhonen', date: '16.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Purkutyöt aloitettu', status: 'Hyväksytty' },
+  { id: 't12', employee: 'Matti Korhonen', date: '17.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Runkopuiden mittaus', status: 'Hyväksytty' },
+  { id: 't13', employee: 'Matti Korhonen', date: '18.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '16:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 9.5, overtime: 1.5, description: 'Kiireellinen korjaus', status: 'Hyväksytty' },
+  { id: 't14', employee: 'Matti Korhonen', date: '19.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Normaali työpäivä', status: 'Hyväksytty' },
+  { id: 't15', employee: 'Matti Korhonen', date: '20.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 7.0, overtime: 0, description: 'Viikon lopetus', status: 'Hyväksytty' },
 ];
 
 const TEAM_ENTRIES: TimeEntry[] = [
-  { id: 'te1', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Perustustyöt', status: 'Hyväksytty', personId: 'e1', personName: 'Matti Korhonen', personInitials: 'MK' },
-  { id: 'te2', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähköasennukset', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
-  { id: 'te3', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Putkiasennukset', status: 'Odottaa', personId: 'e3', personName: 'Anna Lahtinen', personInitials: 'AL' },
-  { id: 'te4', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:30', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'Runkotyöt', status: 'Hyväksytty', personId: 'e1', personName: 'Matti Korhonen', personInitials: 'MK' },
-  { id: 'te5', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kaapelointi', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
-  { id: 'te6', date: '24.6.2025', dayName: 'Ti', startTime: '08:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Vesiputkien testaus', status: 'Odottaa', personId: 'e3', personName: 'Anna Lahtinen', personInitials: 'AL' },
-  { id: 'te7', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus', status: 'Odottaa', personId: 'e5', personName: 'Liisa Rantanen', personInitials: 'LR' },
-  { id: 'te8', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Eristystyöt', status: 'Hyväksytty', personId: 'e6', personName: 'Sari Kettunen', personInitials: 'SK' },
-  { id: 'te9', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '16:30', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.5, overtime: 1.5, description: 'Kiireellinen korjaus', status: 'Odottaa', personId: 'e7', personName: 'Timo Nieminen', personInitials: 'TN' },
-  { id: 'te10', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Tarkastukset', status: 'Hyväksytty', personId: 'e4', personName: 'Pekka Salminen', personInitials: 'PS' },
-  { id: 'te11', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 7.0, overtime: 0, description: 'Lopputarkistus', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
-  { id: 'te12', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Sisämaalaus', status: 'Odottaa', personId: 'e5', personName: 'Liisa Rantanen', personInitials: 'LR' },
+  { id: 'te1', employee: 'Matti Korhonen', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Perustustyöt', status: 'Hyväksytty', personId: 'e1', personName: 'Matti Korhonen', personInitials: 'MK' },
+  { id: 'te2', employee: 'Jukka Lehtonen', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähköasennukset', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
+  { id: 'te3', employee: 'Anna Lahtinen', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Putkiasennukset', status: 'Odottaa', personId: 'e3', personName: 'Anna Lahtinen', personInitials: 'AL' },
+  { id: 'te4', employee: 'Matti Korhonen', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:30', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'Runkotyöt', status: 'Hyväksytty', personId: 'e1', personName: 'Matti Korhonen', personInitials: 'MK' },
+  { id: 'te5', employee: 'Jukka Lehtonen', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kaapelointi', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
+  { id: 'te6', employee: 'Anna Lahtinen', date: '24.6.2025', dayName: 'Ti', startTime: '08:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Vesiputkien testaus', status: 'Odottaa', personId: 'e3', personName: 'Anna Lahtinen', personInitials: 'AL' },
+  { id: 'te7', employee: 'Liisa Rantanen', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus', status: 'Odottaa', personId: 'e5', personName: 'Liisa Rantanen', personInitials: 'LR' },
+  { id: 'te8', employee: 'Sari Kettunen', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Eristystyöt', status: 'Hyväksytty', personId: 'e6', personName: 'Sari Kettunen', personInitials: 'SK' },
+  { id: 'te9', employee: 'Timo Nieminen', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '16:30', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.5, overtime: 1.5, description: 'Kiireellinen korjaus', status: 'Odottaa', personId: 'e7', personName: 'Timo Nieminen', personInitials: 'TN' },
+  { id: 'te10', employee: 'Pekka Salminen', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Tarkastukset', status: 'Hyväksytty', personId: 'e4', personName: 'Pekka Salminen', personInitials: 'PS' },
+  { id: 'te11', employee: 'Jukka Lehtonen', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 7.0, overtime: 0, description: 'Lopputarkistus', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
+  { id: 'te12', employee: 'Liisa Rantanen', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Sisämaalaus', status: 'Odottaa', personId: 'e5', personName: 'Liisa Rantanen', personInitials: 'LR' },
 ];
 
 const APPROVAL_REQUESTS: ApprovalRequest[] = [
@@ -125,11 +155,11 @@ const APPROVAL_REQUESTS: ApprovalRequest[] = [
     totalHours: 38.5,
     submittedDate: '27.6.2025',
     entries: [
-      { id: 'ae1', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähköasennukset', status: 'Odottaa' },
-      { id: 'ae2', date: '24.6.', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kaapelointi', status: 'Odottaa' },
-      { id: 'ae3', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kytkentä', status: 'Odottaa' },
-      { id: 'ae4', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '16:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 9.0, overtime: 1.0, description: 'Testaus ja tarkistus', status: 'Odottaa' },
-      { id: 'ae5', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '14:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 7.5, overtime: 0, description: 'Viimeistely', status: 'Odottaa' },
+      { id: 'ae1', employee: 'Jukka Lehtonen', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähköasennukset', status: 'Odottaa' },
+      { id: 'ae2', employee: 'Jukka Lehtonen', date: '24.6.', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kaapelointi', status: 'Odottaa' },
+      { id: 'ae3', employee: 'Jukka Lehtonen', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kytkentä', status: 'Odottaa' },
+      { id: 'ae4', employee: 'Jukka Lehtonen', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '16:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 9.0, overtime: 1.0, description: 'Testaus ja tarkistus', status: 'Odottaa' },
+      { id: 'ae5', employee: 'Jukka Lehtonen', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '14:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 7.5, overtime: 0, description: 'Viimeistely', status: 'Odottaa' },
     ],
   },
   {
@@ -140,11 +170,11 @@ const APPROVAL_REQUESTS: ApprovalRequest[] = [
     totalHours: 40.0,
     submittedDate: '27.6.2025',
     entries: [
-      { id: 'ae6', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Putkiasennukset', status: 'Odottaa' },
-      { id: 'ae7', date: '24.6.', dayName: 'Ti', startTime: '08:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Testaus', status: 'Odottaa' },
-      { id: 'ae8', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Liitokset', status: 'Odottaa' },
-      { id: 'ae9', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Tarkistus', status: 'Odottaa' },
-      { id: 'ae10', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Viimeistely', status: 'Odottaa' },
+      { id: 'ae6', employee: 'Anna Lahtinen', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Putkiasennukset', status: 'Odottaa' },
+      { id: 'ae7', employee: 'Anna Lahtinen', date: '24.6.', dayName: 'Ti', startTime: '08:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Testaus', status: 'Odottaa' },
+      { id: 'ae8', employee: 'Anna Lahtinen', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Liitokset', status: 'Odottaa' },
+      { id: 'ae9', employee: 'Anna Lahtinen', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Tarkistus', status: 'Odottaa' },
+      { id: 'ae10', employee: 'Anna Lahtinen', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Viimeistely', status: 'Odottaa' },
     ],
   },
   {
@@ -155,11 +185,11 @@ const APPROVAL_REQUESTS: ApprovalRequest[] = [
     totalHours: 36.0,
     submittedDate: '26.6.2025',
     entries: [
-      { id: 'ae11', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus', status: 'Odottaa' },
-      { id: 'ae12', date: '24.6.', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus jatkuu', status: 'Odottaa' },
-      { id: 'ae13', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Päällemaalaus', status: 'Odottaa' },
-      { id: 'ae14', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 7.0, overtime: 0, description: 'Viimeistely', status: 'Odottaa' },
-      { id: 'ae15', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Uusi kohde', status: 'Odottaa' },
+      { id: 'ae11', employee: 'Liisa Rantanen', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus', status: 'Odottaa' },
+      { id: 'ae12', employee: 'Liisa Rantanen', date: '24.6.', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus jatkuu', status: 'Odottaa' },
+      { id: 'ae13', employee: 'Liisa Rantanen', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Päällemaalaus', status: 'Odottaa' },
+      { id: 'ae14', employee: 'Liisa Rantanen', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 7.0, overtime: 0, description: 'Viimeistely', status: 'Odottaa' },
+      { id: 'ae15', employee: 'Liisa Rantanen', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Uusi kohde', status: 'Odottaa' },
     ],
   },
 ];
@@ -216,6 +246,75 @@ export default function Tuntikirjaukset() {
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
   const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
 
+  // Data layer: persisted time entries (localStorage via AppDataContext)
+  const { timeEntries: savedTimeEntries, addTimeEntry } = useAppDataContext();
+
+  // New-entry form state
+  const [entryForm, setEntryForm] = useState<EntryFormState>(emptyEntryForm);
+  const [entryErrors, setEntryErrors] = useState<string[]>([]);
+  const [entrySavedMessage, setEntrySavedMessage] = useState('');
+
+  // Merge page-local seed entries with persisted entries of the current user
+  // (dedup by id; other employees' seeded entries stay out of "Omat kirjaukset")
+  const seedEntryIds = useMemo(() => new Set(MY_TIME_ENTRIES.map(e => e.id)), []);
+  const allMyEntries = useMemo(
+    () => [
+      ...MY_TIME_ENTRIES,
+      ...savedTimeEntries.filter(e => e.employee === 'Matti Korhonen' && !seedEntryIds.has(e.id)),
+    ],
+    [savedTimeEntries, seedEntryIds]
+  );
+
+  // Auto-derive hours from start/end times (quarter-hour precision)
+  const { startTime: formStartTime, endTime: formEndTime } = entryForm;
+  useEffect(() => {
+    if (!formStartTime || !formEndTime || formEndTime <= formStartTime) return;
+    const derived = Math.round(hoursBetweenTimes(formStartTime, formEndTime) * 4) / 4;
+    if (derived <= 0) return;
+    const derivedStr = String(derived);
+    setEntryForm(prev => (prev.hours === derivedStr ? prev : { ...prev, hours: derivedStr }));
+  }, [formStartTime, formEndTime]);
+
+  // Auto-dismiss the save confirmation
+  useEffect(() => {
+    if (!entrySavedMessage) return;
+    const t = setTimeout(() => setEntrySavedMessage(''), 4000);
+    return () => clearTimeout(t);
+  }, [entrySavedMessage]);
+
+  const handleSaveEntry = () => {
+    const errors: string[] = [];
+    if (!entryForm.project) errors.push('Valitse projekti.');
+    if (!entryForm.date) errors.push('Valitse päivämäärä.');
+    const hours = Number(entryForm.hours);
+    if (!Number.isFinite(hours) || hours <= 0) errors.push('Tuntien on oltava suurempi kuin 0.');
+    if (entryForm.startTime && entryForm.endTime && entryForm.endTime <= entryForm.startTime) {
+      errors.push('Loppuajan on oltava alkuaikaa myöhempi.');
+    }
+    setEntryErrors(errors);
+    if (errors.length > 0) return;
+
+    const projectOption = PROJECT_OPTIONS.find(p => p.value === entryForm.project);
+    addTimeEntry({
+      date: isoToFinnishDate(entryForm.date),
+      employee: 'Matti Korhonen',
+      project: entryForm.project,
+      hours,
+      overtime: 0,
+      description: entryForm.description.trim() || 'Tuntikirjaus',
+      status: 'Odottaa',
+      dayName: isoToDayName(entryForm.date),
+      startTime: entryForm.startTime || undefined,
+      endTime: entryForm.endTime || undefined,
+      projectColor: projectOption?.color ?? '#64748B',
+      workType: entryForm.workType || 'Muu',
+    });
+    setDialogOpen(false);
+    setEntryForm(emptyEntryForm);
+    setEntryErrors([]);
+    setEntrySavedMessage('Tuntikirjaus tallennettu — näkyy nyt omissa kirjauksissa.');
+  };
+
   // Timer effect
   useEffect(() => {
     if (!timerRunning) return;
@@ -230,12 +329,12 @@ export default function Tuntikirjaukset() {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   };
 
-  // Summary calculations
-  const currentWeekEntries = MY_TIME_ENTRIES.filter(e => e.status === 'Hyväksytty');
+  // Summary calculations (seed-local + persisted entries)
+  const currentWeekEntries = allMyEntries.filter(e => e.status === 'Hyväksytty');
   const currentWeekHours = currentWeekEntries.reduce((sum, e) => sum + e.hours, 0);
-  const pendingHours = MY_TIME_ENTRIES.filter(e => e.status === 'Odottaa').reduce((sum, e) => sum + e.hours, 0);
+  const pendingHours = allMyEntries.filter(e => e.status === 'Odottaa').reduce((sum, e) => sum + e.hours, 0);
   const approvedHours = currentWeekHours;
-  const totalOvertime = MY_TIME_ENTRIES.reduce((sum, e) => sum + e.overtime, 0);
+  const totalOvertime = allMyEntries.reduce((sum, e) => sum + e.overtime, 0);
   const targetHours = 40;
   const progressPercent = Math.min((approvedHours / targetHours) * 100, 100);
 
@@ -355,7 +454,7 @@ export default function Tuntikirjaukset() {
                   <AlertCircle size={18} className="text-warning" />
                 </div>
                 <p className="text-hero text-warning">{pendingHours.toFixed(1)}h</p>
-                <p className="text-body-sm text-text-secondary mt-1">{MY_TIME_ENTRIES.filter(e => e.status === 'Odottaa').length} kirjaukset</p>
+                <p className="text-body-sm text-text-secondary mt-1">{allMyEntries.filter(e => e.status === 'Odottaa').length} kirjaukset</p>
               </CardContent>
             </Card>
           </motion.div>
@@ -427,6 +526,17 @@ export default function Tuntikirjaukset() {
             <Button variant="ghost" size="sm">Tänään</Button>
           </motion.div>
 
+          {/* Save confirmation */}
+          {entrySavedMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success font-medium"
+            >
+              <CheckCircle2 size={16} /> {entrySavedMessage}
+            </motion.div>
+          )}
+
           {/* Time Entries Table */}
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -451,7 +561,7 @@ export default function Tuntikirjaukset() {
                 </thead>
                 <tbody>
                   <AnimatePresence>
-                    {MY_TIME_ENTRIES.map((entry, idx) => {
+                    {allMyEntries.map((entry, idx) => {
                       const cfg = statusConfig[entry.status];
                       const StatusIcon = cfg.icon;
                       return (
@@ -463,17 +573,19 @@ export default function Tuntikirjaukset() {
                           className="border-b border-border/50 hover:bg-bg-light transition-colors"
                         >
                           <td className="px-4 py-3">
-                            <span className="text-sm font-medium text-text-primary">{entry.dayName} {entry.date}</span>
+                            <span className="text-sm font-medium text-text-primary">{entry.dayName ? `${entry.dayName} ` : ''}{entry.date}</span>
                           </td>
-                          <td className="px-4 py-3 text-sm text-text-secondary">{entry.startTime}–{entry.endTime}</td>
+                          <td className="px-4 py-3 text-sm text-text-secondary">
+                            {entry.startTime && entry.endTime ? `${entry.startTime}–${entry.endTime}` : '–'}
+                          </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.projectColor }} />
+                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.projectColor ?? '#94A3B8' }} />
                               <span className="text-sm text-text-primary">{entry.project}</span>
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <Badge variant="outline" className="text-xs">{entry.workType}</Badge>
+                            <Badge variant="outline" className="text-xs">{entry.workType ?? '–'}</Badge>
                           </td>
                           <td className="px-4 py-3 text-sm text-text-secondary max-w-[200px] truncate">{entry.description}</td>
                           <td className="px-4 py-3 text-right">
@@ -490,6 +602,9 @@ export default function Tuntikirjaukset() {
                             <Badge className={cn(cfg.bg, cfg.text, 'gap-1 font-medium')}>
                               <StatusIcon size={12} /> {entry.status}
                             </Badge>
+                            {!seedEntryIds.has(entry.id) && (
+                              <span className="block text-[10px] text-success font-medium mt-1">Tallennettu</span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1">
@@ -506,7 +621,7 @@ export default function Tuntikirjaukset() {
             </div>
             <div className="px-4 py-3 border-t border-border bg-bg-light/50 flex items-center justify-between">
               <p className="text-body-sm text-text-secondary">
-                Yhteensä: <span className="font-semibold text-text-primary">{MY_TIME_ENTRIES.reduce((s, e) => s + e.hours, 0).toFixed(1)}h</span>
+                Yhteensä: <span className="font-semibold text-text-primary">{allMyEntries.reduce((s, e) => s + e.hours, 0).toFixed(1)}h</span>
                 {' · '}Ylityö: <span className="font-semibold text-danger">+{totalOvertime.toFixed(1)}h</span>
               </p>
             </div>
@@ -910,70 +1025,117 @@ export default function Tuntikirjaukset() {
       </Tabs>
 
       {/* ─── New Entry Dialog ─── */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={open => {
+          setDialogOpen(open);
+          if (!open) setEntryErrors([]);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-h2">Kirjaa tunnit</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {entryErrors.length > 0 && (
+              <div className="rounded-lg border border-danger/30 bg-danger-light px-3 py-2 space-y-1">
+                {entryErrors.map(err => (
+                  <p key={err} className="text-sm text-danger">{err}</p>
+                ))}
+              </div>
+            )}
             <div className="space-y-2">
-              <Label>Päivämäärä</Label>
-              <Input type="date" defaultValue="2025-06-25" />
+              <Label>Päivämäärä *</Label>
+              <Input
+                type="date"
+                value={entryForm.date}
+                onChange={e => setEntryForm(prev => ({ ...prev, date: e.target.value }))}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Alkuaika</Label>
-                <Input type="time" defaultValue="07:00" />
+                <Input
+                  type="time"
+                  value={entryForm.startTime}
+                  onChange={e => setEntryForm(prev => ({ ...prev, startTime: e.target.value }))}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Loppuaika</Label>
-                <Input type="time" defaultValue="15:00" />
+                <Input
+                  type="time"
+                  value={entryForm.endTime}
+                  onChange={e => setEntryForm(prev => ({ ...prev, endTime: e.target.value }))}
+                />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Projekti</Label>
-              <Select>
+              <Label>Tunnit *</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.25"
+                value={entryForm.hours}
+                onChange={e => setEntryForm(prev => ({ ...prev, hours: e.target.value }))}
+              />
+              <p className="text-xs text-text-muted">Lasketaan automaattisesti alku- ja loppuajasta, voit muokata.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Projekti *</Label>
+              <Select
+                value={entryForm.project}
+                onValueChange={v => setEntryForm(prev => ({ ...prev, project: v }))}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Valitse projekti" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="espoo">Espoon uudisrakennus</SelectItem>
-                  <SelectItem value="helsinki">Helsingin toimistorakennus</SelectItem>
-                  <SelectItem value="tampere">Tampereen korjaustyö</SelectItem>
+                  {PROJECT_OPTIONS.map(p => (
+                    <SelectItem key={p.value} value={p.value}>{p.value}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Työlaji</Label>
-              <Select>
+              <Select
+                value={entryForm.workType}
+                onValueChange={v => setEntryForm(prev => ({ ...prev, workType: v }))}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Valitse työlaji" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="rak">Rakennus</SelectItem>
-                  <SelectItem value="sah">Sähkö</SelectItem>
-                  <SelectItem value="lvi">LVI</SelectItem>
-                  <SelectItem value="maa">Maalaus</SelectItem>
-                  <SelectItem value="eri">Eristys</SelectItem>
-                  <SelectItem value="ylit">Ylityö</SelectItem>
-                  <SelectItem value="matk">Matka</SelectItem>
-                  <SelectItem value="pala">Palaveri</SelectItem>
-                  <SelectItem value="muu">Muu</SelectItem>
+                  {WORK_TYPE_OPTIONS.map(wt => (
+                    <SelectItem key={wt} value={wt}>{wt}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Kuvaus</Label>
-              <Textarea placeholder="Kuvaile tehty työ..." rows={2} />
+              <Textarea
+                placeholder="Kuvaile tehty työ..."
+                rows={2}
+                value={entryForm.description}
+                onChange={e => setEntryForm(prev => ({ ...prev, description: e.target.value }))}
+              />
             </div>
             <div className="flex items-center gap-2">
-              <input type="checkbox" id="submitApproval" defaultChecked className="w-4 h-4 rounded border-border text-primary" />
+              <input
+                type="checkbox"
+                id="submitApproval"
+                checked={entryForm.submitForApproval}
+                onChange={e => setEntryForm(prev => ({ ...prev, submitForApproval: e.target.checked }))}
+                className="w-4 h-4 rounded border-border text-primary"
+              />
               <Label htmlFor="submitApproval" className="text-sm text-text-secondary">Lähetä hyväksyttäväksi</Label>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Peruuta</Button>
-            <Button className="bg-primary hover:bg-primary-hover text-white" onClick={() => setDialogOpen(false)}>
+            <Button className="bg-primary hover:bg-primary-hover text-white" onClick={handleSaveEntry}>
               Tallenna
             </Button>
           </DialogFooter>
