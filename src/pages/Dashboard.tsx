@@ -1,642 +1,328 @@
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  FolderOpen,
-  HardHat,
-  Euro,
-  Users,
   TrendingUp,
-  TrendingDown,
-  Plus,
-  Clock,
-  ShieldCheck,
-  ChevronRight,
+  Users,
+  Calendar,
   AlertTriangle,
-  Wrench,
-  CalendarClock,
-  Banknote,
-  FolderKanban,
+  Euro,
+  Clock,
+  ArrowUpRight,
+  ArrowDownRight,
+  Briefcase,
+  CheckCircle2,
+  XCircle,
+  BarChart3
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useAppDataContext } from '../contexts/AppDataContext';
+import { Badge } from '@/components/ui/badge';
 
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
-import { format } from 'date-fns';
-import { fi } from 'date-fns/locale';
-
-/* ─── Animation Variants ─── */
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.08 },
-  },
-};
-
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] },
-  },
-};
-
-const slideLeftVariants = {
-  hidden: { opacity: 0, x: -30 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] },
-  },
-};
-
-const slideRightVariants = {
-  hidden: { opacity: 0, x: 30 },
-  visible: {
-    opacity: 1,
-    x: 0,
-    transition: { duration: 0.4, delay: 0.1, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] },
-  },
-};
-
-/* ─── Mock Data ─── */
-
-const revenueData = [
-  { month: 'Tammi', revenue: 98400, costs: 62300, margin: 36100 },
-  { month: 'Helmi', revenue: 112300, costs: 71200, margin: 41100 },
-  { month: 'Maalis', revenue: 105600, costs: 68900, margin: 36700 },
-  { month: 'Huhti', revenue: 118900, costs: 74500, margin: 44400 },
-  { month: 'Touko', revenue: 134200, costs: 82100, margin: 52100 },
-  { month: 'Kesä', revenue: 184500, costs: 96800, margin: 87700 },
-];
-
-const STATUS_COLORS: Record<string, string> = {
-  'Aktiivinen': '#F97316',
-  'Suunniteltu': '#3B82F6',
-  'Valmis': '#22C55E',
-  'Myöhässä': '#EF4444',
-};
-
-/* Urgent work orders now come from context */
-
-const recentActivities = [
-  { time: '09:15', user: 'Matti Korhonen', action: 'kirjasi 8h työaikaa', module: 'Tuntikirjaukset', moduleColor: '#F97316' },
-  { time: '08:42', user: 'Järjestelmä', action: 'Uusi työmääräys luotu: #TM-2025-084', module: 'Työmääräykset', moduleColor: '#3B82F6' },
-  { time: '08:30', user: 'Pekka Kinnunen', action: 'Päiväkirja täytetty: Tampereen kohde', module: 'Päiväkirjat', moduleColor: '#22C55E' },
-  { time: 'Eilen', user: 'Järjestelmä', action: 'Laskenta hyväksytty: Espoon projekti', module: 'Laskenta', moduleColor: '#8B5CF6' },
-  { time: 'Eilen', user: 'Sari Kolehmainen', action: 'Turvakierros suoritettu: Työmaa 3', module: 'Työturvallisuus', moduleColor: '#EF4444' },
-  { time: 'Eilen', user: 'Anna Lahtinen', action: 'lisättiin projektiin: Korjaustyö Tampere', module: 'Projektit', moduleColor: '#F97316' },
-  { time: 'Ti', user: 'Järjestelmä', action: 'Kaluston huolto: Kaivuri K-01 suunniteltu', module: 'Kalusto', moduleColor: '#F59E0B' },
-  { time: 'Ti', user: 'Jukka Lehtonen', action: 'kirjasi matkakulut: 45 km', module: 'Matkakulut', moduleColor: '#3B82F6' },
-  { time: 'Ma', user: 'Järjestelmä', action: 'Lomake lähetetty: TYA-asbesti-ilmoitus', module: 'Lomakkeet', moduleColor: '#64748B' },
-  { time: 'Ma', user: 'Liisa Rantanen', action: 'päivitti asiakastietoja', module: 'Asiakkaat', moduleColor: '#22C55E' },
-];
-
-const quickActions = [
-  { label: 'Uusi työmääräys', icon: Plus, color: '#F97316', path: '/tyomaaraykset' },
-  { label: 'Kirjaa tunnit', icon: Clock, color: '#3B82F6', path: '/tuntikirjaukset' },
-  { label: 'Turvakierros', icon: ShieldCheck, color: '#22C55E', path: '/tyoturvallisuus' },
-  { label: 'Työvuorot', icon: CalendarClock, color: '#F59E0B', path: '/tyovuorokalenteri' },
-  { label: 'Projektit', icon: FolderKanban, color: '#8B5CF6', path: '/projektit' },
-  { label: 'Raportit', icon: Banknote, color: '#EC4899', path: '/raportit' },
-];
-
-/* ─── Tooltip Component for Chart ─── */
-function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; dataKey: string }>; label?: string }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-white rounded-lg shadow-lg border border-[#E2E8F0] px-4 py-3">
-      <p className="text-sm font-semibold text-text-primary mb-1">{label}</p>
-      {payload.map((entry, idx) => (
-        <p key={idx} className="text-xs text-text-secondary">
-          {entry.dataKey === 'revenue' && 'Liikevaihto: '}
-          {entry.dataKey === 'costs' && 'Kustannukset: '}
-          {entry.dataKey === 'margin' && 'Kate: '}
-          <span className="font-semibold text-text-primary">
-            {entry.value.toLocaleString('fi-FI')} €
-          </span>
-        </p>
-      ))}
-    </div>
-  );
+interface DashboardStat {
+  label: string;
+  value: string;
+  change: string;
+  isPositive: boolean;
+  icon: React.ElementType;
+  color: string;
 }
 
-/* ─── Page Component ─── */
-export default function Dashboard() {
-  const navigate = useNavigate();
-  const { stats, projects, workOrders } = useAppDataContext();
-  const today = new Date();
-  const formattedDate = format(today, "EEEE d. MMMM yyyy", { locale: fi });
-  const capitalizedDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+interface Activity {
+  id: string;
+  type: 'project' | 'alert' | 'task' | 'message';
+  description: string;
+  timestamp: string;
+  isRead: boolean;
+}
 
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(p => p.status === 'Aktiivinen').length;
-  const inProgressWork = workOrders.filter(wo => wo.status === 'Käynnissä').length;
-  const totalBudget = projects.reduce((sum, p) => sum + p.budget, 0);
-  const totalSpent = projects.reduce((sum, p) => sum + p.spent, 0);
-  const openWorkOrders = workOrders.filter(wo => wo.status === 'Avoin').length;
+const stats: DashboardStat[] = [
+  {
+    label: 'Aktiiviset projektit',
+    value: '12',
+    change: '+2',
+    isPositive: true,
+    icon: Briefcase,
+    color: 'text-blue-600'
+  },
+  {
+    label: 'Tämän kuun liikevaihto',
+    value: '45 230 €',
+    change: '+12.5 %',
+    isPositive: true,
+    icon: Euro,
+    color: 'text-green-600'
+  },
+  {
+    label: 'Avoimet työmaaräykset',
+    value: '8',
+    change: '-3',
+    isPositive: true,
+    icon: CheckCircle2,
+    color: 'text-purple-600'
+  },
+  {
+    label: 'Henkilöstö paikalla',
+    value: '18 / 22',
+    change: '-4',
+    isPositive: false,
+    icon: Users,
+    color: 'text-orange-600'
+  }
+];
+
+const recentActivities: Activity[] = [
+  {
+    id: '1',
+    type: 'project',
+    description: 'Projekti "Rivitalo A" siirtynyt vaiheeseen "Laatoitus"',
+    timestamp: '2026-01-15T10:30:00',
+    isRead: false
+  },
+  {
+    id: '2',
+    type: 'alert',
+    description: 'Työmaalla "Kerrostalo B" havaittu vesivuoto - korjaustoimet käynnistetty',
+    timestamp: '2026-01-15T09:15:00',
+    isRead: false
+  },
+  {
+    id: '3',
+    type: 'task',
+    description: 'Uusi työmaaräys #1287 luotu - Sähkötyöt',
+    timestamp: '2026-01-15T08:45:00',
+    isRead: true
+  },
+  {
+    id: '4',
+    type: 'message',
+    description: 'Asiakas "Asunto Oy Keltanen Tähti" lähetti viestin',
+    timestamp: '2026-01-14T16:20:00',
+    isRead: true
+  },
+  {
+    id: '5',
+    type: 'project',
+    description: 'Projekti "Toimisto C" - tuntikirjaukset hyväksytty',
+    timestamp: '2026-01-14T14:00:00',
+    isRead: true
+  },
+  {
+    id: '6',
+    type: 'alert',
+    description: 'Materiaalitoimitus viivästynyt 2 päivällä - Projekti "Rivitalo D"',
+    timestamp: '2026-01-14T11:30:00',
+    isRead: false
+  }
+];
+
+const getActivityIcon = (type: string) => {
+  switch (type) {
+    case 'project':
+      return <Briefcase className="w-4 h-4 text-blue-500" />;
+    case 'alert':
+      return <AlertTriangle className="w-4 h-4 text-red-500" />;
+    case 'task':
+      return <CheckCircle2 className="w-4 h-4 text-green-500" />;
+    case 'message':
+      return <BarChart3 className="w-4 h-4 text-purple-500" />;
+    default:
+      return null;
+  }
+};
+
+const getActivityBadge = (type: string) => {
+  switch (type) {
+    case 'project':
+      return <Badge className="bg-blue-100 text-blue-800">Projekti</Badge>;
+    case 'alert':
+      return <Badge className="bg-red-100 text-red-800">Hälytys</Badge>;
+    case 'task':
+      return <Badge className="bg-green-100 text-green-800">Tehtävä</Badge>;
+    case 'message':
+      return <Badge className="bg-purple-100 text-purple-800">Viesti</Badge>;
+    default:
+      return null;
+  }
+};
+
+export default function Dashboard() {
+  const [activities, setActivities] = useState<Activity[]>(recentActivities);
+
+  const markAsRead = (id: string) => {
+    setActivities(prev =>
+      prev.map(a => a.id === id ? { ...a, isRead: true } : a)
+    );
+  };
+
+  const unreadCount = activities.filter(a => !a.isRead).length;
 
   return (
     <div className="space-y-6">
-      {/* ─── Page Header ─── */}
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-        className="flex items-center justify-between"
-      >
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-hero text-text-primary">Päänäkymä</h1>
-          <p className="text-body-sm text-text-secondary mt-1 flex items-center gap-1.5">
-            <CalendarClock size={14} />
-            {capitalizedDate}
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Yleisnäkymä</h1>
+          <p className="text-gray-500 mt-1">Tervetuloa takaisin, Jethro!</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={() => navigate('/tyomaaraykset')}
-            className="bg-primary hover:bg-primary-hover text-white gap-1.5"
-            size="sm"
-          >
-            <Plus size={16} /> Uusi työmääräys
-          </Button>
-          <Button
-            onClick={() => navigate('/tuntikirjaukset')}
-            variant="outline"
-            className="gap-1.5"
-            size="sm"
-          >
-            <Clock size={16} /> Kirjaa tunnit
-          </Button>
-          <Button
-            onClick={() => navigate('/tyoturvallisuus')}
-            variant="outline"
-            className="gap-1.5"
-            size="sm"
-          >
-            <ShieldCheck size={16} /> Turvakierros
+        <div className="flex items-center gap-3">
+          <Badge className="bg-red-100 text-red-800 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" />
+            {unreadCount} uutta ilmoitusta
+          </Badge>
+          <Button variant="outline" size="sm">
+            <Calendar className="w-4 h-4 mr-2" />
+            Tänään: {new Date().toLocaleDateString('fi-FI')}
           </Button>
         </div>
-      </motion.div>
+      </div>
 
-      {/* ─── KPI Cards ─── */}
-      <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
-      >
-        {[
-          {
-            label: 'Avoimet projektit',
-            value: String(activeProjects),
-            icon: FolderOpen,
-            iconBg: '#FFF7ED',
-            iconColor: '#F97316',
-            trend: '+8%',
-            trendUp: true,
-            sublabel: `${projects.filter(p => p.status === 'Suunniteltu').length} suunnitteilla`,
-          },
-          {
-            label: 'Käynnissä olevat työt',
-            value: String(inProgressWork),
-            icon: HardHat,
-            iconBg: '#DBEAFE',
-            iconColor: '#3B82F6',
-            trend: '+12%',
-            trendUp: true,
-            sublabel: `${openWorkOrders} avoinna`,
-          },
-          {
-            label: 'Tämän kuun liikevaihto',
-            value: new Intl.NumberFormat('fi-FI', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(totalSpent),
-            icon: Euro,
-            iconBg: '#DCFCE7',
-            iconColor: '#22C55E',
-            trend: '+15%',
-            trendUp: true,
-            sublabel: `Budjetti: ${new Intl.NumberFormat('fi-FI', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(totalBudget)}`,
-          },
-          {
-            label: 'Henkilöstö paikalla',
-            value: `${stats.activeEmployees}/${stats.totalEmployees}`,
-            icon: Users,
-            iconBg: '#FEF3C7',
-            iconColor: '#F59E0B',
-            trend: `${Math.round((stats.activeEmployees / stats.totalEmployees) * 100)}%`,
-            trendUp: true,
-            sublabel: `${stats.totalEmployees - stats.activeEmployees} poissa`,
-            isPercentage: true,
-          },
-        ].map((kpi, idx) => (
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {stats.map((stat, index) => (
           <motion.div
-            key={idx}
-            variants={cardVariants}
-            whileHover={{ y: -2, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-            className="cursor-pointer"
+            key={stat.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
           >
-            <Card className="border border-[#E2E8F0] shadow-card hover:shadow-card-hover transition-shadow">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-3">
-                    <p className="text-caption text-text-secondary">{kpi.label}</p>
-                    <p className="text-[28px] font-bold text-text-primary font-mono tracking-tight">
-                      {kpi.value}
-                    </p>
-                    <div className="flex items-center gap-1.5">
-                      {kpi.isPercentage ? (
-                        <span className="text-caption font-medium text-success">
-                          {kpi.trend}
-                        </span>
-                      ) : (
-                        <>
-                          {kpi.trendUp ? (
-                            <TrendingUp size={14} className="text-success" />
-                          ) : (
-                            <TrendingDown size={14} className="text-danger" />
-                          )}
-                          <span className={`text-caption font-medium ${kpi.trendUp ? 'text-success' : 'text-danger'}`}>
-                            {kpi.trend}
-                          </span>
-                        </>
-                      )}
-                      {!kpi.isPercentage && (
-                        <span className="text-caption text-text-muted">edelliseen kk</span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-text-muted">{kpi.sublabel}</p>
+            <Card className="hover:shadow-lg transition-shadow">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="p-3 bg-gray-100 rounded-lg">
+                    <stat.icon className={`w-6 h-6 ${stat.color}`} />
                   </div>
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: kpi.iconBg }}
-                  >
-                    <kpi.icon size={20} style={{ color: kpi.iconColor }} />
+                  <div className={`flex items-center gap-1 text-sm ${stat.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                    {stat.isPositive ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                    {stat.change}
                   </div>
+                </div>
+                <div className="mt-4">
+                  <p className="text-2xl font-bold">{stat.value}</p>
+                  <p className="text-sm text-gray-500">{stat.label}</p>
                 </div>
               </CardContent>
             </Card>
           </motion.div>
         ))}
-      </motion.div>
+      </div>
 
-      {/* ─── Charts Row ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Revenue Chart */}
-        <motion.div
-          variants={slideLeftVariants}
-          initial="hidden"
-          animate="visible"
-          className="lg:col-span-3"
-        >
-          <Card className="border border-[#E2E8F0] shadow-card h-full">
-            <CardHeader className="px-5 py-4 pb-2 flex flex-row items-center justify-between">
-              <CardTitle className="text-h3 text-text-primary">Tulokehitys</CardTitle>
-              <select className="text-xs border border-[#E2E8F0] rounded-md px-2 py-1 bg-white text-text-secondary focus:outline-none focus:border-primary">
-                <option>Viimeiset 6 kk</option>
-                <option>3 kk</option>
-                <option>12 kk</option>
-                <option>Tämä vuosi</option>
-              </select>
+      {/* Main Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent Activities */}
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Clock className="w-5 h-5" />
+                  Viimeisimmät tapahtumat
+                </span>
+                <Button variant="ghost" size="sm">Näytä kaikki</Button>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="px-5 pb-5">
-              <div className="h-[260px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#F97316" stopOpacity={0.15} />
-                        <stop offset="95%" stopColor="#F97316" stopOpacity={0.02} />
-                      </linearGradient>
-                      <linearGradient id="marginGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22C55E" stopOpacity={0.1} />
-                        <stop offset="95%" stopColor="#22C55E" stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                    <XAxis
-                      dataKey="month"
-                      tick={{ fontSize: 12, fill: '#64748B' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: '#64748B' }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area
-                      type="monotone"
-                      dataKey="revenue"
-                      stroke="#F97316"
-                      strokeWidth={2.5}
-                      fill="url(#revenueGrad)"
-                      dot={{ r: 4, fill: '#F97316', strokeWidth: 0 }}
-                      activeDot={{ r: 6, fill: '#F97316', strokeWidth: 2, stroke: '#FFF' }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="margin"
-                      stroke="#22C55E"
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      fill="url(#marginGrad)"
-                      dot={{ r: 3, fill: '#22C55E', strokeWidth: 0 }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              {/* Summary Stats */}
-              <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#F1F5F9]">
-                <div>
-                  <p className="text-[11px] text-text-muted">Kokonaistulot</p>
-                  <p className="text-sm font-semibold text-text-primary font-mono">753 900 €</p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-text-muted">Keskiarvo/kk</p>
-                  <p className="text-sm font-semibold text-text-primary font-mono">125 650 €</p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-text-muted">Tavoite</p>
-                  <p className="text-sm font-semibold text-success">87%</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Project Status Donut */}
-        <motion.div
-          variants={slideRightVariants}
-          initial="hidden"
-          animate="visible"
-          className="lg:col-span-2"
-        >
-          <Card className="border border-[#E2E8F0] shadow-card h-full">
-            <CardHeader className="px-5 py-4 pb-2">
-              <CardTitle className="text-h3 text-text-primary">Projektien tila</CardTitle>
-            </CardHeader>
-            <CardContent className="px-5 pb-5">
-              <div className="flex items-center gap-4">
-                <div className="w-[140px] h-[140px] flex-shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={['Aktiivinen', 'Suunniteltu', 'Valmis', 'Myöhässä']
-                          .map(s => ({ name: s, value: projects.filter(p => p.status === s).length, color: STATUS_COLORS[s] }))
-                          .filter(d => d.value > 0)}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={42}
-                        outerRadius={65}
-                        paddingAngle={2}
-                        dataKey="value"
-                        strokeWidth={0}
-                      >
-                        {['Aktiivinen', 'Suunniteltu', 'Valmis', 'Myöhässä']
-                          .map(s => ({ name: s, value: projects.filter(p => p.status === s).length, color: STATUS_COLORS[s] }))
-                          .filter(d => d.value > 0)
-                          .map((entry, idx) => (
-                          <Cell key={idx} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: number, name: string) => [`${value} projektia`, name]}
-                        contentStyle={{
-                          borderRadius: '8px',
-                          border: '1px solid #E2E8F0',
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                          fontSize: '12px',
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                {/* Center Text */}
-                <div className="absolute ml-[44px] mt-0 text-center">
-                  <p className="text-2xl font-bold text-text-primary font-mono">{totalProjects}</p>
-                  <p className="text-[10px] text-text-muted">projektia</p>
-                </div>
-                {/* Legend */}
-                <div className="flex flex-col gap-2 ml-4">
-                  {['Aktiivinen', 'Suunniteltu', 'Valmis', 'Myöhässä'].map((s, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[s] }} />
-                      <span className="text-xs text-text-secondary">{s}</span>
-                      <span className="text-xs font-semibold text-text-primary font-mono ml-auto">{projects.filter(p => p.status === s).length}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Project Progress List */}
-              <div className="mt-5 pt-4 border-t border-[#F1F5F9] space-y-3">
-                {projects.filter(p => p.status === 'Aktiivinen').slice(0, 4).map((proj, idx) => (
+            <CardContent>
+              <div className="space-y-4">
+                {activities.map((activity) => (
                   <motion.div
-                    key={proj.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.5 + idx * 0.1 }}
+                    key={activity.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className={`flex items-start gap-4 p-4 rounded-lg transition-all cursor-pointer ${
+                      !activity.isRead ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'
+                    }`}
+                    onClick={() => markAsRead(activity.id)}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-text-primary">{proj.name}</span>
-                      <span className="text-xs font-mono text-text-secondary">{proj.progress}%</span>
-                    </div>
-                    <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: STATUS_COLORS[proj.status] || '#F97316' }}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${proj.progress}%` }}
-                        transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] as [number, number, number, number], delay: 0.5 + idx * 0.1 }}
-                      />
+                    <div className="mt-1">{getActivityIcon(activity.type)}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        {getActivityBadge(activity.type)}
+                        {!activity.isRead && (
+                          <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                        )}
+                      </div>
+                      <p className={`text-sm ${!activity.isRead ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
+                        {activity.description}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(activity.timestamp).toLocaleString('fi-FI')}
+                      </p>
                     </div>
                   </motion.div>
                 ))}
               </div>
             </CardContent>
           </Card>
-        </motion.div>
-      </div>
+        </div>
 
-      {/* ─── Bottom Row: Quick Actions + Urgent Work Orders ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Quick Actions */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.3 }}
-        >
-          <Card className="border border-[#E2E8F0] shadow-card h-full">
-            <CardHeader className="px-5 py-4 pb-2">
-              <CardTitle className="text-h3 text-text-primary">Pikatoiminnot</CardTitle>
+        {/* Quick Actions & Upcoming */}
+        <div className="space-y-6">
+          {/* Quick Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" />
+                Pikatomenpiteet
+              </CardTitle>
             </CardHeader>
-            <CardContent className="px-5 pb-5">
-              <div className="grid grid-cols-3 gap-3">
-                {quickActions.map((action, idx) => (
-                  <motion.button
-                    key={idx}
-                    whileHover={{ scale: 1.03, y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => navigate(action.path)}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border border-[#E2E8F0] hover:shadow-md transition-shadow bg-white"
+            <CardContent>
+              <div className="space-y-3">
+                {[
+                  { label: 'Uusi projekti', icon: Briefcase },
+                  { label: 'Uusi työmaaräys', icon: CheckCircle2 },
+                  { label: 'Kirjaa tunnit', icon: Clock },
+                  { label: 'Lisää asiakas', icon: Users },
+                  { label: 'Luo lasku', icon: Euro }
+                ].map((action) => (
+                  <Button
+                    key={action.label}
+                    variant="outline"
+                    className="w-full justify-start"
                   >
-                    <div
-                      className="w-10 h-10 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: `${action.color}15` }}
-                    >
-                      <action.icon size={20} style={{ color: action.color }} />
-                    </div>
-                    <span className="text-xs font-medium text-text-primary text-center">{action.label}</span>
-                  </motion.button>
+                    <action.icon className="w-4 h-4 mr-2" />
+                    {action.label}
+                  </Button>
                 ))}
               </div>
             </CardContent>
           </Card>
-        </motion.div>
 
-        {/* Urgent Work Orders */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.4 }}
-        >
-          <Card className="border border-[#E2E8F0] shadow-card h-full">
-            <CardHeader className="px-5 py-4 pb-2 flex flex-row items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-h3 text-text-primary">Kiireelliset työmääräykset</CardTitle>
-                <Badge className="bg-danger text-white text-[10px] px-1.5 py-0.5">{workOrders.filter(wo => wo.priority === 'Korkea' || wo.status === 'Käynnissä').length}</Badge>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-primary h-7 px-2"
-                onClick={() => navigate('/tyomaaraykset')}
-              >
-                Näytä kaikki <ChevronRight size={12} />
-              </Button>
+          {/* Upcoming Deadlines */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="w-5 h-5" />
+                Tulevat määräajat
+              </CardTitle>
             </CardHeader>
-            <CardContent className="px-5 pb-5 space-y-3">
-              {workOrders.filter(wo => wo.priority === 'Korkea' || wo.status === 'Käynnissä').slice(0, 5).map((order, idx) => (
-                <motion.div
-                  key={order.id}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.5 + idx * 0.1, duration: 0.25 }}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors group cursor-pointer"
-                  onClick={() => navigate('/tyomaaraykset')}
-                >
-                  <div
-                    className="w-1 self-stretch rounded-full flex-shrink-0"
-                    style={{ backgroundColor: order.priority === 'Korkea' ? '#EF4444' : '#F59E0B' }}
-                  />
-                  <div
-                    className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: order.priority === 'Korkea' ? '#FEE2E2' : '#FEF3C7' }}
-                  >
-                    <AlertTriangle size={18} style={{ color: order.priority === 'Korkea' ? '#EF4444' : '#F59E0B' }} />
+            <CardContent>
+              <div className="space-y-3">
+                {[
+                  { date: '2026-01-16', title: 'Putkityön tarkastus', project: 'Rivitalo A' },
+                  { date: '2026-01-18', title: 'Sähkötyön välitarkastus', project: 'Kerrostalo B' },
+                  { date: '2026-01-20', title: 'Laatoituksen aloitus', project: 'Rivitalo A' },
+                  { date: '2026-01-22', title: 'Työturvallisuustarkastus', project: 'Toimisto C' },
+                  { date: '2026-01-25', title: 'Loppukatselmus', project: 'Kerrostalo B' }
+                ].map((item, index) => (
+                  <div key={index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="text-center min-w-[50px]">
+                      <p className="text-xs text-gray-500">
+                        {new Date(item.date).toLocaleDateString('fi-FI', { month: 'short' })}
+                      </p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {new Date(item.date).getDate()}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{item.title}</p>
+                      <p className="text-xs text-gray-500">{item.project}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">{order.title}</p>
-                    <p className="text-[11px] text-text-muted">{order.project} · {order.assignee}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] border-0"
-                      style={{
-                        backgroundColor: order.priority === 'Korkea' ? '#FEE2E2' : '#FEF3C7',
-                        color: order.priority === 'Korkea' ? '#DC2626' : '#D97706',
-                      }}
-                    >
-                      {order.status}
-                    </Badge>
-                    <ChevronRight size={14} className="text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                </motion.div>
-              ))}
+                ))}
+              </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </div>
       </div>
-
-      {/* ─── Recent Activity Feed ─── */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.5 }}
-      >
-        <Card className="border border-[#E2E8F0] shadow-card">
-          <CardHeader className="px-5 py-4 pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-h3 text-text-primary">Tuoreet tapahtumat</CardTitle>
-            <select className="text-xs border border-[#E2E8F0] rounded-md px-2 py-1 bg-white text-text-secondary focus:outline-none focus:border-primary">
-              <option>Kaikki</option>
-              <option>Työmääräykset</option>
-              <option>Tunnit</option>
-              <option>Turvallisuus</option>
-              <option>Projektit</option>
-            </select>
-          </CardHeader>
-          <CardContent className="px-5 pb-5">
-            <div className="space-y-1">
-              {recentActivities.map((activity, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, x: -15 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.6 + idx * 0.05, duration: 0.2 }}
-                  className="flex items-center gap-4 py-2.5 px-3 rounded-lg hover:bg-[#F8FAFC] transition-colors cursor-pointer group"
-                >
-                  {/* Time */}
-                  <span className="text-xs text-text-muted w-12 flex-shrink-0 font-mono">{activity.time}</span>
-
-                  {/* Avatar / Initials */}
-                  <div className="w-7 h-7 rounded-full bg-primary-light flex items-center justify-center flex-shrink-0">
-                    <span className="text-[10px] font-bold text-primary">
-                      {activity.user === 'Järjestelmä' ? '⚙' : activity.user.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                    </span>
-                  </div>
-
-                  {/* Action */}
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm text-text-primary">
-                      <span className="font-medium">{activity.user}</span>{' '}
-                      <span className="text-text-secondary">{activity.action}</span>
-                    </span>
-                  </div>
-
-                  {/* Module Badge */}
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] flex-shrink-0 border-0"
-                    style={{
-                      backgroundColor: `${activity.moduleColor}15`,
-                      color: activity.moduleColor,
-                    }}
-                  >
-                    {activity.module}
-                  </Badge>
-                </motion.div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
     </div>
   );
 }
