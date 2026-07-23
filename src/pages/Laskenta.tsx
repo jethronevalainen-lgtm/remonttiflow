@@ -1,174 +1,259 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Calculator, ChevronDown, ChevronUp, Plus, Euro } from 'lucide-react';
+import {
+  Calculator,
+  Plus,
+  Search,
+  Filter,
+  Euro,
+  FileText,
+  ArrowUpDown,
+  CheckCircle2,
+  Clock,
+  TrendingUp,
+  ChevronDown,
+  ChevronUp
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
-const costCategories = [
+interface CostEstimate {
+  id: string;
+  projectId: string;
+  projectName: string;
+  name: string;
+  category: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  totalPrice: number;
+  status: 'draft' | 'sent' | 'approved' | 'rejected';
+  createdAt: string;
+  validUntil: string;
+}
+
+const costEstimates: CostEstimate[] = [
   {
-    name: 'Työkustannukset',
-    items: [
-      { description: 'Rakennustyöntekijät', quantity: 1200, unit: 'h', price: 45, total: 54000 },
-      { description: 'LVI-asentajat', quantity: 450, unit: 'h', price: 52, total: 23400 },
-      { description: 'Sähköasentajat', quantity: 380, unit: 'h', price: 50, total: 19000 },
-      { description: 'Työnjohto', quantity: 200, unit: 'h', price: 65, total: 13000 },
-    ],
+    id: '1',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    name: 'Putkiremontti - arvio',
+    category: 'Putkityöt',
+    description: 'Vanhojen putkien purku ja uusien asennus',
+    quantity: 1,
+    unit: 'kpl',
+    unitPrice: 45000,
+    totalPrice: 45000,
+    status: 'approved',
+    createdAt: '2025-12-01',
+    validUntil: '2026-03-01'
   },
   {
-    name: 'Materiaalikustannukset',
-    items: [
-      { description: 'Betonielementit', quantity: 150, unit: 'm²', price: 180, total: 27000 },
-      { description: 'Eristysmateriaalit', quantity: 500, unit: 'm²', price: 25, total: 12500 },
-      { description: 'LVI-tarvikkeet', quantity: 1, unit: 'erä', price: 35000, total: 35000 },
-      { description: 'Sähkötarvikkeet', quantity: 1, unit: 'erä', price: 22000, total: 22000 },
-    ],
+    id: '2',
+    projectId: '2',
+    projectName: 'Kerrostalo B',
+    name: 'Sähkötyöt - arvio',
+    category: 'Sähkötyöt',
+    description: 'Sähköasennukset asuntoihin',
+    quantity: 12,
+    unit: 'asunto',
+    unitPrice: 2500,
+    totalPrice: 30000,
+    status: 'sent',
+    createdAt: '2026-01-10',
+    validUntil: '2026-04-10'
   },
   {
-    name: 'Kalustokustannukset',
-    items: [
-      { description: 'Kaivinkonevuokra', quantity: 45, unit: 'pv', price: 850, total: 38250 },
-      { description: 'Nosturivuokra', quantity: 30, unit: 'pv', price: 1200, total: 36000 },
-      { description: 'Telineet', quantity: 800, unit: 'm²', price: 15, total: 12000 },
-    ],
+    id: '3',
+    projectId: '3',
+    projectName: 'Toimisto C',
+    name: 'Maalaustyöt - arvio',
+    category: 'Maalaus',
+    description: 'Seinien ja kattojen maalaus',
+    quantity: 500,
+    unit: 'm²',
+    unitPrice: 25,
+    totalPrice: 12500,
+    status: 'draft',
+    createdAt: '2026-01-14',
+    validUntil: '2026-04-14'
   },
   {
-    name: 'Kuljetuskustannukset',
-    items: [
-      { description: 'Materiaalikuljetukset', quantity: 25, unit: 'ajo', price: 450, total: 11250 },
-      { description: 'Jätekuljetukset', quantity: 15, unit: 'ajo', price: 350, total: 5250 },
-    ],
-  },
-  {
-    name: 'Muut kustannukset',
-    items: [
-      { description: 'Vakuutukset', quantity: 1, unit: 'kpl', price: 8500, total: 8500 },
-      { description: 'Luvat ja maksut', quantity: 1, unit: 'kpl', price: 12000, total: 12000 },
-      { description: 'Yllättävät kustannukset (10%)', quantity: 1, unit: 'kpl', price: 33150, total: 33150 },
-    ],
-  },
+    id: '4',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    name: 'Laatoitus - arvio',
+    category: 'Laatoitus',
+    description: 'Kylpyhuoneiden laatoitus',
+    quantity: 80,
+    unit: 'm²',
+    unitPrice: 120,
+    totalPrice: 9600,
+    status: 'approved',
+    createdAt: '2025-12-15',
+    validUntil: '2026-03-15'
+  }
 ];
 
-const COLORS = ['#F97316', '#3B82F6', '#22C55E', '#F59E0B', '#8B5CF6'];
+const getStatusBadge = (status: string) => {
+  switch (status) {
+    case 'draft':
+      return <Badge className="bg-gray-100 text-gray-800">Luonnos</Badge>;
+    case 'sent':
+      return <Badge className="bg-blue-100 text-blue-800">Lähetetty</Badge>;
+    case 'approved':
+      return <Badge className="bg-green-100 text-green-800">Hyväksytty</Badge>;
+    case 'rejected':
+      return <Badge className="bg-red-100 text-red-800">Hylätty</Badge>;
+    default:
+      return null;
+  }
+};
 
 export default function Laskenta() {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [estimates, setEstimates] = useState<CostEstimate[]>(costEstimates);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedEstimate, setExpandedEstimate] = useState<string | null>(null);
 
-  const toggle = (name: string) => setExpanded(prev => ({ ...prev, [name]: !prev[name] }));
+  const filteredEstimates = estimates.filter(est =>
+    est.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    est.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    est.category.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const categoryTotals = costCategories.map(cat => ({
-    name: cat.name,
-    value: cat.items.reduce((sum, item) => sum + item.total, 0),
-  }));
-  const grandTotal = categoryTotals.reduce((sum, cat) => sum + cat.value, 0);
+  const totalApproved = estimates.filter(e => e.status === 'approved').reduce((sum, e) => sum + e.totalPrice, 0);
+  const totalPending = estimates.filter(e => e.status === 'sent').reduce((sum, e) => sum + e.totalPrice, 0);
+  const totalDraft = estimates.filter(e => e.status === 'draft').reduce((sum, e) => sum + e.totalPrice, 0);
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-primary">Laskenta</h1>
-        <Button className="gap-1.5 bg-primary hover:bg-primary-hover text-white">
-          <Plus size={16} /> Lisää kustannus
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Laskenta</h1>
+          <p className="text-gray-500 mt-1">Kustannusarviot ja tarjoukset</p>
+        </div>
+        <Button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
+          <Plus className="w-4 h-4" />
+          Uusi arvio
         </Button>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary-light flex items-center justify-center">
-              <Euro size={20} className="text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-text-muted">Kokonaiskustannukset</p>
-              <p className="text-xl font-bold text-text-primary">{new Intl.NumberFormat('fi-FI').format(grandTotal)} €</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-info-light flex items-center justify-center">
-              <Calculator size={20} className="text-info" />
-            </div>
-            <div>
-              <p className="text-sm text-text-muted">Kustannuslajit</p>
-              <p className="text-xl font-bold text-text-primary">{costCategories.length}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <ResponsiveContainer width="100%" height={60}>
-              <PieChart>
-                <Pie data={categoryTotals} cx="50%" cy="50%" outerRadius={28} dataKey="value" strokeWidth={0}>
-                  {categoryTotals.map((_, idx) => <Cell key={idx} fill={COLORS[idx]} />)}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Arviot yhteensä', value: estimates.length.toString(), icon: FileText, color: 'text-blue-600' },
+          { label: 'Hyväksytty', value: `${totalApproved.toLocaleString('fi-FI')} €`, icon: CheckCircle2, color: 'text-green-600' },
+          { label: 'Odottaa', value: `${totalPending.toLocaleString('fi-FI')} €`, icon: Clock, color: 'text-yellow-600' },
+          { label: 'Luonnokset', value: `${totalDraft.toLocaleString('fi-FI')} €`, icon: TrendingUp, color: 'text-gray-600' },
+        ].map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.1 }}
+          >
+            <Card>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">{stat.label}</p>
+                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+                </div>
+                <stat.icon className={`w-8 h-8 ${stat.color} opacity-20`} />
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
       </div>
 
-      {/* Cost Categories */}
+      {/* Search */}
+      <div className="flex items-center gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            placeholder="Hae arvioita..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <Button variant="outline" className="flex items-center gap-2">
+          <Filter className="w-4 h-4" />
+          Suodata
+        </Button>
+      </div>
+
+      {/* Estimates List */}
       <div className="space-y-3">
-        {costCategories.map((cat, catIdx) => {
-          const catTotal = cat.items.reduce((sum, item) => sum + item.total, 0);
-          const isOpen = expanded[cat.name];
-          return (
-            <motion.div key={cat.name} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: catIdx * 0.05 }}>
-              <Card>
-                <CardHeader className="py-3 cursor-pointer" onClick={() => toggle(cat.name)}>
-                  <div className="flex items-center justify-between">
+        {filteredEstimates.map((estimate) => (
+          <motion.div
+            key={estimate.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <Card
+              className="cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => setExpandedEstimate(expandedEstimate === estimate.id ? null : estimate.id)}
+            >
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
                     <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[catIdx] }} />
-                      <CardTitle className="text-base">{cat.name}</CardTitle>
-                      <Badge variant="outline">{cat.items.length} riviä</Badge>
+                      <h3 className="font-semibold">{estimate.name}</h3>
+                      {getStatusBadge(estimate.status)}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-semibold text-text-primary">{new Intl.NumberFormat('fi-FI').format(catTotal)} €</span>
-                      {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                      <span>{estimate.projectName}</span>
+                      <span>{estimate.category}</span>
+                      <span>{estimate.quantity} {estimate.unit}</span>
                     </div>
                   </div>
-                </CardHeader>
-                {isOpen && (
-                  <CardContent className="pt-0">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-text-muted border-b border-[#E2E8F0]">
-                          <th className="pb-2 font-medium">Kustannus</th>
-                          <th className="pb-2 font-medium text-right">Määrä</th>
-                          <th className="pb-2 font-medium">Yks.</th>
-                          <th className="pb-2 font-medium text-right">Hinta</th>
-                          <th className="pb-2 font-medium text-right">Yhteensä</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {cat.items.map((item, i) => (
-                          <tr key={i} className="border-b border-[#F1F5F9]">
-                            <td className="py-2 text-text-primary">{item.description}</td>
-                            <td className="py-2 text-right font-mono">{item.quantity}</td>
-                            <td className="py-2 text-text-muted">{item.unit}</td>
-                            <td className="py-2 text-right font-mono">{item.price} €</td>
-                            <td className="py-2 text-right font-mono font-medium">{new Intl.NumberFormat('fi-FI').format(item.total)} €</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                )}
-              </Card>
-            </motion.div>
-          );
-        })}
-      </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold">{estimate.totalPrice.toLocaleString('fi-FI')} €</p>
+                    <p className="text-sm text-gray-500">{estimate.unitPrice.toLocaleString('fi-FI')} €/{estimate.unit}</p>
+                  </div>
+                  {expandedEstimate === estimate.id ? (
+                    <ChevronUp className="w-5 h-5 text-gray-400 ml-4" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-gray-400 ml-4" />
+                  )}
+                </div>
 
-      {/* Grand Total */}
-      <Card className="bg-primary-light border-primary">
-        <CardContent className="p-4 flex items-center justify-between">
-          <span className="font-semibold text-primary">Kokonaissumma</span>
-          <span className="text-2xl font-bold text-primary">{new Intl.NumberFormat('fi-FI').format(grandTotal)} €</span>
-        </CardContent>
-      </Card>
+                {expandedEstimate === estimate.id && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="mt-4 pt-4 border-t"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-sm text-gray-500">Kuvaus</label>
+                        <p className="text-sm mt-1">{estimate.description}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-500">Luotu</label>
+                        <p className="text-sm mt-1">{new Date(estimate.createdAt).toLocaleDateString('fi-FI')}</p>
+                        <label className="text-sm text-gray-500 mt-2">Voimassa</label>
+                        <p className="text-sm mt-1">{new Date(estimate.validUntil).toLocaleDateString('fi-FI')}</p>
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <Button variant="outline" size="sm">Muokkaa</Button>
+                        <Button variant="outline" size="sm">Lataa PDF</Button>
+                        {estimate.status === 'draft' && (
+                          <Button size="sm" className="bg-blue-600 hover:bg-blue-700">Lähetä</Button>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
     </div>
   );
 }
