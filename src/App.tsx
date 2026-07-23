@@ -1,56 +1,59 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import {
   Dashboard,
-  Tyonjohto,
   Projektit,
-  Aikataulutus,
-  Paivakirjat,
+  Asiakkaat,
+  Henkilosto,
+  Tyomaaraykset,
+  Tuntikirjaukset,
+  Kalusto,
   Laskenta,
   Maaralaskenta,
-  Jatehuolto,
-  Tyomaaraykset,
-  Tyovuorokalenteri,
-  Tuntikirjaukset,
-  Matkakulut,
-  Tyoturvallisuus,
-  CRM,
-  Asiakkaat,
-  AIPage,
-  Viestinta,
-  Kalusto,
-  Henkilosto,
   Lomakkeet,
+  Tyoturvallisuus,
+  Viestinta,
   Raportit,
+  Aikataulutus,
+  Tyovuorokalenteri,
+  Paivakirjat,
+  Matkakulut,
+  Jatehuolto,
+  Tyonjohto,
+  CRM,
+  AI
 } from './pages';
+import StubPage from './pages/StubPage';
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/tyonjohto" element={<Tyonjohto />} />
-        <Route path="/projektit" element={<Projektit />} />
-        <Route path="/aikataulutus" element={<Aikataulutus />} />
-        <Route path="/paivakirjat" element={<Paivakirjat />} />
-        <Route path="/laskenta" element={<Laskenta />} />
-        <Route path="/maaralaskenta" element={<Maaralaskenta />} />
-        <Route path="/jatehuolto" element={<Jatehuolto />} />
-        <Route path="/tyomaaraykset" element={<Tyomaaraykset />} />
-        <Route path="/tyovuorokalenteri" element={<Tyovuorokalenteri />} />
-        <Route path="/tuntikirjaukset" element={<Tuntikirjaukset />} />
-        <Route path="/matkakulut" element={<Matkakulut />} />
-        <Route path="/tyoturvallisuus" element={<Tyoturvallisuus />} />
-        <Route path="/crm" element={<CRM />} />
-        <Route path="/asiakkaat" element={<Asiakkaat />} />
-        <Route path="/ai" element={<AIPage />} />
-        <Route path="/viestinta" element={<Viestinta />} />
-        <Route path="/kalusto" element={<Kalusto />} />
-        <Route path="/henkilosto" element={<Henkilosto />} />
-        <Route path="/lomakkeet" element={<Lomakkeet />} />
-        <Route path="/raportit" element={<Raportit />} />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      </Route>
-    </Routes>
+    <BrowserRouter>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/projektit" element={<Projektit />} />
+          <Route path="/asiakkaat" element={<Asiakkaat />} />
+          <Route path="/crm" element={<CRM />} />
+          <Route path="/henkilosto" element={<Henkilosto />} />
+          <Route path="/tyomaaraykset" element={<Tyomaaraykset />} />
+          <Route path="/tuntikirjaukset" element={<Tuntikirjaukset />} />
+          <Route path="/tyovuorokalenteri" element={<Tyovuorokalenteri />} />
+          <Route path="/kalusto" element={<Kalusto />} />
+          <Route path="/laskenta" element={<Laskenta />} />
+          <Route path="/maaralaskenta" element={<Maaralaskenta />} />
+          <Route path="/lomakkeet" element={<Lomakkeet />} />
+          <Route path="/tyoturvallisuus" element={<Tyoturvallisuus />} />
+          <Route path="/viestinta" element={<Viestinta />} />
+          <Route path="/raportit" element={<Raportit />} />
+          <Route path="/aikataulutus" element={<Aikataulutus />} />
+          <Route path="/paivakirjat" element={<Paivakirjat />} />
+          <Route path="/matkakulut" element={<Matkakulut />} />
+          <Route path="/jatehuolto" element={<Jatehuolto />} />
+          <Route path="/tyonjohto" element={<Tyonjohto />} />
+          <Route path="/ai" element={<AI />} />
+          <Route path="*" element={<StubPage title="Sivua ei löydy" />} />
+        </Routes>
+      </Layout>
+    </BrowserRouter>
   );
 }
