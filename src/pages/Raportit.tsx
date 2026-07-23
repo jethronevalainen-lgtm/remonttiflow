@@ -1,300 +1,126 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  FileText,
-  Plus,
-  Search,
-  Filter,
-  Download,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  TrendingUp,
-  BarChart3,
-  PieChart,
-  Calendar,
-  Users,
-  Euro,
-  ChevronDown,
-  ChevronUp,
-  Printer,
-  Share2
+  FileBarChart, TrendingUp, Clock, Star, Plus, Download, Printer,
+  BarChart3, PieChart as PieChartIcon, Users, Wrench, ShieldCheck,
+  Calendar, ArrowRight,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-interface Report {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  projectId?: string;
-  projectName?: string;
-  createdBy: string;
-  createdAt: string;
-  period: string;
-  status: 'draft' | 'final';
-  fileUrl?: string;
-}
-
-const reports: Report[] = [
-  {
-    id: '1',
-    name: 'Kustannusraportti Q4/2025',
-    category: 'Kustannukset',
-    description: 'Neljännesvuosittainen kustannusraportti',
-    createdBy: 'Jethro',
-    createdAt: '2026-01-05',
-    period: 'Q4/2025',
-    status: 'final'
-  },
-  {
-    id: '2',
-    name: 'Työturvallisuusraportti 2025',
-    category: 'Turvallisuus',
-    description: 'Vuosittainen työturvallisuusraportti',
-    createdBy: 'Jethro',
-    createdAt: '2026-01-10',
-    period: '2025',
-    status: 'final'
-  },
-  {
-    id: '3',
-    name: 'Projektiraportti - Rivitalo A',
-    category: 'Projekti',
-    description: 'Projektin edistymisraportti',
-    projectId: '1',
-    projectName: 'Rivitalo A',
-    createdBy: 'Jethro',
-    createdAt: '2026-01-15',
-    period: 'Viikko 2/2026',
-    status: 'draft'
-  },
-  {
-    id: '4',
-    name: 'Henkilöstöraportti 2025',
-    category: 'Henkilöstö',
-    description: 'Vuosittainen henkilöstöraportti',
-    createdBy: 'Jethro',
-    createdAt: '2026-01-08',
-    period: '2025',
-    status: 'final'
-  },
-  {
-    id: '5',
-    name: 'Laaturaportti - Kerrostalo B',
-    category: 'Laatu',
-    description: 'Laadunvalvontaraportti',
-    projectId: '2',
-    projectName: 'Kerrostalo B',
-    createdBy: 'Mika M.',
-    createdAt: '2026-01-12',
-    period: 'Viikko 2/2026',
-    status: 'final'
-  }
-];
-
 const reportTemplates = [
-  { name: 'Kustannusraportti', category: 'Kustannukset', icon: Euro },
-  { name: 'Työturvallisuusraportti', category: 'Turvallisuus', icon: AlertTriangle },
-  { name: 'Projektiraportti', category: 'Projekti', icon: FileText },
-  { name: 'Henkilöstöraportti', category: 'Henkilöstö', icon: Users },
-  { name: 'Laaturaportti', category: 'Laatu', icon: CheckCircle2 },
-  { name: 'Aikatauluraportti', category: 'Aikataulu', icon: Calendar },
-  { name: 'Tuntiraportti', category: 'Tunnit', icon: Clock },
-  { name: 'Ympäristöraportti', category: 'Ympäristö', icon: BarChart3 }
+  { id: '1', name: 'Työaikaraportti', description: 'Työntekijöiden tuntikooste', icon: Clock, category: 'Työaika', popular: true },
+  { id: '2', name: 'Projektiraportti', description: 'Projektien edistyminen ja kustannukset', icon: FileBarChart, category: 'Projektit', popular: true },
+  { id: '3', name: 'Kustannusraportti', description: 'Kustannusanalyysi projekteittain', icon: TrendingUp, category: 'Taloudellinen', popular: false },
+  { id: '4', name: 'Turvallisuusraportti', description: 'Turvallisuushavainnot ja toimenpiteet', icon: ShieldCheck, category: 'Turvallisuus', popular: true },
+  { id: '5', name: 'Henkilöstoraportti', description: 'Henkilöstön käyttöaste ja koulutukset', icon: Users, category: 'Henkilöstö', popular: false },
+  { id: '6', name: 'Kalustoraportti', description: 'Kaluston käyttö ja huollot', icon: Wrench, category: 'Kalusto', popular: false },
+  { id: '7', name: 'Lomakeraportti', description: 'Lomakkeiden täyttöaste', icon: FileBarChart, category: 'Laatu', popular: false },
+  { id: '8', name: 'Ympäristöraportti', description: 'Jätehuolto ja ympäristövaikutukset', icon: BarChart3, category: 'Ympäristö', popular: false },
 ];
 
-const getStatusBadge = (status: string) => {
-  switch (status) {
-    case 'draft':
-      return <Badge className="bg-gray-100 text-gray-800">Luonnos</Badge>;
-    case 'final':
-      return <Badge className="bg-green-100 text-green-800">Valmis</Badge>;
-    default:
-      return null;
-  }
+const recentReports = [
+  { id: '1', name: 'Tammikuun työaikaraportti', date: '15.1.2026', type: 'Työaika', format: 'PDF' },
+  { id: '2', name: 'Projektien Q4 yhteenveto', date: '10.1.2026', type: 'Projektit', format: 'Excel' },
+  { id: '3', name: 'Turvallisuusvuosikatsaus 2025', date: '5.1.2026', type: 'Turvallisuus', format: 'PDF' },
+];
+
+const categoryColors: Record<string, string> = {
+  'Työaika': 'bg-blue-100 text-blue-600',
+  'Projektit': 'bg-green-100 text-green-600',
+  'Taloudellinen': 'bg-purple-100 text-purple-600',
+  'Turvallisuus': 'bg-red-100 text-red-600',
+  'Henkilöstö': 'bg-orange-100 text-orange-600',
+  'Kalusto': 'bg-cyan-100 text-cyan-600',
+  'Laatu': 'bg-pink-100 text-pink-600',
+  'Ympäristö': 'bg-emerald-100 text-emerald-600',
 };
 
 export default function Raportit() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('reports');
-  const [expandedReport, setExpandedReport] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('templates');
 
-  const filteredReports = reports.filter(r =>
+  const filtered = reportTemplates.filter(r =>
     r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (r.projectName && r.projectName.toLowerCase().includes(searchTerm.toLowerCase()))
+    r.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  const stats = {
-    total: reports.length,
-    final: reports.filter(r => r.status === 'final').length,
-    draft: reports.filter(r => r.status === 'draft').length
-  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Raportit</h1>
-          <p className="text-gray-500 mt-1">Työmaan raportit ja tilastot</p>
+          <p className="text-gray-500 mt-1">Raporttipohjat ja analyysit</p>
         </div>
-        <Button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4" />
-          Uusi raportti
+        <Button className="flex items-center gap-2 bg-primary hover:bg-primary-hover">
+          <Plus className="w-4 h-4" /> Luo raportti
         </Button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          { label: 'Raportit', value: stats.total.toString(), icon: FileText, color: 'text-blue-600' },
-          { label: 'Valmiit', value: stats.final.toString(), icon: CheckCircle2, color: 'text-green-600' },
-          { label: 'Luonnokset', value: stats.draft.toString(), icon: Clock, color: 'text-gray-600' },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-          >
-            <Card>
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">{stat.label}</p>
-                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-                </div>
-                <stat.icon className={`w-8 h-8 ${stat.color} opacity-20`} />
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="reports">Raportit</TabsTrigger>
-          <TabsTrigger value="templates">Mallit</TabsTrigger>
+          <TabsTrigger value="templates">Pohjat</TabsTrigger>
+          <TabsTrigger value="recent">Viimeisimmät</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="reports" className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                placeholder="Hae raportteja..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Button variant="outline" className="flex items-center gap-2">
-              <Filter className="w-4 h-4" />
-              Suodata
-            </Button>
-          </div>
-
-          <div className="space-y-3">
-            {filteredReports.map((report) => (
-              <motion.div
-                key={report.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <Card
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => setExpandedReport(expandedReport === report.id ? null : report.id)}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <FileText className="w-5 h-5 text-blue-600" />
-                          <h3 className="font-semibold">{report.name}</h3>
-                          {getStatusBadge(report.status)}
+        <TabsContent value="templates" className="mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {filtered.map((report, i) => {
+              const colorClass = categoryColors[report.category] || 'bg-gray-100 text-gray-600';
+              return (
+                <motion.div key={report.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+                  <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className={`w-10 h-10 rounded-lg ${colorClass} flex items-center justify-center`}>
+                          <report.icon className="w-5 h-5" />
                         </div>
-                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                          <span>{report.category}</span>
-                          {report.projectName && <span>{report.projectName}</span>}
-                          <span>{report.createdBy}</span>
-                          <span>{new Date(report.createdAt).toLocaleDateString('fi-FI')}</span>
-                          <span>{report.period}</span>
-                        </div>
+                        {report.popular && <Badge className="bg-yellow-100 text-yellow-800"><Star className="w-3 h-3 mr-1" /> Suosittu</Badge>}
                       </div>
-                      {expandedReport === report.id ? (
-                        <ChevronUp className="w-5 h-5 text-gray-400" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5 text-gray-400" />
-                      )}
-                    </div>
-
-                    {expandedReport === report.id && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        className="mt-4 pt-4 border-t"
-                      >
-                        <p className="text-sm text-gray-700">{report.description}</p>
-                        <div className="flex items-center gap-2 mt-4">
-                          <Button variant="outline" size="sm" className="flex items-center gap-1">
-                            <Download className="w-4 h-4" />
-                            Lataa PDF
-                          </Button>
-                          <Button variant="outline" size="sm" className="flex items-center gap-1">
-                            <Printer className="w-4 h-4" />
-                            Tulosta
-                          </Button>
-                          <Button variant="outline" size="sm" className="flex items-center gap-1">
-                            <Share2 className="w-4 h-4" />
-                            Jaa
-                          </Button>
-                          {report.status === 'draft' && (
-                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700">Hyväksy</Button>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
+                      <h3 className="font-medium text-sm mb-1">{report.name}</h3>
+                      <p className="text-xs text-gray-500 mb-3">{report.description}</p>
+                      <Badge variant="outline" className="text-xs">{report.category}</Badge>
+                      <div className="flex gap-2 mt-3">
+                        <Button variant="outline" size="sm" className="flex-1 text-xs"><Download className="w-3 h-3 mr-1" /> Lataa</Button>
+                        <Button size="sm" className="flex-1 text-xs bg-primary hover:bg-primary-hover"><Printer className="w-3 h-3 mr-1" /> Tulosta</Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              );
+            })}
           </div>
         </TabsContent>
 
-        <TabsContent value="templates" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {reportTemplates.map((template, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <template.icon className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium">{template.name}</h3>
-                        <Badge variant="outline" className="mt-1">{template.category}</Badge>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm" className="w-full mt-3">
-                      <Plus className="w-3 h-3 mr-1" />
-                      Luo raportti
-                    </Button>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
+        <TabsContent value="recent" className="mt-4">
+          <Card>
+            <CardContent className="p-0">
+              <div className="grid grid-cols-12 gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-700">
+                <div className="col-span-4">Raportti</div>
+                <div className="col-span-2">Tyyppi</div>
+                <div className="col-span-2">Pvm</div>
+                <div className="col-span-1">Formaatti</div>
+                <div className="col-span-3 text-right">Toiminnot</div>
+              </div>
+              {recentReports.map(r => (
+                <div key={r.id} className="grid grid-cols-12 gap-4 p-4 border-b last:border-b-0 hover:bg-gray-50 transition-colors items-center">
+                  <div className="col-span-4 font-medium text-sm flex items-center gap-2">
+                    <FileBarChart className="w-4 h-4 text-primary" />
+                    {r.name}
+                  </div>
+                  <div className="col-span-2 text-sm">{r.type}</div>
+                  <div className="col-span-2 text-sm">{r.date}</div>
+                  <div className="col-span-1"><Badge variant="outline">{r.format}</Badge></div>
+                  <div className="col-span-3 text-right flex gap-2 justify-end">
+                    <Button variant="outline" size="sm"><Download className="w-3 h-3 mr-1" /> Lataa</Button>
+                    <Button variant="ghost" size="sm"><Printer className="w-3 h-3" /></Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

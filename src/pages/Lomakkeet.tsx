@@ -1,298 +1,127 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  FileText,
-  Plus,
-  Search,
-  Filter,
-  Download,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  Eye,
-  Edit2,
-  Trash2,
-  Copy,
-  Euro,
-  Users,
-  Shield
+  FileText, Shield, ClipboardCheck, Wrench, Award, TreePine, BookOpen,
+  Search, Plus, Download, CheckCircle2, Clock, Users,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-interface Form {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  projectId?: string;
-  projectName?: string;
-  status: 'draft' | 'submitted' | 'approved' | 'rejected';
-  submittedBy?: string;
-  submittedAt?: string;
-  approvedBy?: string;
-  approvedAt?: string;
-  fileUrl?: string;
-  version: number;
-}
-
-const forms: Form[] = [
-  {
-    id: '1',
-    name: 'Työturvallisuussuunnitelma',
-    category: 'Turvallisuus',
-    description: 'Projektin työturvallisuussuunnitelma',
-    projectId: '1',
-    projectName: 'Rivitalo A',
-    status: 'approved',
-    submittedBy: 'Jethro',
-    submittedAt: '2025-12-15',
-    approvedBy: 'Timo K.',
-    approvedAt: '2025-12-20',
-    version: 1
-  },
-  {
-    id: '2',
-    name: 'Häiriöilmoitus #1',
-    category: 'Häiriö',
-    description: 'Naapurin valitus melusta',
-    projectId: '1',
-    projectName: 'Rivitalo A',
-    status: 'submitted',
-    submittedBy: 'Jethro',
-    submittedAt: '2026-01-10',
-    version: 1
-  },
-  {
-    id: '3',
-    name: 'Turvallisuustarkastus',
-    category: 'Turvallisuus',
-    description: 'Viikkotarkastus työmaalla',
-    projectId: '2',
-    projectName: 'Kerrostalo B',
-    status: 'approved',
-    submittedBy: 'Mika M.',
-    submittedAt: '2026-01-08',
-    approvedBy: 'Jethro',
-    approvedAt: '2026-01-09',
-    version: 1
-  },
-  {
-    id: '4',
-    name: 'Laatusuunnitelma',
-    category: 'Laatu',
-    description: 'Projektin laadunvarmistussuunnitelma',
-    projectId: '3',
-    projectName: 'Toimisto C',
-    status: 'draft',
-    version: 1
-  },
-  {
-    id: '5',
-    name: 'Työmaa-aikataulu',
-    category: 'Aikataulu',
-    description: 'Yksityiskohtainen työaikataulu',
-    projectId: '1',
-    projectName: 'Rivitalo A',
-    status: 'approved',
-    submittedBy: 'Jethro',
-    submittedAt: '2025-12-10',
-    approvedBy: 'Jethro',
-    approvedAt: '2025-12-12',
-    version: 2
-  }
+const forms = [
+  { id: '1', name: 'Työmaapäiväkirja', category: 'TYA', description: 'Päivittäinen työmaakirjaus', icon: FileText, completed: 45, total: 60 },
+  { id: '2', name: 'Turvallisuushavainto', category: 'Turvallisuus', description: 'Turvallisuushavainnon kirjaus', icon: Shield, completed: 12, total: 20 },
+  { id: '3', name: 'Laatutarkastus', category: 'Laatu', description: 'Työn laadun tarkistuslomake', icon: ClipboardCheck, completed: 8, total: 15 },
+  { id: '4', name: 'Kunnossapitotarkastus', category: 'Laatu', description: 'Kunnossapidon tarkistus', icon: Wrench, completed: 5, total: 10 },
+  { id: '5', name: 'Koulutustodistus', category: 'Koulutus', description: 'Suoritetun koulutuksen todistus', icon: Award, completed: 18, total: 22 },
+  { id: '6', name: 'Ympäristöhavainto', category: 'Ympäristö', description: 'Ympäristövaikutusten kirjaus', icon: TreePine, completed: 3, total: 12 },
+  { id: '7', name: 'Riskinarviointi', category: 'Turvallisuus', description: 'Työmaa riskien arviointi', icon: Shield, completed: 6, total: 8 },
+  { id: '8', name: 'Materiaalitarkastus', category: 'Laatu', description: 'Saapuvien materiaalien tarkistus', icon: ClipboardCheck, completed: 22, total: 30 },
 ];
 
-const formTemplates = [
-  { name: 'Työturvallisuussuunnitelma', category: 'Turvallisuus' },
-  { name: 'Häiriöilmoitus', category: 'Häiriö' },
-  { name: 'Turvallisuustarkastus', category: 'Turvallisuus' },
-  { name: 'Laatusuunnitelma', category: 'Laatu' },
-  { name: 'Työmaa-aikataulu', category: 'Aikataulu' },
-  { name: 'Perehdytyslomake', category: 'Henkilöstö' },
-  { name: 'Katselmuspöytäkirja', category: 'Laatu' },
-  { name: 'Hankintapyyntö', category: 'Hankinta' }
-];
-
-const getStatusBadge = (status: string) => {
-  switch (status) {
-    case 'draft':
-      return <Badge className="bg-gray-100 text-gray-800">Luonnos</Badge>;
-    case 'submitted':
-      return <Badge className="bg-blue-100 text-blue-800">Lähetetty</Badge>;
-    case 'approved':
-      return <Badge className="bg-green-100 text-green-800">Hyväksytty</Badge>;
-    case 'rejected':
-      return <Badge className="bg-red-100 text-red-800">Hylätty</Badge>;
-    default:
-      return null;
-  }
-};
-
-const getCategoryIcon = (category: string) => {
-  switch (category) {
-    case 'Turvallisuus':
-      return <Shield className="w-4 h-4 text-red-500" />;
-    case 'Henkilöstö':
-      return <Users className="w-4 h-4 text-blue-500" />;
-    default:
-      return <FileText className="w-4 h-4 text-gray-500" />;
-  }
+const categories: Record<string, { icon: typeof FileText; color: string }> = {
+  'TYA': { icon: FileText, color: 'bg-blue-100 text-blue-600' },
+  'Turvallisuus': { icon: Shield, color: 'bg-red-100 text-red-600' },
+  'Laatu': { icon: ClipboardCheck, color: 'bg-green-100 text-green-600' },
+  'Koulutus': { icon: Award, color: 'bg-purple-100 text-purple-600' },
+  'Ympäristö': { icon: TreePine, color: 'bg-emerald-100 text-emerald-600' },
 };
 
 export default function Lomakkeet() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('forms');
+  const [activeTab, setActiveTab] = useState('all');
 
-  const filteredForms = forms.filter(f =>
-    f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (f.projectName && f.projectName.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filtered = forms.filter(f => {
+    const matchesSearch = f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.category.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesTab = activeTab === 'all' || f.category === activeTab;
+    return matchesSearch && matchesTab;
+  });
 
-  const stats = {
-    total: forms.length,
-    approved: forms.filter(f => f.status === 'approved').length,
-    pending: forms.filter(f => f.status === 'submitted').length,
-    draft: forms.filter(f => f.status === 'draft').length
-  };
+  const totalCompleted = forms.reduce((s, f) => s + f.completed, 0);
+  const totalForms = forms.reduce((s, f) => s + f.total, 0);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Lomakkeet</h1>
-          <p className="text-gray-500 mt-1">Työmaan lomakkeet ja asiakirjat</p>
+          <p className="text-gray-500 mt-1">Työlomakkeet ja dokumentaatio</p>
         </div>
-        <Button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
-          <Plus className="w-4 h-4" />
-          Uusi lomake
+        <Button className="flex items-center gap-2 bg-primary hover:bg-primary-hover">
+          <Plus className="w-4 h-4" /> Uusi lomake
         </Button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Lomakkeet', value: stats.total.toString(), icon: FileText, color: 'text-blue-600' },
-          { label: 'Hyväksytty', value: stats.approved.toString(), icon: CheckCircle2, color: 'text-green-600' },
-          { label: 'Odottaa', value: stats.pending.toString(), icon: Clock, color: 'text-yellow-600' },
-          { label: 'Luonnokset', value: stats.draft.toString(), icon: AlertTriangle, color: 'text-gray-600' },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-          >
-            <Card>
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">{stat.label}</p>
-                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-                </div>
-                <stat.icon className={`w-8 h-8 ${stat.color} opacity-20`} />
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="forms">Lomakkeet</TabsTrigger>
-          <TabsTrigger value="templates">Pohjat</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="forms" className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                placeholder="Hae lomakkeita..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Button variant="outline" className="flex items-center gap-2">
-              <Filter className="w-4 h-4" />
-              Suodata
-            </Button>
-          </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <Card>
-            <CardContent className="p-0">
-              <div className="grid grid-cols-12 gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-700">
-                <div className="col-span-3">Nimi</div>
-                <div className="col-span-1">Kategoria</div>
-                <div className="col-span-2">Projekti</div>
-                <div className="col-span-1">Tila</div>
-                <div className="col-span-2">Lähettäjä / Päivä</div>
-                <div className="col-span-1">Versio</div>
-                <div className="col-span-2 text-right">Toiminnot</div>
-              </div>
-              {filteredForms.map((form) => (
-                <div key={form.id} className="grid grid-cols-12 gap-4 p-4 border-b last:border-b-0 hover:bg-gray-50 items-center">
-                  <div className="col-span-3 flex items-center gap-2">
-                    {getCategoryIcon(form.category)}
-                    <span className="font-medium">{form.name}</span>
-                  </div>
-                  <div className="col-span-1">
-                    <Badge variant="outline">{form.category}</Badge>
-                  </div>
-                  <div className="col-span-2 text-sm">{form.projectName || '-'}</div>
-                  <div className="col-span-1">{getStatusBadge(form.status)}</div>
-                  <div className="col-span-2 text-sm">
-                    <div>{form.submittedBy || '-'}</div>
-                    <div className="text-gray-500">{form.submittedAt ? new Date(form.submittedAt).toLocaleDateString('fi-FI') : '-'}</div>
-                  </div>
-                  <div className="col-span-1 text-sm">v{form.version}</div>
-                  <div className="col-span-2 flex justify-end gap-2">
-                    <Button variant="ghost" size="sm"><Eye className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="sm"><Edit2 className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="sm"><Download className="w-4 h-4" /></Button>
-                  </div>
-                </div>
-              ))}
+            <CardContent className="p-4">
+              <FileText className="w-8 h-8 text-primary mb-2" />
+              <p className="text-sm text-gray-500">Lomakkeita</p>
+              <p className="text-2xl font-bold">{forms.length}</p>
             </CardContent>
           </Card>
-        </TabsContent>
+        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <Card>
+            <CardContent className="p-4">
+              <CheckCircle2 className="w-8 h-8 text-green-500 mb-2" />
+              <p className="text-sm text-gray-500">Täytetty</p>
+              <p className="text-2xl font-bold text-green-600">{totalCompleted}/{totalForms}</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <Card>
+            <CardContent className="p-4">
+              <Clock className="w-8 h-8 text-yellow-500 mb-2" />
+              <p className="text-sm text-gray-500">Täyttöaste</p>
+              <p className="text-2xl font-bold text-primary">{Math.round((totalCompleted / totalForms) * 100)}%</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
 
-        <TabsContent value="templates" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {formTemplates.map((template, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 bg-gray-100 rounded-lg">
-                        <FileText className="w-5 h-5 text-gray-600" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium">{template.name}</h3>
-                        <Badge variant="outline" className="mt-1">{template.category}</Badge>
-                      </div>
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input type="text" placeholder="Hae lomakkeista..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+          className="w-full h-10 pl-10 pr-4 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary-light" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {filtered.map(form => {
+          const cat = categories[form.category] || { icon: FileText, color: 'bg-gray-100 text-gray-600' };
+          const CatIcon = cat.icon;
+          return (
+            <motion.div key={form.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                <CardContent className="p-4">
+                  <div className={`w-10 h-10 rounded-lg ${cat.color} flex items-center justify-center mb-3`}>
+                    <CatIcon className="w-5 h-5" />
+                  </div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-medium text-sm">{form.name}</h3>
+                  </div>
+                  <Badge variant="outline" className="mb-2">{form.category}</Badge>
+                  <p className="text-xs text-gray-500 mb-3">{form.description}</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${(form.completed / form.total) * 100}%` }} />
                     </div>
-                    <Button variant="outline" size="sm" className="w-full mt-3">
-                      <Copy className="w-3 h-3 mr-1" />
-                      Käytä pohjaa
-                    </Button>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </TabsContent>
-      </Tabs>
+                    <span className="text-xs text-gray-500">{form.completed}/{form.total}</span>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button variant="outline" size="sm" className="flex-1"><Download className="w-3 h-3 mr-1" /> Lataa</Button>
+                    <Button size="sm" className="flex-1 bg-primary hover:bg-primary-hover"><Plus className="w-3 h-3 mr-1" /> Täytä</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          );
+        })}
+      </div>
     </div>
   );
 }
