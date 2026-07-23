@@ -1,19 +1,44 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AuthProvider, useAuth, type UserRole } from './contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
+import { LoadingState } from '@/components/states';
 import {
   Dashboard, Tyonjohto, Projektit, Aikataulutus, Paivakirjat,
   Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset, Tyovuorokalenteri,
   Tuntikirjaukset, Matkakulut, Tyoturvallisuus, CRM, Asiakkaat,
   AIPage, Viestinta, Kalusto, Henkilosto, Lomakkeet, Raportit,
 } from './pages';
+import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
-function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: ('admin' | 'supervisor' | 'worker')[] }) {
-  const { user, hasRole } = useAuth();
-  if (!user) return <Navigate to="/dashboard" replace />;
-  if (!hasRole(allowedRoles)) return (
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { session, loading } = useAuth();
+  const location = useLocation();
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <LoadingState text="Ladataan…" />
+      </div>
+    );
+  }
+  if (!session) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
+function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: UserRole[] }) {
+  const { currentRole, loading } = useOrganization();
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <LoadingState text="Ladataan…" />
+      </div>
+    );
+  }
+  if (!currentRole || !allowedRoles.includes(currentRole)) return (
     <div className="flex flex-col items-center justify-center h-full gap-4">
       <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
         <span className="text-2xl">🔒</span>
@@ -28,7 +53,8 @@ function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allo
 function AppRoutes() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="/login" element={<Login />} />
+      <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/tyonjohto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tyonjohto /></RoleGuard>} />

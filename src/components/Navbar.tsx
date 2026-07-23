@@ -10,6 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 import { BRAND } from '@/config/brand';
 import { useAuth, ROLE_LABELS } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import type { UserRole } from '@/contexts/AuthContext';
 
 interface NavItem {
@@ -55,6 +56,13 @@ const toolItems: NavItem[] = [
   { label: 'Raportit', icon: BarChart3, path: '/raportit', roles: ['admin', 'supervisor'] },
 ];
 
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 interface NavbarProps {
   collapsed: boolean;
   onToggle: () => void;
@@ -64,14 +72,18 @@ interface NavbarProps {
 export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { currentRole } = useOrganization();
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     projektit: true, hallinta: true, asiakkaat: false, tyokalut: false,
   });
 
   if (!user) return null;
-  const userRole = user.role;
-  const canSee = (item: NavItem) => !item.roles || item.roles.includes(userRole);
+  // No org role resolved yet → worker-minimal: only unguarded routes.
+  const effectiveRole: UserRole = currentRole ?? 'worker';
+  const canSee = (item: NavItem) => !item.roles || item.roles.includes(effectiveRole);
+
+  const displayName = profile?.full_name ?? user.email ?? '';
 
   const toggle = (key: string) => setOpenSections(p => ({ ...p, [key]: !p[key] }));
 
@@ -169,12 +181,12 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
       <div className="flex-shrink-0 border-t border-slate-700/50 p-3">
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-md">
-            <span className="text-white text-sm font-bold">{user.initials}</span>
+            <span className="text-white text-sm font-bold">{initialsOf(displayName)}</span>
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-white truncate">{user.name}</p>
-              <p className="text-[11px] text-slate-400">{ROLE_LABELS[user.role]}</p>
+              <p className="text-sm font-semibold text-white truncate">{displayName}</p>
+              <p className="text-[11px] text-slate-400">{ROLE_LABELS[effectiveRole]}</p>
             </div>
           )}
         </div>

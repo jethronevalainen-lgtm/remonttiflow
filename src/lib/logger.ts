@@ -7,6 +7,8 @@
  * funktioon myöhemmin ilman, että kutsukohtia tarvitsee muuttaa.
  */
 
+import { BRAND } from '../config/brand';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogContext {
@@ -49,9 +51,9 @@ export function log(level: LogLevel, message: string, context?: LogContext): voi
             ? console.warn
             : console.error;
     if (context !== undefined) {
-      consoleFn(`[RemonttiFlow] ${message}`, context);
+      consoleFn(`[${BRAND.name}] ${message}`, context);
     } else {
-      consoleFn(`[RemonttiFlow] ${message}`);
+      consoleFn(`[${BRAND.name}] ${message}`);
     }
   }
 

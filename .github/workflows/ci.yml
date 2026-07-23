@@ -54,6 +54,11 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
+        # Publishable Supabase key — julkiseen selaimeen tarkoitettu, ei salaisuus.
+        # Vite poimii VITE_*-muuttujat suoraan prosessiympäristöstä (.env:ää ei ole CI:ssä).
+        env:
+          VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
         run: npm run test:e2e
 
       - name: Upload Playwright report

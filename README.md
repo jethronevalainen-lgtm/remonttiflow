@@ -1,4 +1,4 @@
-# RemonttiFlow
+# VaKantti (aiemmin RemonttiFlow — repon nimi on edelleen `remonttiflow`)
 
 Suomalainen rakennusalan työnohjaus- ja toiminnanohjausjärjestelmä.
 

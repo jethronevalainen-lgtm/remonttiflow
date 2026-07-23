@@ -1,21 +1,46 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
- * Critical smoke path for the VaKantti / RemonttiFlow app.
+ * Critical smoke path for the VaKantti / RemonttiFlow app (Supabase auth era).
  *
- * App facts verified against src/ (App.tsx, Navbar.tsx, Header.tsx,
- * AuthContext.tsx, pages/*):
- * - HashRouter: URLs look like /#/dashboard; "/" redirects to /dashboard.
- * - Auto-login as supervisor ("Työnjohtaja"); role switcher lives in the
- *   Header behind a button labelled with the current role name and opens a
- *   menu titled "Vaihda roolia".
- * - RoleGuard renders "Pääsy kielletty" (h2) for disallowed roles.
+ * App facts verified against src/ (App.tsx, Login.tsx, Header.tsx,
+ * Navbar.tsx, contexts/AuthContext.tsx, config/brand.ts):
+ * - HashRouter: URLs look like /#/dashboard. /login is the only public
+ *   route; RequireAuth redirects everything else to /#/login without a
+ *   session (loading state "Ladataan…" renders while the session resolves).
+ * - Real Supabase auth over the network — no auto-login. Login submit
+ *   therefore gets generous timeouts; global expect timeout is raised in
+ *   playwright.config.ts.
+ * - Login page: brand card ("VaKantti" / "Rakennusalan työnhallinta"),
+ *   labels "Sähköposti" + "Salasana", submit "Kirjaudu sisään"
+ *   ("Kirjaudutaan…" while submitting). Invalid credentials render
+ *   role="alert" with "Virheellinen sähköposti tai salasana"
+ *   (SIGN_IN_INVALID_CREDENTIALS_ERROR in AuthContext).
+ * - Header (authenticated): org name "VaKantti Demo Oy", role badge
+ *   "Järjestelmänvalvoja", user name "Demo Admin", logout button named
+ *   "Kirjaudu ulos" (visible span at xl viewport + title attribute).
+ * - The sidebar "Projektit" nav item shares its accessible name with the
+ *   "Projektit" collapsible section header → disambiguated via the nav
+ *   item's `span.truncate` label wrapper.
  * - NotFound (path "*") renders a Card with "404" and "Sivua ei löytynyt"
  *   (CardTitle is a <div>, not a heading element).
- * - The sidebar "Projektit" nav item shares its accessible name with the
- *   "Projektit" collapsible section header, so we disambiguate via the
- *   nav item's `span.truncate` label wrapper.
  */
+
+const DEMO_EMAIL = 'demo@vakantti.fi';
+const DEMO_PASSWORD = 'VakanttiDemo2026!';
+
+/** Login against the real Supabase project and wait for the dashboard. */
+async function loginAsDemo(page: Page) {
+  await page.goto('/#/login');
+  await page.getByLabel('Sähköposti').fill(DEMO_EMAIL);
+  await page.getByLabel('Salasana').fill(DEMO_PASSWORD);
+  await page.getByRole('button', { name: 'Kirjaudu sisään' }).click();
+  // Network round-trip to Supabase + profile/org fetch — generous timeout.
+  await expect(page).toHaveURL(/#\/dashboard/, { timeout: 30_000 });
+  await expect(
+    page.getByRole('heading', { name: 'Yleisnäkymä' }),
+  ).toBeVisible();
+}
 
 /** Click a main-nav item in the desktop sidebar by its visible label. */
 async function clickSidebarItem(page: Page, label: string) {
@@ -26,77 +51,104 @@ async function clickSidebarItem(page: Page, label: string) {
 }
 
 test.describe('smoke: critical paths', () => {
-  test('app loads at / and redirects to the dashboard', async ({ page }) => {
-    await page.goto('/');
-
-    await expect(page).toHaveURL(/#\/dashboard$/);
-    await expect(
-      page.getByRole('heading', { name: 'Yleisnäkymä' }),
-    ).toBeVisible();
-
-    // KPI cards
-    await expect(page.getByText('Aktiiviset projektit')).toBeVisible();
-    await expect(page.getByText('Avoimet työmääräykset')).toBeVisible();
+  // Playwright already gives every test a fresh browser context, but the
+  // Supabase session lives in localStorage — clear it defensively before
+  // any app script runs so every test deterministically starts logged-out.
+  test.beforeEach(async ({ context }) => {
+    await context.addInitScript(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
   });
 
-  test('sidebar navigation opens the Projektit page', async ({ page }) => {
-    await page.goto('/');
-
-    await clickSidebarItem(page, 'Projektit');
-
-    await expect(page).toHaveURL(/#\/projektit$/);
-    await expect(
-      page.getByRole('heading', { name: 'Projektit', exact: true }),
-    ).toBeVisible();
-    // Project content renders (mock data row + header text)
-    await expect(
-      page.getByText('Kaikki projektit yhdessä näkymässä'),
-    ).toBeVisible();
-    await expect(page.getByText('Tampereen korjaustyö')).toBeVisible();
-  });
-
-  test('role switcher switches to Työntekijä and guards /raportit', async ({
+  test('unauthenticated visit to / redirects to the login page', async ({
     page,
   }) => {
     await page.goto('/');
 
-    const header = page.locator('header');
-
-    // Auto-logged-in role is supervisor ("Työnjohtaja").
-    await header.getByRole('button', { name: 'Työnjohtaja' }).click();
-    await expect(page.getByText('Vaihda roolia')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Työntekijä' }).click();
-
-    // Wait for the role menu to finish its exit animation, otherwise the
-    // still-mounted menu item collides with the trigger button's new label.
-    await expect(page.getByText('Vaihda roolia')).toBeHidden();
-
-    // Role UI updates in header and sidebar footer.
+    await expect(page).toHaveURL(/#\/login/);
+    // Branding
+    await expect(page.getByText('VaKantti', { exact: true })).toBeVisible();
+    await expect(page.getByText('Rakennusalan työnhallinta')).toBeVisible();
+    // Form fields + submit
+    await expect(page.getByLabel('Sähköposti')).toBeVisible();
+    await expect(page.getByLabel('Salasana')).toBeVisible();
     await expect(
-      header.getByRole('button', { name: 'Työntekijä' }),
-    ).toBeVisible();
-    await expect(
-      page.locator('aside').getByText('Työntekijä'),
-    ).toBeVisible();
-
-    // A role-restricted route now shows the access-denied state.
-    await page.goto('/#/raportit');
-    await expect(
-      page.getByRole('heading', { name: 'Pääsy kielletty' }),
-    ).toBeVisible();
-    await expect(
-      page.getByText('Sinulla ei ole oikeuksia tälle sivulle.'),
+      page.getByRole('button', { name: 'Kirjaudu sisään' }),
     ).toBeVisible();
   });
 
-  test('unknown route renders the 404 NotFound page', async ({ page }) => {
+  test('invalid credentials show a Finnish error alert and stay on /login', async ({
+    page,
+  }) => {
+    await page.goto('/#/login');
+    await page.getByLabel('Sähköposti').fill(DEMO_EMAIL);
+    await page.getByLabel('Salasana').fill('wrong-password');
+    await page.getByRole('button', { name: 'Kirjaudu sisään' }).click();
+
+    // Supabase auth round-trip — generous timeout.
+    const alert = page.getByRole('alert');
+    await expect(alert).toBeVisible({ timeout: 30_000 });
+    await expect(alert).toHaveText('Virheellinen sähköposti tai salasana');
+    await expect(page).toHaveURL(/#\/login/);
+  });
+
+  test('valid login lands on the dashboard with user/org/role in the header', async ({
+    page,
+  }) => {
+    await loginAsDemo(page);
+
+    await expect(page).toHaveURL(/#\/dashboard/);
+    const header = page.locator('header');
+    await expect(header.getByText('Demo Admin')).toBeVisible();
+    await expect(header.getByText('VaKantti Demo Oy')).toBeVisible();
+    await expect(header.getByText('Järjestelmänvalvoja')).toBeVisible();
+
+    // Dashboard content
+    await expect(
+      page.getByRole('heading', { name: 'Yleisnäkymä' }),
+    ).toBeVisible();
+    await expect(page.getByText('Aktiiviset projektit')).toBeVisible();
+  });
+
+  test('authenticated sidebar navigation opens the Projektit page', async ({
+    page,
+  }) => {
+    await loginAsDemo(page);
+
+    await clickSidebarItem(page, 'Projektit');
+
+    await expect(page).toHaveURL(/#\/projektit/);
+    await expect(
+      page.getByRole('heading', { name: 'Projektit', exact: true }),
+    ).toBeVisible();
+  });
+
+  test('unknown route while authenticated renders the 404 NotFound page', async ({
+    page,
+  }) => {
+    await loginAsDemo(page);
+
     await page.goto('/#/jotain-olemastaonta');
 
     await expect(page.getByText('404', { exact: true })).toBeVisible();
     await expect(page.getByText('Sivua ei löytynyt')).toBeVisible();
     await expect(
       page.getByRole('link', { name: 'Takaisin etusivulle' }),
+    ).toBeVisible();
+  });
+
+  test('logout via "Kirjaudu ulos" redirects back to the login page', async ({
+    page,
+  }) => {
+    await loginAsDemo(page);
+
+    await page.getByRole('button', { name: 'Kirjaudu ulos' }).click();
+
+    // signOut hits Supabase over the network, then RequireAuth redirects.
+    await expect(page).toHaveURL(/#\/login/, { timeout: 30_000 });
+    await expect(
+      page.getByRole('button', { name: 'Kirjaudu sisään' }),
     ).toBeVisible();
   });
 });
