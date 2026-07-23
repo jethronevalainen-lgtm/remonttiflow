@@ -26,32 +26,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-
-/* ─── Types ─── */
-interface Equipment {
-  id: string;
-  name: string;
-  type: string;
-  model: string;
-  year: number;
-  location: string;
-  status: 'available' | 'in_use' | 'maintenance' | 'reserved';
-  lastService: string;
-  nextService: string;
-  hours: number;
-  maxHours: number;
-  image?: string;
-}
+import type { Equipment, EquipmentStatus } from '@/types';
 
 /* ─── Mock Data ─── */
 const initialEquipment: Equipment[] = [
-  { id: '1', name: 'Bobcat kaivuri', type: 'Kaivuri', model: 'E26', year: 2022, location: 'Rivitalo Helsinki', status: 'available', lastService: '1.12.2025', nextService: '1.3.2026', hours: 1240, maxHours: 2000 },
-  { id: '2', name: 'Hilti poravasara', type: 'Työkalu', model: 'TE 70-AVR', year: 2024, location: 'Kerrostalo Espoo', status: 'in_use', lastService: '15.11.2025', nextService: '15.2.2026', hours: 340, maxHours: 1500 },
-  { id: '3', name: 'Työmaakontti', type: 'Kontti', model: '20ft varastokontti', year: 2023, location: 'Rivitalo Helsinki', status: 'available', lastService: '-', nextService: '-', hours: 0, maxHours: 0 },
-  { id: '4', name: 'Honda generaattori', type: 'Sähkö', model: 'EU70is', year: 2024, location: 'Rivitalo D', status: 'in_use', lastService: '20.12.2025', nextService: '20.3.2026', hours: 180, maxHours: 1000 },
-  { id: '5', name: 'Zarges tikkaat 12m', type: 'Teline', model: ' professionaalimalli', year: 2023, location: 'Kerrostalo Espoo', status: 'maintenance', lastService: '5.1.2026', nextService: '5.7.2026', hours: 0, maxHours: 500 },
-  { id: '6', name: 'Putkileikkuri', type: 'Työkalu', model: 'Rothenberger', year: 2024, location: 'LVI-varasto', status: 'available', lastService: '10.12.2025', nextService: '10.6.2026', hours: 45, maxHours: 800 },
-  { id: '7', name: 'Betoniauto', type: 'Kuljetus', model: 'Volvo FM', year: 2021, location: 'Parkkipaikka', status: 'reserved', lastService: '1.1.2026', nextService: '1.4.2026', hours: 8500, maxHours: 15000 },
+  { id: '1', name: 'Bobcat kaivuri', type: 'Kaivuri', serial: 'KAI-2022-001', model: 'E26', year: 2022, location: 'Rivitalo Helsinki', status: 'Vapaa', lastMaintenance: '1.12.2025', lastService: '1.12.2025', nextService: '1.3.2026', hours: 1240, maxHours: 2000 },
+  { id: '2', name: 'Hilti poravasara', type: 'Työkalu', serial: 'TYO-2024-014', model: 'TE 70-AVR', year: 2024, location: 'Kerrostalo Espoo', status: 'Käytössä', lastMaintenance: '15.11.2025', lastService: '15.11.2025', nextService: '15.2.2026', hours: 340, maxHours: 1500 },
+  { id: '3', name: 'Työmaakontti', type: 'Kontti', serial: 'KON-2023-020', model: '20ft varastokontti', year: 2023, location: 'Rivitalo Helsinki', status: 'Vapaa', lastMaintenance: '-', lastService: '-', nextService: '-', hours: 0, maxHours: 0 },
+  { id: '4', name: 'Honda generaattori', type: 'Sähkö', serial: 'GEN-2024-070', model: 'EU70is', year: 2024, location: 'Rivitalo D', status: 'Käytössä', lastMaintenance: '20.12.2025', lastService: '20.12.2025', nextService: '20.3.2026', hours: 180, maxHours: 1000 },
+  { id: '5', name: 'Zarges tikkaat 12m', type: 'Teline', serial: 'TEL-2023-012', model: ' professionaalimalli', year: 2023, location: 'Kerrostalo Espoo', status: 'Huollossa', lastMaintenance: '5.1.2026', lastService: '5.1.2026', nextService: '5.7.2026', hours: 0, maxHours: 500 },
+  { id: '6', name: 'Putkileikkuri', type: 'Työkalu', serial: 'TYO-2024-045', model: 'Rothenberger', year: 2024, location: 'LVI-varasto', status: 'Vapaa', lastMaintenance: '10.12.2025', lastService: '10.12.2025', nextService: '10.6.2026', hours: 45, maxHours: 800 },
+  { id: '7', name: 'Betoniauto', type: 'Kuljetus', serial: 'KUL-2021-007', model: 'Volvo FM', year: 2021, location: 'Parkkipaikka', status: 'Vuokralla', lastMaintenance: '1.1.2026', lastService: '1.1.2026', nextService: '1.4.2026', hours: 8500, maxHours: 15000 },
 ];
 
 const kpiData = [
@@ -78,7 +63,7 @@ export default function Kalusto() {
   const [editingItem, setEditingItem] = useState<Equipment | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', type: 'Työkalu', model: '', location: '', status: 'available' as 'available' | 'in_use' | 'maintenance' | 'reserved' });
+  const [newItem, setNewItem] = useState({ name: '', type: 'Työkalu', model: '', location: '', status: 'Vapaa' as EquipmentStatus });
 
   const handleAddItem = () => {
     if (!newItem.name.trim()) return;
@@ -86,17 +71,19 @@ export default function Kalusto() {
       id: Date.now().toString(),
       name: newItem.name,
       type: newItem.type,
+      serial: '-',
       model: newItem.model,
       year: new Date().getFullYear(),
       location: newItem.location,
       status: newItem.status,
+      lastMaintenance: '-',
       lastService: '-',
       nextService: '-',
       hours: 0,
       maxHours: 1000,
     };
     setEquipment(prev => [...prev, item]);
-    setNewItem({ name: '', type: 'Työkalu', model: '', location: '', status: 'available' });
+    setNewItem({ name: '', type: 'Työkalu', model: '', location: '', status: 'Vapaa' });
     setAddDialogOpen(false);
   };
 
@@ -112,10 +99,10 @@ export default function Kalusto() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'available': return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]"><CheckCircle2 size={10} className="mr-0.5" />Vapaa</Badge>;
-      case 'in_use': return <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]"><Gauge size={10} className="mr-0.5" />Käytössä</Badge>;
-      case 'maintenance': return <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"><Settings size={10} className="mr-0.5" />Huolto</Badge>;
-      case 'reserved': return <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px]"><Calendar size={10} className="mr-0.5" />Varattu</Badge>;
+      case 'Vapaa': return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]"><CheckCircle2 size={10} className="mr-0.5" />Vapaa</Badge>;
+      case 'Käytössä': return <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]"><Gauge size={10} className="mr-0.5" />Käytössä</Badge>;
+      case 'Huollossa': return <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"><Settings size={10} className="mr-0.5" />Huolto</Badge>;
+      case 'Vuokralla': return <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px]"><Calendar size={10} className="mr-0.5" />Varattu</Badge>;
       default: return <Badge variant="outline">{status}</Badge>;
     }
   };
@@ -123,13 +110,13 @@ export default function Kalusto() {
   const filteredEquipment = equipment.filter(e => {
     const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      e.model.toLowerCase().includes(searchQuery.toLowerCase());
+      (e.model ?? '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'Kaikki' || e.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const statuses = ['Kaikki', 'available', 'in_use', 'maintenance', 'reserved'];
-  const statusLabels: Record<string, string> = { Kaikki: 'Kaikki', available: 'Vapaa', in_use: 'Käytössä', maintenance: 'Huolto', reserved: 'Varattu' };
+  const statuses = ['Kaikki', 'Vapaa', 'Käytössä', 'Huollossa', 'Vuokralla'];
+  const statusLabels: Record<string, string> = { Kaikki: 'Kaikki', Vapaa: 'Vapaa', Käytössä: 'Käytössä', Huollossa: 'Huolto', Vuokralla: 'Varattu' };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -183,13 +170,13 @@ export default function Kalusto() {
                     <SelectItem value="Kuljetus">Kuljetus</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select value={newItem.status} onValueChange={v => setNewItem(p => ({ ...p, status: v as 'available' | 'in_use' | 'maintenance' | 'reserved' }))}>
+                <Select value={newItem.status} onValueChange={v => setNewItem(p => ({ ...p, status: v as EquipmentStatus }))}>
                   <SelectTrigger className="border-[#E2E8F0]"><SelectValue placeholder="Tila" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="available">Vapaa</SelectItem>
-                    <SelectItem value="in_use">Käytössä</SelectItem>
-                    <SelectItem value="maintenance">Huolto</SelectItem>
-                    <SelectItem value="reserved">Varattu</SelectItem>
+                    <SelectItem value="Vapaa">Vapaa</SelectItem>
+                    <SelectItem value="Käytössä">Käytössä</SelectItem>
+                    <SelectItem value="Huollossa">Huolto</SelectItem>
+                    <SelectItem value="Vuokralla">Varattu</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -240,7 +227,9 @@ export default function Kalusto() {
           {filteredEquipment.map(item => {
             const t = typeConfig[item.type] || { icon: Wrench, color: 'text-slate-600', bg: 'bg-slate-50' };
             const TypeIcon = t.icon;
-            const usagePct = item.maxHours > 0 ? Math.round((item.hours / item.maxHours) * 100) : 0;
+            const usageHours = item.hours ?? 0;
+            const usageMaxHours = item.maxHours ?? 0;
+            const usagePct = usageMaxHours > 0 ? Math.round((usageHours / usageMaxHours) * 100) : 0;
             return (
               <motion.div key={item.id} variants={itemVariants} layout>
                 <Card className="border border-[#E2E8F0] shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 group relative overflow-hidden">
@@ -261,7 +250,7 @@ export default function Kalusto() {
 
                     <div className="grid grid-cols-3 gap-3 mb-3 text-center">
                       <div className="bg-[#F8FAFC] rounded-lg p-2">
-                        <div className="text-lg font-bold text-[#1E293B]">{item.hours}</div>
+                        <div className="text-lg font-bold text-[#1E293B]">{usageHours}</div>
                         <div className="text-[9px] text-[#64748B]">Käyttötunnit</div>
                       </div>
                       <div className="bg-[#F8FAFC] rounded-lg p-2">
@@ -274,7 +263,7 @@ export default function Kalusto() {
                       </div>
                     </div>
 
-                    {item.maxHours > 0 && (
+                    {usageMaxHours > 0 && (
                       <div className="mb-3">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-[10px] text-[#64748B]">Käyttöaste</span>

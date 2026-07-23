@@ -1,8 +1,9 @@
+import { BRAND } from '../config/brand';
 import type {
   Project, WorkOrder, TimeEntry, Employee, Equipment,
   Customer, CrmLead, DiaryEntry, SafetyItem, WasteEntry,
   DrivingLogEntry, Announcement, Message,
-} from '../hooks/useAppData';
+} from '../types';
 
 export const initialProjects: Project[] = [
   { id: 'PROJ-1', name: 'Korjaustyö Tampere', customer: 'As Oy Tampereen Keskusta', status: 'Aktiivinen', startDate: '2025-03-01', endDate: '2026-09-30', progress: 47, budget: 450000, spent: 211500, location: 'Tampere' },
@@ -37,11 +38,11 @@ export const initialTimeEntries: TimeEntry[] = [
 ];
 
 export const initialEmployees: Employee[] = [
-  { id: 'EMP1', name: 'Matti Meikäläinen', role: 'Työnjohtaja', department: 'Työnjohto', phone: '040-1234567', email: 'matti.meikalainen@vakantti.fi', startDate: '2018-01-15', status: 'Aktiivinen' },
-  { id: 'EMP2', name: 'Liisa Virtanen', role: 'Projektipäällikkö', department: 'Hallinto', phone: '040-2345678', email: 'liisa.virtanen@vakantti.fi', startDate: '2019-03-01', status: 'Aktiivinen' },
-  { id: 'EMP3', name: 'Jukka Lehtonen', role: 'LVI-asentaja', department: 'LVI', phone: '040-3456789', email: 'jukka.lehtonen@vakantti.fi', startDate: '2020-06-01', status: 'Aktiivinen' },
-  { id: 'EMP4', name: 'Anna Lahtinen', role: 'Rakennusmies', department: 'Rakennus', phone: '040-4567890', email: 'anna.lahtinen@vakantti.fi', startDate: '2021-02-15', status: 'Aktiivinen' },
-  { id: 'EMP5', name: 'Pekka Seppänen', role: 'Sähköasentaja', department: 'Sähkö', phone: '040-5678901', email: 'pekka.seppanen@vakantti.fi', startDate: '2020-09-01', status: 'Aktiivinen' },
+  { id: 'EMP1', name: 'Matti Meikäläinen', role: 'Työnjohtaja', department: 'Työnjohto', phone: '040-1234567', email: `matti.meikalainen@${BRAND.emailDomain}`, startDate: '2018-01-15', status: 'Aktiivinen', projects: 4, hours: 1680, training: 6, certifications: ['Rakennusmestari', 'Työturvallisuuskortti'] },
+  { id: 'EMP2', name: 'Liisa Virtanen', role: 'Projektipäällikkö', department: 'Hallinto', phone: '040-2345678', email: `liisa.virtanen@${BRAND.emailDomain}`, startDate: '2019-03-01', status: 'Aktiivinen', projects: 3, hours: 1600, training: 5, certifications: ['Projektinhallinnan ammattitutkinto'] },
+  { id: 'EMP3', name: 'Jukka Lehtonen', role: 'LVI-asentaja', department: 'LVI', phone: '040-3456789', email: `jukka.lehtonen@${BRAND.emailDomain}`, startDate: '2020-06-01', status: 'Aktiivinen', projects: 2, hours: 1520, training: 4, certifications: ['LVI-perustutkinto', 'Työturvallisuuskortti'] },
+  { id: 'EMP4', name: 'Anna Lahtinen', role: 'Rakennusmies', department: 'Rakennus', phone: '040-4567890', email: `anna.lahtinen@${BRAND.emailDomain}`, startDate: '2021-02-15', status: 'Aktiivinen', projects: 2, hours: 1450, training: 3, certifications: ['Rakennusalan perustutkinto'] },
+  { id: 'EMP5', name: 'Pekka Seppänen', role: 'Sähköasentaja', department: 'Sähkö', phone: '040-5678901', email: `pekka.seppanen@${BRAND.emailDomain}`, startDate: '2020-09-01', status: 'Aktiivinen', projects: 1, hours: 1550, training: 4, certifications: ['Sähkötekniikan perustutkinto', 'Sähköturvallisuus S2'] },
 ];
 
 export const initialEquipment: Equipment[] = [

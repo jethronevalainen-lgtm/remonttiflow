@@ -18,6 +18,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { BRAND } from '@/config/brand';
 
 const tools = [
   { id: '1', name: 'Dokumenttianalyysi', description: 'Analysoi sopimukset ja tarjoukset', icon: FileText, color: 'bg-blue-100 text-blue-600' },
@@ -31,7 +32,7 @@ const tools = [
 ];
 
 const chatHistory = [
-  { role: 'assistant', message: 'Hei! Olen VaKantti AI -assistentti. Miten voin auttaa sinua tänään?' },
+  { role: 'assistant', message: `Hei! Olen ${BRAND.aiAssistantName}. Miten voin auttaa sinua tänään?` },
 ];
 
 export default function AIPage() {
@@ -73,7 +74,7 @@ export default function AIPage() {
         <CardHeader className="pb-3 border-b">
           <CardTitle className="text-lg flex items-center gap-2">
             <Bot className="w-5 h-5 text-primary" />
-            VaKantti AI -assistentti
+            {BRAND.aiAssistantName}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">

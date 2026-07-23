@@ -24,35 +24,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-
-/* ─── Types ─── */
-interface Employee {
-  id: string;
-  name: string;
-  role: string;
-  department: string;
-  phone: string;
-  email: string;
-  status: 'active' | 'vacation' | 'sick' | 'training';
-  projects: number;
-  hours: number;
-  training: number;
-  certifications: string[];
-  startDate: string;
-}
+import { BRAND } from '@/config/brand';
+import type { Employee, EmployeeStatus } from '@/types';
 
 /* ─── Mock Data ─── */
 const initialEmployees: Employee[] = [
-  { id: '1', name: 'Matti Korhonen', role: 'Putkimies', department: 'LVI', phone: '040-1234567', email: 'matti.k@vakantti.fi', status: 'active', projects: 2, hours: 1520, training: 4, certifications: ['LVI-perustutkinto', 'Työturvallisuus'], startDate: '2019-03-01' },
-  { id: '2', name: 'Laura Virtanen', role: 'Laatoittaja', department: 'Pinnat', phone: '040-2345678', email: 'laura.v@vakantti.fi', status: 'active', projects: 1, hours: 1480, training: 3, certifications: ['Pinnoitusalan perustutkinto'], startDate: '2020-06-15' },
-  { id: '3', name: 'Jussi Mäkinen', role: 'Sähkömies', department: 'Sähkö', phone: '040-3456789', email: 'jussi.m@vakantti.fi', status: 'vacation', projects: 1, hours: 1600, training: 5, certifications: ['Sähkötekniikan perustutkinto', 'Sähköturvallisuus S2'], startDate: '2018-01-10' },
-  { id: '4', name: 'Anna Salminen', role: 'LVI-asentaja', department: 'LVI', phone: '040-4567890', email: 'anna.s@vakantti.fi', status: 'active', projects: 2, hours: 1450, training: 4, certifications: ['LVI-asentaja', 'Kaaasujärjestelmät'], startDate: '2021-02-01' },
-  { id: '5', name: 'Pekka Heikkinen', role: 'Rakennusmies', department: 'Yleinen', phone: '040-5678901', email: 'pekka.h@vakantti.fi', status: 'active', projects: 1, hours: 1550, training: 3, certifications: ['Rakennusalan perustutkinto'], startDate: '2020-09-01' },
-  { id: '6', name: 'Maria Lehtonen', role: 'Työnjohtaja', department: 'Johto', phone: '040-6789012', email: 'maria.l@vakantti.fi', status: 'active', projects: 5, hours: 1680, training: 6, certifications: ['Rakennusmestari', 'Työturvallisuus', 'LEED AP'], startDate: '2015-04-01' },
-  { id: '7', name: 'Timo Rantanen', role: 'Maalari', department: 'Pinnat', phone: '040-7890123', email: 'timo.r@vakantti.fi', status: 'sick', projects: 0, hours: 1200, training: 2, certifications: ['Maalarin perustutkinto'], startDate: '2022-01-15' },
-  { id: '8', name: 'Satu Koskinen', role: 'Siivooja', department: 'Kiinteistö', phone: '040-8901234', email: 'satu.k@vakantti.fi', status: 'active', projects: 3, hours: 1400, training: 2, certifications: ['Kiinteistöhuollon ammattitutkinto'], startDate: '2021-08-01' },
-  { id: '9', name: 'Jukka Laine', role: 'Sähköasentaja', department: 'Sähkö', phone: '040-9012345', email: 'jukka.l@vakantti.fi', status: 'training', projects: 0, hours: 800, training: 1, certifications: ['Sähköasentajan perustutkinto'], startDate: '2023-03-01' },
-  { id: '10', name: 'Liisa Nieminen', role: 'Rakennusmies', department: 'Yleinen', phone: '040-0123456', email: 'liisa.n@vakantti.fi', status: 'active', projects: 2, hours: 1500, training: 3, certifications: ['Rakennusalan perustutkinto', 'Työturvallisuus'], startDate: '2020-05-15' },
+  { id: '1', name: 'Matti Korhonen', role: 'Putkimies', department: 'LVI', phone: '040-1234567', email: `matti.k@${BRAND.emailDomain}`, status: 'Aktiivinen', projects: 2, hours: 1520, training: 4, certifications: ['LVI-perustutkinto', 'Työturvallisuus'], startDate: '2019-03-01' },
+  { id: '2', name: 'Laura Virtanen', role: 'Laatoittaja', department: 'Pinnat', phone: '040-2345678', email: `laura.v@${BRAND.emailDomain}`, status: 'Aktiivinen', projects: 1, hours: 1480, training: 3, certifications: ['Pinnoitusalan perustutkinto'], startDate: '2020-06-15' },
+  { id: '3', name: 'Jussi Mäkinen', role: 'Sähkömies', department: 'Sähkö', phone: '040-3456789', email: `jussi.m@${BRAND.emailDomain}`, status: 'Lomalla', projects: 1, hours: 1600, training: 5, certifications: ['Sähkötekniikan perustutkinto', 'Sähköturvallisuus S2'], startDate: '2018-01-10' },
+  { id: '4', name: 'Anna Salminen', role: 'LVI-asentaja', department: 'LVI', phone: '040-4567890', email: `anna.s@${BRAND.emailDomain}`, status: 'Aktiivinen', projects: 2, hours: 1450, training: 4, certifications: ['LVI-asentaja', 'Kaaasujärjestelmät'], startDate: '2021-02-01' },
+  { id: '5', name: 'Pekka Heikkinen', role: 'Rakennusmies', department: 'Yleinen', phone: '040-5678901', email: `pekka.h@${BRAND.emailDomain}`, status: 'Aktiivinen', projects: 1, hours: 1550, training: 3, certifications: ['Rakennusalan perustutkinto'], startDate: '2020-09-01' },
+  { id: '6', name: 'Maria Lehtonen', role: 'Työnjohtaja', department: 'Johto', phone: '040-6789012', email: `maria.l@${BRAND.emailDomain}`, status: 'Aktiivinen', projects: 5, hours: 1680, training: 6, certifications: ['Rakennusmestari', 'Työturvallisuus', 'LEED AP'], startDate: '2015-04-01' },
+  { id: '7', name: 'Timo Rantanen', role: 'Maalari', department: 'Pinnat', phone: '040-7890123', email: `timo.r@${BRAND.emailDomain}`, status: 'Sairas', projects: 0, hours: 1200, training: 2, certifications: ['Maalarin perustutkinto'], startDate: '2022-01-15' },
+  { id: '8', name: 'Satu Koskinen', role: 'Siivooja', department: 'Kiinteistö', phone: '040-8901234', email: `satu.k@${BRAND.emailDomain}`, status: 'Aktiivinen', projects: 3, hours: 1400, training: 2, certifications: ['Kiinteistöhuollon ammattitutkinto'], startDate: '2021-08-01' },
+  { id: '9', name: 'Jukka Laine', role: 'Sähköasentaja', department: 'Sähkö', phone: '040-9012345', email: `jukka.l@${BRAND.emailDomain}`, status: 'Koulutuksessa', projects: 0, hours: 800, training: 1, certifications: ['Sähköasentajan perustutkinto'], startDate: '2023-03-01' },
+  { id: '10', name: 'Liisa Nieminen', role: 'Rakennusmies', department: 'Yleinen', phone: '040-0123456', email: `liisa.n@${BRAND.emailDomain}`, status: 'Aktiivinen', projects: 2, hours: 1500, training: 3, certifications: ['Rakennusalan perustutkinto', 'Työturvallisuus'], startDate: '2020-05-15' },
 ];
 
 const kpiData = [
@@ -79,7 +65,7 @@ export default function Henkilosto() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [newEmployee, setNewEmployee] = useState({ name: '', role: '', department: 'Yleinen', status: 'active' as Employee['status'], email: '', phone: '' });
+  const [newEmployee, setNewEmployee] = useState({ name: '', role: '', department: 'Yleinen', status: 'Aktiivinen' as EmployeeStatus, email: '', phone: '' });
 
   const handleAddEmployee = () => {
     if (!newEmployee.name.trim() || !newEmployee.role.trim()) return;
@@ -98,7 +84,7 @@ export default function Henkilosto() {
       startDate: new Date().toISOString().split('T')[0],
     };
     setEmployees(prev => [...prev, emp]);
-    setNewEmployee({ name: '', role: '', department: 'Yleinen', status: 'active', email: '', phone: '' });
+    setNewEmployee({ name: '', role: '', department: 'Yleinen', status: 'Aktiivinen', email: '', phone: '' });
     setAddDialogOpen(false);
   };
 
@@ -114,10 +100,10 @@ export default function Henkilosto() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'active': return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]"><CheckCircle size={10} className="mr-0.5" />Työssä</Badge>;
-      case 'vacation': return <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]"><Calendar size={10} className="mr-0.5" />Lomalla</Badge>;
-      case 'sick': return <Badge className="bg-red-100 text-red-800 border-red-200 text-[10px]"><AlertTriangle size={10} className="mr-0.5" />Sairas</Badge>;
-      case 'training': return <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px]"><GraduationCap size={10} className="mr-0.5" />Koulutuksessa</Badge>;
+      case 'Aktiivinen': return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]"><CheckCircle size={10} className="mr-0.5" />Työssä</Badge>;
+      case 'Lomalla': return <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]"><Calendar size={10} className="mr-0.5" />Lomalla</Badge>;
+      case 'Sairas': return <Badge className="bg-red-100 text-red-800 border-red-200 text-[10px]"><AlertTriangle size={10} className="mr-0.5" />Sairas</Badge>;
+      case 'Koulutuksessa': return <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px]"><GraduationCap size={10} className="mr-0.5" />Koulutuksessa</Badge>;
       default: return <Badge variant="outline">{status}</Badge>;
     }
   };
@@ -130,8 +116,8 @@ export default function Henkilosto() {
     return matchesSearch && matchesStatus;
   });
 
-  const statuses = ['Kaikki', 'active', 'vacation', 'sick', 'training'];
-  const statusLabels: Record<string, string> = { Kaikki: 'Kaikki', active: 'Työssä', vacation: 'Lomalla', sick: 'Sairas', training: 'Koulutuksessa' };
+  const statuses = ['Kaikki', 'Aktiivinen', 'Lomalla', 'Sairas', 'Koulutuksessa'];
+  const statusLabels: Record<string, string> = { Kaikki: 'Kaikki', Aktiivinen: 'Työssä', Lomalla: 'Lomalla', Sairas: 'Sairas', Koulutuksessa: 'Koulutuksessa' };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -182,13 +168,13 @@ export default function Henkilosto() {
                     <SelectItem value="Kiinteistö">Kiinteistö</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select value={newEmployee.status} onValueChange={v => setNewEmployee(p => ({ ...p, status: v as 'active' | 'vacation' | 'sick' | 'training' }))}>
+                <Select value={newEmployee.status} onValueChange={v => setNewEmployee(p => ({ ...p, status: v as EmployeeStatus }))}>
                   <SelectTrigger className="border-[#E2E8F0]"><SelectValue placeholder="Tila" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">Työssä</SelectItem>
-                    <SelectItem value="vacation">Lomalla</SelectItem>
-                    <SelectItem value="sick">Sairas</SelectItem>
-                    <SelectItem value="training">Koulutuksessa</SelectItem>
+                    <SelectItem value="Aktiivinen">Työssä</SelectItem>
+                    <SelectItem value="Lomalla">Lomalla</SelectItem>
+                    <SelectItem value="Sairas">Sairas</SelectItem>
+                    <SelectItem value="Koulutuksessa">Koulutuksessa</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -240,13 +226,13 @@ export default function Henkilosto() {
         <AnimatePresence>
           {filteredEmployees.map(emp => {
             const dept = departmentConfig[emp.department] || { color: 'text-slate-700', bg: 'bg-slate-50' };
-            const statusConfig = {
-              active: { bar: '[&>div]:bg-emerald-500', dot: 'bg-emerald-500' },
-              vacation: { bar: '[&>div]:bg-blue-500', dot: 'bg-blue-500' },
-              sick: { bar: '[&>div]:bg-red-500', dot: 'bg-red-500' },
-              training: { bar: '[&>div]:bg-purple-500', dot: 'bg-purple-500' },
+            const statusConfig: Partial<Record<EmployeeStatus, { bar: string; dot: string }>> = {
+              Aktiivinen: { bar: '[&>div]:bg-emerald-500', dot: 'bg-emerald-500' },
+              Lomalla: { bar: '[&>div]:bg-blue-500', dot: 'bg-blue-500' },
+              Sairas: { bar: '[&>div]:bg-red-500', dot: 'bg-red-500' },
+              Koulutuksessa: { bar: '[&>div]:bg-purple-500', dot: 'bg-purple-500' },
             };
-            const sc = statusConfig[emp.status];
+            const sc = statusConfig[emp.status] ?? { bar: '[&>div]:bg-slate-400', dot: 'bg-slate-400' };
             return (
               <motion.div key={emp.id} variants={itemVariants} layout>
                 <Card className="border border-[#E2E8F0] shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 group">

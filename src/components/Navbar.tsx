@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BRAND } from '@/config/brand';
 import { useAuth, ROLE_LABELS } from '@/contexts/AuthContext';
 import type { UserRole } from '@/contexts/AuthContext';
 
@@ -131,11 +132,11 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
       <div className="flex items-center h-14 px-3 border-b border-slate-700/50 flex-shrink-0">
         <div className="flex items-center gap-3 overflow-hidden flex-1">
           <div className="w-9 h-9 rounded-lg bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-orange-500/20">
-            <span className="text-white font-bold text-sm">VK</span>
+            <span className="text-white font-bold text-sm">{BRAND.shortName}</span>
           </div>
           {!collapsed && (
             <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-white font-bold text-base tracking-tight">
-              VaKantti
+              {BRAND.name}
             </motion.span>
           )}
         </div>
