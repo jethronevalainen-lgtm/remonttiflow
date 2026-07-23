@@ -2,342 +2,181 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard,
-  HardHat,
-  FolderKanban,
-  ClipboardCheck,
-  CalendarClock,
-  Clock,
-  Car,
-  ShieldCheck,
-  Users,
-  MessageSquare,
-  Wrench,
-  UserCircle,
-  FileText,
-  BarChart3,
-  ChevronDown,
-  ChevronLeft,
-  Sparkles,
-  ChevronRight,
-  X,
+  LayoutDashboard, HardHat, FolderKanban, ClipboardCheck, CalendarClock,
+  Clock, Car, ShieldCheck, Users, MessageSquare, Wrench, UserCircle,
+  FileText, BarChart3, ChevronDown, ChevronLeft, Sparkles, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth, ROLE_LABELS } from '@/contexts/AuthContext';
+import type { UserRole } from '@/contexts/AuthContext';
 
-/* Types */
 interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string; size?: number }>;
   path: string;
-  children?: NavSubItem[];
+  roles?: UserRole[];
 }
 
-interface NavSubItem {
-  label: string;
-  path: string;
-}
-
-/* Navigation Data */
-const navSections: { title?: string; items: NavItem[] }[] = [
-  {
-    items: [
-      { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-      { label: 'Työnjohto', icon: HardHat, path: '/tyonjohto' },
-    ],
-  },
-  {
-    title: 'Projektit',
-    items: [
-      {
-        label: 'Projektit',
-        icon: FolderKanban,
-        path: '/projektit',
-        children: [
-          { label: 'Projektit', path: '/projektit' },
-          { label: 'Aikataulutus', path: '/aikataulutus' },
-          { label: 'Päiväkirjat', path: '/paivakirjat' },
-          { label: 'Laskenta', path: '/laskenta' },
-          { label: 'Määrälaskenta', path: '/maaralaskenta' },
-          { label: 'Jätehuolto', path: '/jatehuolto' },
-        ],
-      },
-    ],
-  },
-  {
-    title: 'Hallinta',
-    items: [
-      { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
-      { label: 'Työvuorokalenteri', icon: CalendarClock, path: '/tyovuorokalenteri' },
-      { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
-      { label: 'Matkakulut & Ajo', icon: Car, path: '/matkakulut' },
-      { label: 'Työturvallisuus', icon: ShieldCheck, path: '/tyoturvallisuus' },
-    ],
-  },
-  {
-    title: 'Asiakkaat',
-    items: [
-      { label: 'CRM', icon: MessageSquare, path: '/crm' },
-      { label: 'Asiakkaat', icon: Users, path: '/asiakkaat' },
-    ],
-  },
-  {
-    title: 'Työkalut',
-    items: [
-      { label: 'AI', icon: Sparkles, path: '/ai' },
-      { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
-      { label: 'Kalusto', icon: Wrench, path: '/kalusto' },
-      { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto' },
-      { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
-      { label: 'Raportit', icon: BarChart3, path: '/raportit' },
-    ],
-  },
+const mainItems: NavItem[] = [
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { label: 'Työnjohto', icon: HardHat, path: '/tyonjohto', roles: ['admin', 'supervisor'] },
 ];
 
-/* Component */
+const projectItems: NavItem[] = [
+  { label: 'Projektit', icon: FolderKanban, path: '/projektit', roles: ['admin', 'supervisor'] },
+  { label: 'Aikataulutus', icon: CalendarClock, path: '/aikataulutus', roles: ['admin', 'supervisor'] },
+  { label: 'Päiväkirjat', icon: FileText, path: '/paivakirjat', roles: ['admin', 'supervisor'] },
+  { label: 'Laskenta', icon: BarChart3, path: '/laskenta', roles: ['admin', 'supervisor'] },
+  { label: 'Määrälaskenta', icon: Wrench, path: '/maaralaskenta', roles: ['admin', 'supervisor'] },
+  { label: 'Jätehuolto', icon: ShieldCheck, path: '/jatehuolto', roles: ['admin', 'supervisor'] },
+];
+
+const mgmtItems: NavItem[] = [
+  { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
+  { label: 'Työvuorokal.', icon: CalendarClock, path: '/tyovuorokalenteri', roles: ['admin', 'supervisor'] },
+  { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
+  { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
+  { label: 'Työturvallisuus', icon: ShieldCheck, path: '/tyoturvallisuus', roles: ['admin', 'supervisor'] },
+];
+
+const customerItems: NavItem[] = [
+  { label: 'CRM', icon: MessageSquare, path: '/crm', roles: ['admin', 'supervisor'] },
+  { label: 'Asiakkaat', icon: Users, path: '/asiakkaat', roles: ['admin', 'supervisor'] },
+];
+
+const toolItems: NavItem[] = [
+  { label: 'AI', icon: Sparkles, path: '/ai', roles: ['admin', 'supervisor'] },
+  { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
+  { label: 'Kalusto', icon: Wrench, path: '/kalusto', roles: ['admin', 'supervisor'] },
+  { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto', roles: ['admin', 'supervisor'] },
+  { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet', roles: ['admin', 'supervisor'] },
+  { label: 'Raportit', icon: BarChart3, path: '/raportit', roles: ['admin', 'supervisor'] },
+];
+
 interface NavbarProps {
   collapsed: boolean;
-  onToggleCollapse: () => void;
-  mobileOpen: boolean;
-  onMobileClose: () => void;
+  onToggle: () => void;
+  isMobile?: boolean;
 }
 
-export default function Navbar({ collapsed, onToggleCollapse, mobileOpen, onMobileClose }: NavbarProps) {
+export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({
-    Projektit: true,
+  const { user } = useAuth();
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    projektit: true, hallinta: true, asiakkaat: false, tyokalut: false,
   });
 
-  const toggleMenu = (label: string) => {
-    setExpandedMenus(prev => ({ ...prev, [label]: !prev[label] }));
+  if (!user) return null;
+  const userRole = user.role;
+  const canSee = (item: NavItem) => !item.roles || item.roles.includes(userRole);
+
+  const toggle = (key: string) => setOpenSections(p => ({ ...p, [key]: !p[key] }));
+
+  const NavButton = ({ item }: { item: NavItem }) => {
+    const active = location.pathname === item.path;
+    return (
+      <button
+        onClick={() => { navigate(item.path); if (isMobile) onToggle(); }}
+        className={cn(
+          'w-full flex items-center gap-3 h-10 px-3 rounded-lg text-sm font-medium transition-all duration-200 relative group',
+          active
+            ? 'bg-orange-500/15 text-orange-500 shadow-sm'
+            : 'text-slate-400 hover:bg-slate-700/50 hover:text-white'
+        )}
+      >
+        <item.icon size={20} className={cn('flex-shrink-0', active && 'text-orange-500')} />
+        {!collapsed && <span className="truncate">{item.label}</span>}
+        {collapsed && (
+          <div className="absolute left-full ml-2 px-3 py-2 bg-slate-800 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 border border-slate-700 transition-opacity">
+            {item.label}
+          </div>
+        )}
+      </button>
+    );
   };
 
-  const isActive = (path: string) => location.pathname === path;
-
-  const handleNavClick = (path: string, hasChildren?: boolean, label?: string) => {
-    if (hasChildren && label) {
-      toggleMenu(label);
-    } else {
-      navigate(path);
-      onMobileClose();
-    }
+  const Section = ({ title, items, sectionKey }: { title: string; items: NavItem[]; sectionKey: string }) => {
+    const visible = items.filter(canSee);
+    if (visible.length === 0) return null;
+    const isOpen = openSections[sectionKey] ?? true;
+    return (
+      <div className="mb-1">
+        {!collapsed && (
+          <button onClick={() => toggle(sectionKey)} className="flex items-center gap-1 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-300 transition-colors w-full">
+            <span className="flex-1 text-left">{title}</span>
+            <motion.span animate={{ rotate: isOpen ? 0 : -90 }} transition={{ duration: 0.15 }}>
+              <ChevronDown size={12} />
+            </motion.span>
+          </button>
+        )}
+        <AnimatePresence>
+          {(isOpen || collapsed) && (
+            <motion.div initial={collapsed ? {} : { height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="space-y-0.5">
+              {visible.map(item => <NavButton key={item.path} item={item} />)}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
   };
-
-  /* Nav Content (shared between desktop and mobile) */
-  const NavContent = () => (
-    <>
-      {/* Logo Area */}
-      <div className="flex items-center h-14 px-3 border-b border-bg-dark-border flex-shrink-0">
-        <div className="flex items-center gap-3 overflow-hidden flex-1">
-          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-sm">VK</span>
-          </div>
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.span
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                transition={{ duration: 0.2 }}
-                className="text-text-on-dark font-semibold text-base whitespace-nowrap"
-              >
-                VaKantti
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </div>
-        <button
-          onClick={onMobileClose}
-          className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg hover:bg-bg-dark-border text-text-on-dark-muted transition-colors"
-        >
-          <X size={18} />
-        </button>
-        <button
-          onClick={onToggleCollapse}
-          className="hidden md:flex w-7 h-7 items-center justify-center rounded-md hover:bg-bg-dark-border text-text-muted transition-colors"
-        >
-          <motion.span
-            animate={{ rotate: collapsed ? 180 : 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <ChevronLeft size={16} />
-          </motion.span>
-        </button>
-      </div>
-
-      {/* Navigation Items */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2 space-y-1">
-        {navSections.map((section, sIdx) => (
-          <div key={sIdx} className="mb-4">
-            {section.title && (
-              <AnimatePresence>
-                {!collapsed && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="px-3 mb-2 mt-4"
-                  >
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-text-muted">
-                      {section.title}
-                    </span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            )}
-            {!collapsed && section.title && sIdx > 0 && (
-              <div className="border-t border-bg-dark-border my-2" />
-            )}
-
-            {section.items.map(item => {
-              const active = isActive(item.path);
-              const hasChildren = !!item.children;
-              const menuOpen = hasChildren && expandedMenus[item.label];
-
-              return (
-                <div key={item.path}>
-                  <button
-                    onClick={() => handleNavClick(item.path, hasChildren, item.label)}
-                    className={cn(
-                      'w-full flex items-center gap-3 h-10 px-3 rounded-lg text-sm font-medium transition-colors duration-150 relative group',
-                      active && !hasChildren
-                        ? 'bg-primary-light text-primary border-l-[3px] border-primary'
-                        : 'text-text-on-dark-muted hover:bg-bg-dark-border hover:text-text-on-dark border-l-[3px] border-transparent'
-                    )}
-                  >
-                    <item.icon
-                      className={cn(
-                        'flex-shrink-0',
-                        active && !hasChildren ? 'text-primary' : 'text-text-muted group-hover:text-text-on-dark'
-                      )}
-                      size={20}
-                    />
-                    <AnimatePresence>
-                      {!collapsed && (
-                        <motion.span
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="flex-1 text-left whitespace-nowrap overflow-hidden text-[13px]"
-                        >
-                          {item.label}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                    {hasChildren && !collapsed && (
-                      <motion.span
-                        animate={{ rotate: menuOpen ? 180 : 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <ChevronDown size={14} className="text-text-muted" />
-                      </motion.span>
-                    )}
-
-                    {collapsed && (
-                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2.5 py-1.5 bg-bg-dark-elevated text-text-on-dark text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 border border-bg-dark-border">
-                        {item.label}
-                      </div>
-                    )}
-                  </button>
-
-                  <AnimatePresence>
-                    {hasChildren && menuOpen && !collapsed && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-                        className="overflow-hidden"
-                      >
-                        <div className="ml-6 pl-4 border-l border-bg-dark-border mt-1 space-y-1">
-                          {item.children?.map(sub => {
-                            const subActive = isActive(sub.path);
-                            return (
-                              <button
-                                key={sub.path}
-                                onClick={() => { navigate(sub.path); onMobileClose(); }}
-                                className={cn(
-                                  'w-full flex items-center h-9 px-3 rounded-md text-[13px] transition-colors duration-150',
-                                  subActive
-                                    ? 'bg-primary-light text-primary'
-                                    : 'text-text-on-dark-muted hover:bg-bg-dark-border hover:text-text-on-dark'
-                                )}
-                              >
-                                {sub.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </nav>
-
-      {/* User Profile */}
-      <div className="flex-shrink-0 border-t border-bg-dark-border p-3">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-9 h-9 rounded-full bg-primary-light border border-primary/20 flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-semibold text-primary">MM</span>
-          </div>
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="min-w-0"
-              >
-                <p className="text-sm font-medium text-text-on-dark truncate">Matti Meikäläinen</p>
-                <p className="text-xs text-text-muted truncate">Työnjohtaja</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </>
-  );
 
   return (
-    <>
-      {/* Mobile: Overlay Sidebar */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={onMobileClose}
-              className="fixed inset-0 bg-black/50 z-40 md:hidden"
-            />
-            <motion.aside
-              initial={{ x: -260 }}
-              animate={{ x: 0 }}
-              exit={{ x: -260 }}
-              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-              className="fixed top-0 left-0 h-screen w-[260px] bg-bg-dark-elevated border-r border-bg-dark-border flex flex-col z-50 md:hidden"
-            >
-              <NavContent />
-            </motion.aside>
-          </>
+    <motion.aside
+      className={cn('flex flex-col h-screen bg-[#0F172A] border-r border-slate-700/50 flex-shrink-0', isMobile && 'w-[260px]')}
+      animate={{ width: collapsed ? 64 : 260 }}
+      transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+    >
+      <div className="flex items-center h-14 px-3 border-b border-slate-700/50 flex-shrink-0">
+        <div className="flex items-center gap-3 overflow-hidden flex-1">
+          <div className="w-9 h-9 rounded-lg bg-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-orange-500/20">
+            <span className="text-white font-bold text-sm">VK</span>
+          </div>
+          {!collapsed && (
+            <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-white font-bold text-base tracking-tight">
+              VaKantti
+            </motion.span>
+          )}
+        </div>
+        {!isMobile && (
+          <button onClick={onToggle} className="hidden md:flex w-7 h-7 items-center justify-center rounded-md hover:bg-slate-700 text-slate-400 transition-colors">
+            <motion.span animate={{ rotate: collapsed ? 180 : 0 }} transition={{ duration: 0.2 }}>
+              <ChevronLeft size={16} />
+            </motion.span>
+          </button>
         )}
-      </AnimatePresence>
+        {isMobile && (
+          <button onClick={onToggle} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-700 text-slate-400">
+            <X size={18} />
+          </button>
+        )}
+      </div>
 
-      {/* Desktop: Collapsible Sidebar */}
-      <motion.aside
-        className="hidden md:flex flex-col h-screen bg-bg-dark-elevated border-r border-bg-dark-border flex-shrink-0 overflow-hidden"
-        animate={{ width: collapsed ? 64 : 260 }}
-        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-        style={{ zIndex: 10 }}
-      >
-        <NavContent />
-      </motion.aside>
-    </>
+      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-1 scrollbar-thin">
+        {mainItems.filter(canSee).map(item => <NavButton key={item.path} item={item} />)}
+        <div className="my-2 border-t border-slate-700/30" />
+        <Section title="Projektit" items={projectItems} sectionKey="projektit" />
+        <div className="my-1 border-t border-slate-700/30" />
+        <Section title="Hallinta" items={mgmtItems} sectionKey="hallinta" />
+        <div className="my-1 border-t border-slate-700/30" />
+        <Section title="Asiakkaat" items={customerItems} sectionKey="asiakkaat" />
+        <div className="my-1 border-t border-slate-700/30" />
+        <Section title="Työkalut" items={toolItems} sectionKey="tyokalut" />
+      </nav>
+
+      <div className="flex-shrink-0 border-t border-slate-700/50 p-3">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-md">
+            <span className="text-white text-sm font-bold">{user.initials}</span>
+          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white truncate">{user.name}</p>
+              <p className="text-[11px] text-slate-400">{ROLE_LABELS[user.role]}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.aside>
   );
 }
