@@ -18,4 +18,4 @@ export { default as Matkakulut } from './Matkakulut';
 export { default as Jatehuolto } from './Jatehuolto';
 export { default as Tyonjohto } from './Tyonjohto';
 export { default as CRM } from './CRM';
-export { default as AI } from './AI';
+export { default as AIPage } from './AI';
