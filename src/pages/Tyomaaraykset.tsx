@@ -1,986 +1,663 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
+  ClipboardList,
   Plus,
   Search,
-  X,
   Filter,
-  MoreHorizontal,
-  Eye,
-  Edit3,
-  Copy,
-  Trash2,
-  Layers,
-  Play,
-  Clock,
-  CheckCircle,
+  CheckCircle2,
   AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
+  Clock,
+  Calendar,
+  Users,
+  Euro,
   FileText,
-  MessageSquare,
-  Paperclip,
-  CheckSquare,
-  Square,
-  Send,
-  Wrench,
-  Zap,
-  Droplets,
-  SearchCheck,
-  HelpCircle,
-  XCircle,
-  Pause,
+  ChevronDown,
+  ChevronUp,
+  Edit2,
+  Trash2,
+  X,
+  Save,
+  ArrowUpDown,
+  Printer,
+  Mail
 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
-import { useAppDataContext } from '../contexts/AppDataContext';
-
-/* ─── Types ─── */
-type WorkOrderStatus = 'Avoin' | 'Käynnissä' | 'Odottaa' | 'Valmis' | 'Peruttu';
-type WorkOrderPriority = 'Kiireellinen' | 'Korkea' | 'Normaali' | 'Matala';
-type WorkOrderType = 'Korjaus' | 'Asennus' | 'Tarkastus' | 'Huolto' | 'Muu';
-
-interface WorkOrderStep {
-  label: string;
-  completed: boolean;
-}
-
-interface WorkOrderComment {
-  author: string;
-  time: string;
-  text: string;
-}
-
-interface WorkOrderAttachment {
-  name: string;
-  size: string;
-}
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface WorkOrder {
   id: string;
+  projectId: string;
+  projectName: string;
   title: string;
   description: string;
-  type: WorkOrderType;
-  project: string;
-  assignee: string;
-  assigneeInitials: string;
-  dueDate: string;
-  priority: WorkOrderPriority;
-  status: WorkOrderStatus;
+  assignedTo: string;
   createdBy: string;
-  createdDate: string;
-  steps: WorkOrderStep[];
-  comments: WorkOrderComment[];
-  attachments: WorkOrderAttachment[];
+  createdAt: string;
+  dueDate: string;
+  completedAt?: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  status: 'open' | 'in_progress' | 'completed' | 'cancelled';
+  category: string;
+  estimatedHours: number;
+  actualHours?: number;
+  materials: string[];
+  notes: string;
 }
 
-/* ─── Mock Data ─── */
-const WORK_ORDERS: WorkOrder[] = [
+const workOrders: WorkOrder[] = [
   {
-    id: 'TM-2025-084',
-    title: 'Sähkötyöt rakennus B',
-    description: 'Sähköasennukset rakennuksen B kerroksiin 1–3. Käytettävä uusia kaapeleita ja rasioita.',
-    type: 'Asennus',
-    project: 'Espoon uudisrakennus',
-    assignee: 'Matti Korhonen',
-    assigneeInitials: 'MK',
-    dueDate: '23.6.2025',
-    priority: 'Kiireellinen',
-    status: 'Käynnissä',
-    createdBy: 'Anna Lahtinen',
-    createdDate: '15.6.2025',
-    steps: [
-      { label: 'Valmistelu', completed: true },
-      { label: 'Materiaalien tarkistus', completed: true },
-      { label: 'Kaapelointi', completed: false },
-      { label: 'Kytkentä', completed: false },
-      { label: 'Testaus', completed: false },
-    ],
-    comments: [
-      { author: 'Matti K.', time: '16:30', text: 'Materiaalit saapuneet, aloitetaan huomenna.' },
-      { author: 'Anna L.', time: '08:15', text: 'Muistutus: Tarkista eristykset ennen kaapelointia.' },
-    ],
-    attachments: [
-      { name: 'Sähkösuunnitelma.pdf', size: '2.4 MB' },
-      { name: 'Turvallisuusohje.pdf', size: '156 KB' },
-    ],
+    id: 'WO-001',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    title: 'Putkien asennus asunto 1',
+    description: 'Vanhojen putkien purku ja uusien asennus asuntoon 1. Sisältää kylpyhuoneen ja keittiön putket.',
+    assignedTo: 'Mika M.',
+    createdBy: 'Jethro',
+    createdAt: '2026-01-05',
+    dueDate: '2026-01-20',
+    priority: 'high',
+    status: 'in_progress',
+    category: 'Putkityöt',
+    estimatedHours: 40,
+    actualHours: 24,
+    materials: ['Kupariputki 15mm', 'Kupariputki 22mm', 'Liittimet', 'Sulut'],
+    notes: 'Tarkista paineet ennen peittämistä'
   },
   {
-    id: 'TM-2025-083',
-    title: 'LVI-asennus kerros 2',
-    description: 'LVI-putkien asennus toiseen kerrokseen. Vesijohtojen liittäminen pääjakeluun.',
-    type: 'Asennus',
-    project: 'Helsingin toimistorakennus',
-    assignee: 'Anna Lahtinen',
-    assigneeInitials: 'AL',
-    dueDate: '24.6.2025',
-    priority: 'Korkea',
-    status: 'Avoin',
-    createdBy: 'Pekka Salminen',
-    createdDate: '14.6.2025',
-    steps: [
-      { label: 'Putkien mittaus', completed: false },
-      { label: 'Leikkaus', completed: false },
-      { label: 'Liittäminen', completed: false },
-      { label: 'Painetestaus', completed: false },
-    ],
-    comments: [],
-    attachments: [{ name: 'LVI-suunnitelma.pdf', size: '1.8 MB' }],
+    id: 'WO-002',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    title: 'Sähköasennus asunto 1',
+    description: 'Sähköjohdotusten asennus ja rasioinnit asuntoon 1.',
+    assignedTo: 'Laura K.',
+    createdBy: 'Jethro',
+    createdAt: '2026-01-08',
+    dueDate: '2026-01-22',
+    priority: 'medium',
+    status: 'open',
+    category: 'Sähkötyöt',
+    estimatedHours: 24,
+    materials: ['Johto 1.5mm²', 'Johto 2.5mm²', 'Rasiat', 'Keskus'],
+    notes: ''
   },
   {
-    id: 'TM-2025-082',
-    title: 'Ikkunoiden tiivistys',
-    description: 'Vanhojen ikkunoiden tiivisteiden uusiminen ja vedenpitävyyden tarkistus.',
-    type: 'Korjaus',
-    project: 'Tampereen korjaustyö',
-    assignee: 'Jukka Lehtonen',
-    assigneeInitials: 'JL',
-    dueDate: '25.6.2025',
-    priority: 'Normaali',
-    status: 'Avoin',
-    createdBy: 'Liisa Rantanen',
-    createdDate: '13.6.2025',
-    steps: [
-      { label: 'Vanhojen tiivisteiden poisto', completed: false },
-      { label: 'Pintojen puhdistus', completed: false },
-      { label: 'Uusien tiivisteiden asennus', completed: false },
-    ],
-    comments: [],
-    attachments: [],
+    id: 'WO-003',
+    projectId: '2',
+    projectName: 'Kerrostalo B',
+    title: 'Laatoitus kerros 1',
+    description: 'Kylpyhuoneiden laatoitus kerroksessa 1. 4 asuntoa.',
+    assignedTo: 'Jussi P.',
+    createdBy: 'Jethro',
+    createdAt: '2026-01-10',
+    dueDate: '2026-01-25',
+    priority: 'medium',
+    status: 'in_progress',
+    category: 'Laatoitus',
+    estimatedHours: 32,
+    actualHours: 8,
+    materials: ['Laatta 10x10', 'Laatta 30x60', 'Laatoitusliima', 'Saumalaasti'],
+    notes: 'Tarkista vesieristys ennen laatoitusta'
   },
   {
-    id: 'TM-2025-081',
-    title: 'Runkotarkastus',
-    description: 'Rakennuksen rungon laadunvarmistustarkastus ja dokumentointi.',
-    type: 'Tarkastus',
-    project: 'Espoon uudisrakennus',
-    assignee: 'Pekka Salminen',
-    assigneeInitials: 'PS',
-    dueDate: '20.6.2025',
-    priority: 'Normaali',
-    status: 'Valmis',
-    createdBy: 'Matti Korhonen',
-    createdDate: '10.6.2025',
-    steps: [
-      { label: 'Visuaalinen tarkastus', completed: true },
-      { label: 'Mittaukset', completed: true },
-      { label: 'Dokumentointi', completed: true },
-      { label: 'Raportin laatiminen', completed: true },
-    ],
-    comments: [
-      { author: 'Pekka S.', time: '14:00', text: 'Runko kunnossa, pieniä korjauksia tarvitaan liitoksissa.' },
-    ],
-    attachments: [{ name: 'Tarkastusraportti.pdf', size: '890 KB' }],
+    id: 'WO-004',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    title: 'Vesieristys asunto 2',
+    description: 'Kylpyhuoneen vesieristys asuntoon 2.',
+    assignedTo: 'Jussi P.',
+    createdBy: 'Jethro',
+    createdAt: '2026-01-12',
+    dueDate: '2026-01-18',
+    priority: 'high',
+    status: 'open',
+    category: 'Vesieristys',
+    estimatedHours: 16,
+    materials: ['Vesieriste', 'Vahvistusnauha', 'Kulmatiivisteet'],
+    notes: ''
   },
   {
-    id: 'TM-2025-080',
-    title: 'Maalaustyöt sisäpinnat',
-    description: 'Sisäseinien maalaus asunnoissa A1–A5. Käytettävä ekologista sisämaalia.',
-    type: 'Korjaus',
-    project: 'Tampereen korjaustyö',
-    assignee: 'Liisa Rantanen',
-    assigneeInitials: 'LR',
-    dueDate: '19.6.2025',
-    priority: 'Matala',
-    status: 'Valmis',
-    createdBy: 'Jukka Lehtonen',
-    createdDate: '9.6.2025',
-    steps: [
-      { label: 'Pintojen esikäsittely', completed: true },
-      { label: 'Pohjamaalaus', completed: true },
-      { label: 'Päällemaalaus 1. kerros', completed: true },
-      { label: 'Päällemaalaus 2. kerros', completed: true },
-    ],
-    comments: [],
-    attachments: [],
+    id: 'WO-005',
+    projectId: '3',
+    projectName: 'Toimisto C',
+    title: 'Purkutyöt toimistotila',
+    description: 'Vanhojen seinien ja lattioiden purku toimistotilasta.',
+    assignedTo: 'Timo K.',
+    createdBy: 'Jethro',
+    createdAt: '2026-01-15',
+    dueDate: '2026-01-30',
+    priority: 'urgent',
+    status: 'in_progress',
+    category: 'Purkutyöt',
+    estimatedHours: 20,
+    actualHours: 4,
+    materials: ['Jätesäkit', 'Suojamuovi'],
+    notes: 'Huomioi talon muut käyttäjät'
   },
   {
-    id: 'TM-2025-079',
-    title: 'Perustusten valu',
-    description: 'Betonivalu perustuksiin. Huomioitava sääolosuhteet ja lämpötila.',
-    type: 'Asennus',
-    project: 'Helsingin toimistorakennus',
-    assignee: 'Matti Korhonen',
-    assigneeInitials: 'MK',
-    dueDate: '18.6.2025',
-    priority: 'Kiireellinen',
-    status: 'Odottaa',
-    createdBy: 'Anna Lahtinen',
-    createdDate: '8.6.2025',
-    steps: [
-      { label: 'Muottien tarkistus', completed: true },
-      { label: 'Rautojen asennus', completed: true },
-      { label: 'Betonin tilaus', completed: true },
-      { label: 'Valu', completed: false },
-      { label: 'Jälkihoito', completed: false },
-    ],
-    comments: [
-      { author: 'Matti K.', time: '09:00', text: 'Betonin toimitus viivästynyt, odotetaan huomiseen.' },
-    ],
-    attachments: [
-      { name: 'Valusuunnitelma.pdf', size: '3.1 MB' },
-      { name: 'Sääennuste.pdf', size: '45 KB' },
-    ],
+    id: 'WO-006',
+    projectId: '2',
+    projectName: 'Kerrostalo B',
+    title: 'Sähköasennus kerros 2',
+    description: 'Sähkötyöt kerroksessa 2. 4 asuntoa.',
+    assignedTo: 'Laura K.',
+    createdBy: 'Jethro',
+    createdAt: '2026-01-14',
+    dueDate: '2026-01-28',
+    priority: 'medium',
+    status: 'completed',
+    completedAt: '2026-01-15',
+    category: 'Sähkötyöt',
+    estimatedHours: 24,
+    actualHours: 22,
+    materials: ['Johto 1.5mm²', 'Rasiat'],
+    notes: ''
   },
   {
-    id: 'TM-2025-078',
-    title: 'Hissikuilun eristys',
-    description: 'Hissikuilun ääni- ja lämpöeristys mineraalivillalla.',
-    type: 'Asennus',
-    project: 'Tampereen korjaustyö',
-    assignee: 'Sari Kettunen',
-    assigneeInitials: 'SK',
-    dueDate: '26.6.2025',
-    priority: 'Korkea',
-    status: 'Avoin',
-    createdBy: 'Pekka Salminen',
-    createdDate: '12.6.2025',
-    steps: [
-      { label: 'Pintojen puhdistus', completed: false },
-      { label: 'Villan asennus', completed: false },
-      { label: 'Suojalevyt', completed: false },
-    ],
-    comments: [],
-    attachments: [{ name: 'Eristyssuunnitelma.pdf', size: '1.2 MB' }],
-  },
-  {
-    id: 'TM-2025-077',
-    title: 'Palo-ovien tarkastus',
-    description: 'Vuotuinen palo-ovien toiminnallinen tarkastus ja sertifiointi.',
-    type: 'Tarkastus',
-    project: 'Helsingin toimistorakennus',
-    assignee: 'Pekka Salminen',
-    assigneeInitials: 'PS',
-    dueDate: '27.6.2025',
-    priority: 'Normaali',
-    status: 'Käynnissä',
-    createdBy: 'Anna Lahtinen',
-    createdDate: '11.6.2025',
-    steps: [
-      { label: 'Ovien lukumäärän tarkistus', completed: true },
-      { label: 'Sulkimien testaus', completed: true },
-      { label: 'Saranoiden tarkistus', completed: false },
-      { label: 'Sertifiointi', completed: false },
-    ],
-    comments: [],
-    attachments: [],
-  },
-  {
-    id: 'TM-2025-076',
-    title: 'Lattialämmityksen huolto',
-    description: 'Lattialämmitysjärjestelmän vuosihuolto ja termostaattien tarkistus.',
-    type: 'Huolto',
-    project: 'Espoon uudisrakennus',
-    assignee: 'Jukka Lehtonen',
-    assigneeInitials: 'JL',
-    dueDate: '28.6.2025',
-    priority: 'Matala',
-    status: 'Odottaa',
-    createdBy: 'Liisa Rantanen',
-    createdDate: '10.6.2025',
-    steps: [
-      { label: 'Järjestelmän huuhtelu', completed: false },
-      { label: 'Termostaattien testaus', completed: false },
-      { label: 'Vuototarkistus', completed: false },
-    ],
-    comments: [],
-    attachments: [],
-  },
-  {
-    id: 'TM-2025-075',
-    title: 'Ulko-ovien vaihto',
-    description: 'Vanhojen ulko-ovien purku ja uusien asennus. Sisältää karmeiden korjauksen.',
-    type: 'Korjaus',
-    project: 'Tampereen korjaustyö',
-    assignee: 'Matti Korhonen',
-    assigneeInitials: 'MK',
-    dueDate: '30.6.2025',
-    priority: 'Korkea',
-    status: 'Peruttu',
-    createdBy: 'Pekka Salminen',
-    createdDate: '5.6.2025',
-    steps: [],
-    comments: [
-      { author: 'Matti K.', time: '10:00', text: 'Ovitilaus peruttu toimittajan toimesta, siirretään heinäkuulle.' },
-    ],
-    attachments: [],
-  },
+    id: 'WO-007',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    title: 'Siivous asunto 1',
+    description: 'Rakennussiivous putki- ja sähkötöiden jälkeen.',
+    assignedTo: 'Sari V.',
+    createdBy: 'Jethro',
+    createdAt: '2026-01-15',
+    dueDate: '2026-01-23',
+    priority: 'low',
+    status: 'open',
+    category: 'Siivous',
+    estimatedHours: 8,
+    materials: ['Siivoustarvikkeet'],
+    notes: 'Odota putki- ja sähkötöiden valmistumista'
+  }
 ];
 
-/* ─── Helpers ─── */
-const statusConfig: Record<WorkOrderStatus, { bg: string; text: string; border: string; icon: typeof CheckSquare }> = {
-  Avoin: { bg: 'bg-[#DBEAFE]', text: 'text-[#2563EB]', border: 'border-[#93C5FD]', icon: Clock },
-  Käynnissä: { bg: 'bg-[#DCFCE7]', text: 'text-[#16A34A]', border: 'border-[#86EFAC]', icon: Play },
-  Odottaa: { bg: 'bg-[#FEF3C7]', text: 'text-[#D97706]', border: 'border-[#FCD34D]', icon: Pause },
-  Valmis: { bg: 'bg-[#F1F5F9]', text: 'text-[#475569]', border: 'border-[#CBD5E1]', icon: CheckCircle },
-  Peruttu: { bg: 'bg-[#F1F5F9]', text: 'text-[#94A3B8]', border: 'border-[#CBD5E1]', icon: XCircle },
+const getStatusBadge = (status: string) => {
+  switch (status) {
+    case 'open':
+      return <Badge className="bg-gray-100 text-gray-800">Avoin</Badge>;
+    case 'in_progress':
+      return <Badge className="bg-blue-100 text-blue-800">Käynnissä</Badge>;
+    case 'completed':
+      return <Badge className="bg-green-100 text-green-800">Valmis</Badge>;
+    case 'cancelled':
+      return <Badge className="bg-red-100 text-red-800">Peruttu</Badge>;
+    default:
+      return null;
+  }
 };
 
-const priorityConfig: Record<WorkOrderPriority, { bg: string; text: string; dot: string }> = {
-  Kiireellinen: { bg: 'bg-[#FEE2E2]', text: 'text-[#DC2626]', dot: 'bg-[#DC2626]' },
-  Korkea: { bg: 'bg-[#FFF7ED]', text: 'text-[#EA580C]', dot: 'bg-[#EA580C]' },
-  Normaali: { bg: 'bg-[#DBEAFE]', text: 'text-[#2563EB]', dot: 'bg-[#2563EB]' },
-  Matala: { bg: 'bg-[#F1F5F9]', text: 'text-[#64748B]', dot: 'bg-[#64748B]' },
+const getPriorityBadge = (priority: string) => {
+  switch (priority) {
+    case 'low':
+      return <Badge variant="outline" className="text-gray-600">Matala</Badge>;
+    case 'medium':
+      return <Badge variant="outline" className="text-yellow-600">Normaali</Badge>;
+    case 'high':
+      return <Badge variant="outline" className="text-orange-600">Korkea</Badge>;
+    case 'urgent':
+      return <Badge className="bg-red-100 text-red-800">Kiireellinen</Badge>;
+    default:
+      return null;
+  }
 };
 
-const typeIcon: Record<WorkOrderType, typeof Wrench> = {
-  Korjaus: Wrench,
-  Asennus: Zap,
-  Tarkastus: SearchCheck,
-  Huolto: Droplets,
-  Muu: HelpCircle,
-};
-
-const statusFilters = [
-  { key: 'Kaikki', label: 'Kaikki', icon: Layers, count: WORK_ORDERS.length },
-  { key: 'Avoin', label: 'Avoin', icon: Clock, count: WORK_ORDERS.filter(w => w.status === 'Avoin').length },
-  { key: 'Käynnissä', label: 'Käynnissä', icon: Play, count: WORK_ORDERS.filter(w => w.status === 'Käynnissä').length },
-  { key: 'Odottaa', label: 'Odottaa', icon: Pause, count: WORK_ORDERS.filter(w => w.status === 'Odottaa').length },
-  { key: 'Valmis', label: 'Valmis', icon: CheckCircle, count: WORK_ORDERS.filter(w => w.status === 'Valmis').length },
-  { key: 'Peruttu', label: 'Peruttu', icon: XCircle, count: WORK_ORDERS.filter(w => w.status === 'Peruttu').length },
-];
-
-/* ─── Component ─── */
 export default function Tyomaaraykset() {
-  const { workOrders, addWorkOrder, updateWorkOrder, deleteWorkOrder } = useAppDataContext();
-  const [activeFilter, setActiveFilter] = useState('Kaikki');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [newOrderOpen, setNewOrderOpen] = useState(false);
-  const [newComment, setNewComment] = useState('');
+  const [orders, setOrders] = useState<WorkOrder[]>(workOrders);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [activeTab, setActiveTab] = useState('list');
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [newOrder, setNewOrder] = useState<Partial<WorkOrder>>({
+    priority: 'medium',
+    status: 'open',
+    createdAt: new Date().toISOString().split('T')[0]
+  });
 
-  // New order form state
-  const [formTitle, setFormTitle] = useState('');
-  const [formDesc, setFormDesc] = useState('');
-  const [formType, setFormType] = useState<WorkOrderType>('Korjaus');
-  const [formProject, setFormProject] = useState('');
-  const [formAssignee, setFormAssignee] = useState('');
-  const [formPriority, setFormPriority] = useState<WorkOrderPriority>('Normaali');
-  const [formDate, setFormDate] = useState('');
-
-  const filteredOrders = useMemo(() => {
-    let filtered = WORK_ORDERS;
-    if (activeFilter !== 'Kaikki') {
-      filtered = filtered.filter(o => o.status === activeFilter);
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
     }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        o =>
-          o.title.toLowerCase().includes(q) ||
-          o.id.toLowerCase().includes(q) ||
-          o.project.toLowerCase().includes(q) ||
-          o.assignee.toLowerCase().includes(q)
-      );
-    }
-    return filtered;
-  }, [activeFilter, searchQuery]);
+    setSortConfig({ key, direction });
+  };
 
-  const urgentOrders = useMemo(
-    () => WORK_ORDERS.filter(o => o.priority === 'Kiireellinen' && o.status !== 'Valmis' && o.status !== 'Peruttu'),
-    []
+  const sortedOrders = [...orders].sort((a, b) => {
+    if (!sortConfig) return 0;
+    const aVal = a[sortConfig.key as keyof WorkOrder];
+    const bVal = b[sortConfig.key as keyof WorkOrder];
+    if (aVal === undefined || bVal === undefined) return 0;
+    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const filteredOrders = sortedOrders.filter(order =>
+    order.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    order.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    order.assignedTo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    order.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleOpenDetail = (order: WorkOrder) => {
-    setSelectedOrder(order);
-    setDetailOpen(true);
+  const handleStatusChange = (id: string, newStatus: WorkOrder['status']) => {
+    setOrders(prev => prev.map(o =>
+      o.id === id ? {
+        ...o,
+        status: newStatus,
+        completedAt: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : o.completedAt
+      } : o
+    ));
   };
 
-  const handleAddComment = () => {
-    if (!newComment.trim() || !selectedOrder) return;
-    const updated = { ...selectedOrder };
-    updated.comments = [...updated.comments, { author: 'Sinä', time: 'Nyt', text: newComment.trim() }];
-    setSelectedOrder(updated);
-    setNewComment('');
+  const handleAddOrder = () => {
+    if (!newOrder.title || !newOrder.projectName || !newOrder.assignedTo) return;
+
+    const order: WorkOrder = {
+      id: `WO-${String(orders.length + 1).padStart(3, '0')}`,
+      projectId: 'temp',
+      projectName: newOrder.projectName || '',
+      title: newOrder.title || '',
+      description: newOrder.description || '',
+      assignedTo: newOrder.assignedTo || '',
+      createdBy: 'Jethro',
+      createdAt: new Date().toISOString().split('T')[0],
+      dueDate: newOrder.dueDate || '',
+      priority: (newOrder.priority as WorkOrder['priority']) || 'medium',
+      status: 'open',
+      category: newOrder.category || 'Yleinen',
+      estimatedHours: newOrder.estimatedHours || 0,
+      materials: [],
+      notes: newOrder.notes || ''
+    };
+
+    setOrders(prev => [order, ...prev]);
+    setShowAddForm(false);
+    setNewOrder({
+      priority: 'medium',
+      status: 'open',
+      createdAt: new Date().toISOString().split('T')[0]
+    });
   };
 
-  const handleCreateOrder = () => {
-    setNewOrderOpen(false);
-    setFormTitle('');
-    setFormDesc('');
-    setFormType('Korjaus');
-    setFormProject('');
-    setFormAssignee('');
-    setFormPriority('Normaali');
-    setFormDate('');
+  const handleDelete = (id: string) => {
+    setOrders(prev => prev.filter(o => o.id !== id));
+  };
+
+  const stats = {
+    total: orders.length,
+    open: orders.filter(o => o.status === 'open').length,
+    inProgress: orders.filter(o => o.status === 'in_progress').length,
+    completed: orders.filter(o => o.status === 'completed').length,
+    urgent: orders.filter(o => o.priority === 'urgent' && o.status !== 'completed').length
   };
 
   return (
     <div className="space-y-6">
-      {/* ─── Page Header ─── */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
-      >
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-hero text-text-primary">Työmääräykset</h1>
-          <p className="text-body-sm text-text-secondary mt-1">Työmääräysten hallinta ja seuranta</p>
+          <h1 className="text-2xl font-bold text-gray-900">Työmääräykset</h1>
+          <p className="text-gray-500 mt-1">Työmääräysten hallinta ja seuranta</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="gap-1.5">
-            <Filter size={16} /> Suodata
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setActiveFilter('Kaikki')}>
-            <Clock size={16} /> Päivitä
-          </Button>
-          <Button
-            size="sm"
-            className="gap-1.5 bg-primary hover:bg-primary-hover text-white"
-            onClick={() => setNewOrderOpen(true)}
-          >
-            <Plus size={16} /> Uusi työmääräys
-          </Button>
-        </div>
-      </motion.div>
+        <Button
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+          onClick={() => setShowAddForm(!showAddForm)}
+        >
+          {showAddForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          {showAddForm ? 'Peruuta' : 'Uusi määräys'}
+        </Button>
+      </div>
 
-      {/* ─── Status Filter Cards ─── */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
-        className="grid grid-cols-3 lg:grid-cols-6 gap-3"
-      >
-        {statusFilters.map((f, i) => {
-          const active = activeFilter === f.key;
-          return (
-            <motion.div
-              key={f.key}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.2, delay: i * 0.06 }}
-            >
-              <Card
-                className={cn(
-                  'cursor-pointer transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5 border',
-                  active
-                    ? 'border-primary bg-primary-light'
-                    : f.key === 'Myöhässä'
-                    ? 'border-danger/30 bg-danger-light'
-                    : 'border-border bg-bg-white'
-                )}
-                onClick={() => setActiveFilter(f.key)}
-              >
-                <CardContent className="p-3 flex items-center gap-3">
-                  <div
-                    className={cn(
-                      'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-                      active ? 'bg-primary text-white' : 'bg-bg-light text-text-secondary'
-                    )}
-                  >
-                    <f.icon size={18} />
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        {[
+          { label: 'Määräykset', value: stats.total.toString(), icon: ClipboardList, color: 'text-blue-600' },
+          { label: 'Avoimet', value: stats.open.toString(), icon: FileText, color: 'text-gray-600' },
+          { label: 'Käynnissä', value: stats.inProgress.toString(), icon: Clock, color: 'text-blue-600' },
+          { label: 'Valmiit', value: stats.completed.toString(), icon: CheckCircle2, color: 'text-green-600' },
+          { label: 'Kiireelliset', value: stats.urgent.toString(), icon: AlertTriangle, color: 'text-red-600' },
+        ].map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.1 }}
+          >
+            <Card>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">{stat.label}</p>
+                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+                </div>
+                <stat.icon className={`w-8 h-8 ${stat.color} opacity-20`} />
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Add Form */}
+      <AnimatePresence>
+        {showAddForm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <Card>
+              <CardHeader>
+                <CardTitle>Uusi työmääräys</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Otsikko *</label>
+                    <Input
+                      placeholder="Määräyksen otsikko"
+                      value={newOrder.title || ''}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, title: e.target.value }))}
+                    />
                   </div>
                   <div>
-                    <p className={cn('text-caption font-semibold', active ? 'text-primary' : 'text-text-secondary')}>
-                      {f.label}
-                    </p>
-                    <p className="text-h2 text-text-primary">{f.count}</p>
+                    <label className="text-sm font-medium mb-1 block">Projekti *</label>
+                    <Input
+                      placeholder="Projektin nimi"
+                      value={newOrder.projectName || ''}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, projectName: e.target.value }))}
+                    />
                   </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          );
-        })}
-      </motion.div>
-
-      {/* ─── Urgent Work Orders Banner ─── */}
-      {urgentOrders.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.15 }}
-          className="bg-danger-light border border-danger/20 rounded-xl p-4"
-        >
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle size={18} className="text-danger" />
-            <h3 className="text-h3 text-danger">Kiireelliset työmääräykset</h3>
-            <Badge className="bg-danger text-white">{urgentOrders.length}</Badge>
-          </div>
-          <div className="space-y-2">
-            {urgentOrders.map(order => (
-              <div
-                key={order.id}
-                className="flex items-center gap-3 bg-white rounded-lg p-3 border border-danger/10 cursor-pointer hover:shadow-sm transition-shadow"
-                onClick={() => handleOpenDetail(order)}
-              >
-                <div className="w-2 h-2 rounded-full bg-danger flex-shrink-0 animate-pulse" />
-                <span className="text-mono text-text-secondary">{order.id}</span>
-                <span className="font-medium text-text-primary flex-1">{order.title}</span>
-                <span className="text-body-sm text-text-secondary">{order.project}</span>
-                <Badge className={cn(priorityConfig[order.priority].bg, priorityConfig[order.priority].text)}>
-                  {order.priority}
-                </Badge>
-                <span className="text-body-sm text-danger font-medium">{order.dueDate}</span>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* ─── Search Bar ─── */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.3, delay: 0.2 }}
-        className="relative"
-      >
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-        <Input
-          placeholder="Hae työmääräyksiä..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          className="pl-10 pr-10 h-10"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
-          >
-            <X size={16} />
-          </button>
-        )}
-      </motion.div>
-
-      {/* ─── Work Orders Table ─── */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.25 }}
-        className="bg-white rounded-xl border border-border shadow-card overflow-hidden"
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-bg-light border-b border-border">
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-14">
-                  Tila
-                </th>
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-28">
-                  Tunnus
-                </th>
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">
-                  Otsikko
-                </th>
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-32">
-                  Tyyppi
-                </th>
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-40">
-                  Projekti
-                </th>
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-36">
-                  Vastuullinen
-                </th>
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-28">
-                  Määräpäivä
-                </th>
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-28">
-                  Prioriteetti
-                </th>
-                <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-24">
-                  Toiminnot
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <AnimatePresence>
-                {filteredOrders.map((order, idx) => {
-                  const sCfg = statusConfig[order.status];
-                  const pCfg = priorityConfig[order.priority];
-                  const TypeIc = typeIcon[order.type];
-                  return (
-                    <motion.tr
-                      key={order.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.15, delay: idx * 0.03 }}
-                      className={cn(
-                        'border-b border-border/50 cursor-pointer transition-colors duration-100 hover:bg-bg-light',
-                        order.priority === 'Kiireellinen' && order.status !== 'Valmis' && 'border-l-[3px] border-l-primary'
-                      )}
-                      onClick={() => handleOpenDetail(order)}
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Vastuuhenkilö *</label>
+                    <Input
+                      placeholder="Kenelle määrätty"
+                      value={newOrder.assignedTo || ''}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, assignedTo: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Kategoria</label>
+                    <Input
+                      placeholder="Esim. Putkityöt"
+                      value={newOrder.category || ''}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, category: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Prioriteetti</label>
+                    <select
+                      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                      value={newOrder.priority || 'medium'}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, priority: e.target.value as WorkOrder['priority'] }))}
                     >
-                      <td className="px-4 py-3">
-                        <div className={cn('w-3 h-3 rounded-full', sCfg.text.replace('text-', 'bg-'))} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-mono text-text-primary hover:text-primary cursor-pointer">
-                          {order.id}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-text-primary text-sm">{order.title}</p>
-                          <p className="text-body-sm text-text-secondary line-clamp-1">{order.description}</p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <TypeIc size={14} className="text-text-secondary" />
-                          <Badge variant="outline" className="text-xs font-normal">
-                            {order.type}
-                          </Badge>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-text-primary">{order.project}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-primary-light text-primary text-[10px] font-semibold flex items-center justify-center">
-                            {order.assigneeInitials}
-                          </div>
-                          <span className="text-sm text-text-primary">{order.assignee.split(' ')[0]}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={cn(
-                            'text-sm',
-                            order.status !== 'Valmis' && order.dueDate < '26.6.2025' ? 'text-danger font-medium' : 'text-text-primary'
-                          )}
-                        >
-                          {order.dueDate}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge className={cn(pCfg.bg, pCfg.text, 'font-medium text-xs')}>
-                          <span className={cn('w-1.5 h-1.5 rounded-full mr-1.5', pCfg.dot)} />
-                          {order.priority}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={e => {
-                              e.stopPropagation();
-                              handleOpenDetail(order);
-                            }}
-                          >
-                            <Eye size={15} />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
-                            <Edit3 size={15} />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
-                            <MoreHorizontal size={15} />
-                          </Button>
-                        </div>
-                      </td>
-                    </motion.tr>
-                  );
-                })}
-              </AnimatePresence>
-            </tbody>
-          </table>
-        </div>
+                      <option value="low">Matala</option>
+                      <option value="medium">Normaali</option>
+                      <option value="high">Korkea</option>
+                      <option value="urgent">Kiireellinen</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Eräpäivä</label>
+                    <Input
+                      type="date"
+                      value={newOrder.dueDate || ''}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, dueDate: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Arvioidut tunnit</label>
+                    <Input
+                      type="number"
+                      value={newOrder.estimatedHours || ''}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, estimatedHours: parseInt(e.target.value) }))}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-sm font-medium mb-1 block">Kuvaus</label>
+                    <Input
+                      placeholder="Työn kuvaus"
+                      value={newOrder.description || ''}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, description: e.target.value }))}
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="text-sm font-medium mb-1 block">Muistiinpanot</label>
+                    <Input
+                      placeholder="Lisähuomautukset"
+                      value={newOrder.notes || ''}
+                      onChange={(e) => setNewOrder(prev => ({ ...prev, notes: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end mt-4">
+                  <Button onClick={handleAddOrder} className="bg-blue-600 hover:bg-blue-700">
+                    <Save className="w-4 h-4 mr-2" />
+                    Tallenna
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        {/* Pagination */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-bg-light/50">
-          <p className="text-body-sm text-text-secondary">
-            Näytetään 1–{filteredOrders.length} / {filteredOrders.length}
-          </p>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <ChevronLeft size={16} />
-            </Button>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 bg-primary-light text-primary">
-              1
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <ChevronRight size={16} />
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="list">Lista</TabsTrigger>
+          <TabsTrigger value="kanban">Taulu</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="list" className="space-y-4">
+          {/* Search */}
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Hae määräyksiä..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Button variant="outline" className="flex items-center gap-2">
+              <Filter className="w-4 h-4" />
+              Suodata
             </Button>
           </div>
-        </div>
-      </motion.div>
 
-      {/* ─── Detail Drawer ─── */}
-      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
-        <SheetContent className="w-full sm:max-w-lg overflow-hidden p-0">
-          <ScrollArea className="h-full">
-            {selectedOrder && (
-              <div className="p-6 space-y-6">
-                {/* Header */}
-                <SheetHeader className="space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="text-mono text-primary">{selectedOrder.id}</span>
-                      <SheetTitle className="text-h2 mt-1">{selectedOrder.title}</SheetTitle>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <Edit3 size={16} />
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge className={cn(priorityConfig[selectedOrder.priority].bg, priorityConfig[selectedOrder.priority].text)}>
-                      {selectedOrder.priority}
-                    </Badge>
-                    <Badge className={cn(statusConfig[selectedOrder.status].bg, statusConfig[selectedOrder.status].text)}>
-                      {selectedOrder.status}
-                    </Badge>
-                  </div>
-                </SheetHeader>
-
-                {/* Details */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.1 }}
-                  className="bg-bg-light rounded-xl p-4 space-y-2.5"
+          {/* Orders List */}
+          <div className="space-y-3">
+            {filteredOrders.map((order) => (
+              <motion.div
+                key={order.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <Card
+                  className="cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
                 >
-                  <div className="flex justify-between">
-                    <span className="text-body-sm text-text-secondary">Tyyppi</span>
-                    <span className="text-sm text-text-primary font-medium">{selectedOrder.type}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-body-sm text-text-secondary">Projekti</span>
-                    <span className="text-sm text-text-primary font-medium">{selectedOrder.project}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-body-sm text-text-secondary">Vastuuhenkilö</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-full bg-primary-light text-primary text-[9px] font-semibold flex items-center justify-center">
-                        {selectedOrder.assigneeInitials}
-                      </div>
-                      <span className="text-sm text-text-primary font-medium">{selectedOrder.assignee}</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-body-sm text-text-secondary">Määräaika</span>
-                    <span className="text-sm text-text-primary font-medium">{selectedOrder.dueDate}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-body-sm text-text-secondary">Luotu</span>
-                    <span className="text-sm text-text-secondary">
-                      {selectedOrder.createdDate} · {selectedOrder.createdBy}
-                    </span>
-                  </div>
-                </motion.div>
-
-                {/* Description */}
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}>
-                  <h4 className="text-h3 text-text-primary mb-2 flex items-center gap-2">
-                    <FileText size={16} className="text-text-secondary" /> Kuvaus
-                  </h4>
-                  <p className="text-sm text-text-secondary leading-relaxed bg-bg-light rounded-xl p-4">
-                    {selectedOrder.description}
-                  </p>
-                </motion.div>
-
-                {/* Steps */}
-                {selectedOrder.steps.length > 0 && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
-                    <h4 className="text-h3 text-text-primary mb-2 flex items-center gap-2">
-                      <CheckSquare size={16} className="text-text-secondary" /> Työvaiheet
-                    </h4>
-                    <div className="space-y-2">
-                      {selectedOrder.steps.map((step, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-3 p-2.5 rounded-lg border border-border hover:bg-bg-light transition-colors"
-                        >
-                          {step.completed ? (
-                            <CheckSquare size={18} className="text-success flex-shrink-0" />
-                          ) : (
-                            <Square size={18} className="text-text-muted flex-shrink-0" />
-                          )}
-                          <span className={cn('text-sm', step.completed ? 'text-text-secondary line-through' : 'text-text-primary')}>
-                            {step.label}
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-mono text-gray-500">{order.id}</span>
+                          <h3 className="font-semibold">{order.title}</h3>
+                          {getStatusBadge(order.status)}
+                          {getPriorityBadge(order.priority)}
+                        </div>
+                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <ClipboardList className="w-3 h-3" />
+                            {order.projectName}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Users className="w-3 h-3" />
+                            {order.assignedTo}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            Eräpäivä: {new Date(order.dueDate).toLocaleDateString('fi-FI')}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {order.estimatedHours} h
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Attachments */}
-                {selectedOrder.attachments.length > 0 && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}>
-                    <h4 className="text-h3 text-text-primary mb-2 flex items-center gap-2">
-                      <Paperclip size={16} className="text-text-secondary" /> Liitteet
-                    </h4>
-                    <div className="space-y-2">
-                      {selectedOrder.attachments.map((att, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-bg-light transition-colors cursor-pointer"
-                        >
-                          <FileText size={18} className="text-primary flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-text-primary truncate">{att.name}</p>
-                            <p className="text-caption text-text-secondary">{att.size}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Comments */}
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-                  <h4 className="text-h3 text-text-primary mb-2 flex items-center gap-2">
-                    <MessageSquare size={16} className="text-text-secondary" /> Kommentit
-                  </h4>
-                  <div className="space-y-3 mb-4">
-                    {selectedOrder.comments.map((comment, i) => (
-                      <div key={i} className="bg-bg-light rounded-lg p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-medium text-text-primary">{comment.author}</span>
-                          <span className="text-caption text-text-muted">{comment.time}</span>
-                        </div>
-                        <p className="text-sm text-text-secondary">{comment.text}</p>
                       </div>
-                    ))}
-                    {selectedOrder.comments.length === 0 && (
-                      <p className="text-body-sm text-text-muted italic">Ei kommentteja vielä.</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Kirjoita kommentti..."
-                      value={newComment}
-                      onChange={e => setNewComment(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddComment()}
-                      className="flex-1"
-                    />
-                    <Button size="icon" className="bg-primary hover:bg-primary-hover text-white shrink-0" onClick={handleAddComment}>
-                      <Send size={16} />
-                    </Button>
-                  </div>
-                </motion.div>
+                      {expandedOrder === order.id ? (
+                        <ChevronUp className="w-5 h-5 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-gray-400" />
+                      )}
+                    </div>
 
-                {/* Actions */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.35 }}
-                  className="flex items-center gap-2 pt-2 border-t border-border"
-                >
-                  <Button variant="outline" className="flex-1">
-                    Muuta tilaa
-                  </Button>
-                  <Button className="flex-1 bg-primary hover:bg-primary-hover text-white">
-                    <Edit3 size={16} className="mr-1.5" /> Muokkaa
-                  </Button>
-                </motion.div>
-              </div>
-            )}
-          </ScrollArea>
-        </SheetContent>
-      </Sheet>
+                    {expandedOrder === order.id && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="mt-4 pt-4 border-t space-y-4"
+                      >
+                        <p className="text-sm text-gray-700">{order.description}</p>
 
-      {/* ─── New Work Order Dialog ─── */}
-      <Dialog open={newOrderOpen} onOpenChange={setNewOrderOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-h2">Uusi työmääräys</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Otsikko *</Label>
-              <Input placeholder="Syötä työmääräyksen otsikko" value={formTitle} onChange={e => setFormTitle(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Kuvaus *</Label>
-              <Textarea placeholder="Kuvaa työmääräyksen sisältö..." rows={3} value={formDesc} onChange={e => setFormDesc(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Tyyppi</Label>
-                <Select value={formType} onValueChange={v => setFormType(v as WorkOrderType)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(['Korjaus', 'Asennus', 'Tarkastus', 'Huolto', 'Muu'] as WorkOrderType[]).map(t => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Projekti</Label>
-                <Select value={formProject} onValueChange={setFormProject}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Valitse projekti" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="espoo">Espoon uudisrakennus</SelectItem>
-                    <SelectItem value="helsinki">Helsingin toimistorakennus</SelectItem>
-                    <SelectItem value="tampere">Tampereen korjaustyö</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Vastuuhenkilö</Label>
-                <Select value={formAssignee} onValueChange={setFormAssignee}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Valitse henkilö" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="matti">Matti Korhonen</SelectItem>
-                    <SelectItem value="anna">Anna Lahtinen</SelectItem>
-                    <SelectItem value="jukka">Jukka Lehtonen</SelectItem>
-                    <SelectItem value="pekka">Pekka Salminen</SelectItem>
-                    <SelectItem value="liisa">Liisa Rantanen</SelectItem>
-                    <SelectItem value="sari">Sari Kettunen</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Määräaika</Label>
-                <Input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Prioriteetti</Label>
-              <div className="flex gap-2">
-                {(['Kiireellinen', 'Korkea', 'Normaali', 'Matala'] as WorkOrderPriority[]).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setFormPriority(p)}
-                    className={cn(
-                      'flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all',
-                      formPriority === p
-                        ? cn(priorityConfig[p].bg, priorityConfig[p].text, 'border-current')
-                        : 'border-border text-text-secondary hover:bg-bg-light'
+                        {order.materials.length > 0 && (
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2">Materiaalit</h4>
+                            <div className="flex flex-wrap gap-2">
+                              {order.materials.map((mat, i) => (
+                                <Badge key={i} variant="outline">{mat}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {order.notes && (
+                          <div>
+                            <h4 className="font-semibold text-sm mb-2">Muistiinpanot</h4>
+                            <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">{order.notes}</p>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-500">Luotu:</span>
+                            <p>{new Date(order.createdAt).toLocaleDateString('fi-FI')} ({order.createdBy})</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Arvioidut tunnit:</span>
+                            <p>{order.estimatedHours} h</p>
+                          </div>
+                          {order.actualHours && (
+                            <div>
+                              <span className="text-gray-500">Toteutuneet tunnit:</span>
+                              <p>{order.actualHours} h</p>
+                            </div>
+                          )}
+                          {order.completedAt && (
+                            <div>
+                              <span className="text-gray-500">Valmistunut:</span>
+                              <p>{new Date(order.completedAt).toLocaleDateString('fi-FI')}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-2">
+                          {order.status === 'open' && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); handleStatusChange(order.id, 'in_progress'); }}
+                            >
+                              Aloita
+                            </Button>
+                          )}
+                          {order.status === 'in_progress' && (
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700"
+                              onClick={(e) => { e.stopPropagation(); handleStatusChange(order.id, 'completed'); }}
+                            >
+                              <CheckCircle2 className="w-4 h-4 mr-1" />
+                              Merkitse valmiiksi
+                            </Button>
+                          )}
+                          <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                            <Edit2 className="w-4 h-4 mr-1" />
+                            Muokkaa
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                            <Printer className="w-4 h-4 mr-1" />
+                            Tulosta
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handleDelete(order.id); }}
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Poista
+                          </Button>
+                        </div>
+                      </motion.div>
                     )}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNewOrderOpen(false)}>
-              Tallenna luonnoksena
-            </Button>
-            <Button className="bg-primary hover:bg-primary-hover text-white" onClick={handleCreateOrder}>
-              Luo työmääräys
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </TabsContent>
+
+        <TabsContent value="kanban" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {['open', 'in_progress', 'completed', 'cancelled'].map((status) => {
+              const statusOrders = filteredOrders.filter(o => o.status === status);
+              const statusNames: Record<string, string> = {
+                open: 'Avoin',
+                in_progress: 'Käynnissä',
+                completed: 'Valmis',
+                cancelled: 'Peruttu'
+              };
+              const statusColors: Record<string, string> = {
+                open: 'bg-gray-50',
+                in_progress: 'bg-blue-50',
+                completed: 'bg-green-50',
+                cancelled: 'bg-red-50'
+              };
+              return (
+                <div key={status} className={`rounded-lg p-3 ${statusColors[status]}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-sm">{statusNames[status]}</h3>
+                    <Badge variant="outline">{statusOrders.length}</Badge>
+                  </div>
+                  <div className="space-y-2">
+                    {statusOrders.map((order) => (
+                      <Card key={order.id} className="cursor-pointer hover:shadow-md transition-shadow">
+                        <CardContent className="p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-mono text-gray-500">{order.id}</span>
+                            {getPriorityBadge(order.priority)}
+                          </div>
+                          <h4 className="font-medium text-sm">{order.title}</h4>
+                          <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                            <span>{order.assignedTo}</span>
+                            <span>•</span>
+                            <span>{order.estimatedHours} h</span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            Eräpäivä: {new Date(order.dueDate).toLocaleDateString('fi-FI')}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
