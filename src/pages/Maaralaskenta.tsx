@@ -1,141 +1,277 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Ruler, ChevronDown, ChevronUp, Plus, Download } from 'lucide-react';
+import {
+  Calculator,
+  Plus,
+  Search,
+  Filter,
+  Euro,
+  FileText,
+  CheckCircle2,
+  Clock,
+  TrendingUp,
+  ChevronDown,
+  ChevronUp,
+  ArrowRight,
+  Package
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
-const quantityData = [
+interface QuantityItem {
+  id: string;
+  projectId: string;
+  projectName: string;
+  name: string;
+  category: string;
+  unit: string;
+  estimatedQuantity: number;
+  actualQuantity: number;
+  unitPrice: number;
+  totalEstimated: number;
+  totalActual: number;
+  variance: number;
+  status: 'draft' | 'confirmed' | 'invoiced';
+}
+
+const quantityItems: QuantityItem[] = [
   {
-    category: 'Perustukset',
-    items: [
-      { work: 'Maankaivu', quantity: 450, unit: 'm³', price: 35, total: 15750 },
-      { work: 'Betonivalu', quantity: 320, unit: 'm³', price: 180, total: 57600 },
-      { work: 'Raudoitus', quantity: 8500, unit: 'kg', price: 2.5, total: 21250 },
-    ],
+    id: '1',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    name: 'Putkien asennus',
+    category: 'Putkityöt',
+    unit: 'm',
+    estimatedQuantity: 500,
+    actualQuantity: 520,
+    unitPrice: 45,
+    totalEstimated: 22500,
+    totalActual: 23400,
+    variance: 4.0,
+    status: 'confirmed'
   },
   {
-    category: 'Väliseinät',
-    items: [
-      { work: 'Harkkomuuraukset', quantity: 850, unit: 'm²', price: 65, total: 55250 },
-      { work: 'Kipsilevyt', quantity: 1200, unit: 'm²', price: 28, total: 33600 },
-      { work: 'Oviaukkojen teko', quantity: 45, unit: 'kpl', price: 350, total: 15750 },
-    ],
+    id: '2',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    name: 'Laatoitus',
+    category: 'Laatoitus',
+    unit: 'm²',
+    estimatedQuantity: 80,
+    actualQuantity: 75,
+    unitPrice: 120,
+    totalEstimated: 9600,
+    totalActual: 9000,
+    variance: -6.25,
+    status: 'confirmed'
   },
   {
-    category: 'Pinnat',
-    items: [
-      { work: 'Laatoitus', quantity: 650, unit: 'm²', price: 75, total: 48750 },
-      { work: 'Parketointi', quantity: 480, unit: 'm²', price: 55, total: 26400 },
-      { work: 'Maalaustyöt', quantity: 2100, unit: 'm²', price: 22, total: 46200 },
-    ],
+    id: '3',
+    projectId: '2',
+    projectName: 'Kerrostalo B',
+    name: 'Sähköasennus',
+    category: 'Sähkötyöt',
+    unit: 'kpl',
+    estimatedQuantity: 12,
+    actualQuantity: 12,
+    unitPrice: 2500,
+    totalEstimated: 30000,
+    totalActual: 30000,
+    variance: 0,
+    status: 'invoiced'
   },
   {
-    category: 'LVI',
-    items: [
-      { work: 'Putkiasennus', quantity: 1200, unit: 'm', price: 45, total: 54000 },
-      { work: 'Lämmitysjärjestelmä', quantity: 450, unit: 'm²', price: 85, total: 38250 },
-      { work: 'Viemäröinti', quantity: 380, unit: 'm', price: 55, total: 20900 },
-    ],
-  },
-  {
-    category: 'Sähkö',
-    items: [
-      { work: 'Kaapelointi', quantity: 2500, unit: 'm', price: 12, total: 30000 },
-      { work: 'Pistorasiat', quantity: 180, unit: 'kpl', price: 85, total: 15300 },
-      { work: 'Valaistus', quantity: 95, unit: 'kpl', price: 220, total: 20900 },
-    ],
-  },
+    id: '4',
+    projectId: '1',
+    projectName: 'Rivitalo A',
+    name: 'Vesieristys',
+    category: 'Vesieristys',
+    unit: 'm²',
+    estimatedQuantity: 60,
+    actualQuantity: 0,
+    unitPrice: 80,
+    totalEstimated: 4800,
+    totalActual: 0,
+    variance: 0,
+    status: 'draft'
+  }
 ];
 
-export default function Maaralaskenta() {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const toggle = (name: string) => setExpanded(prev => ({ ...prev, [name]: !prev[name] }));
+const getStatusBadge = (status: string) => {
+  switch (status) {
+    case 'draft':
+      return <Badge className="bg-gray-100 text-gray-800">Luonnos</Badge>;
+    case 'confirmed':
+      return <Badge className="bg-green-100 text-green-800">Vahvistettu</Badge>;
+    case 'invoiced':
+      return <Badge className="bg-blue-100 text-blue-800">Laskutettu</Badge>;
+    default:
+      return null;
+  }
+};
 
-  const grandTotal = quantityData.reduce((sum, cat) => sum + cat.items.reduce((s, item) => s + item.total, 0), 0);
+const getVarianceColor = (variance: number) => {
+  if (variance > 5) return 'text-red-600';
+  if (variance > 0) return 'text-yellow-600';
+  if (variance < -5) return 'text-green-600';
+  return 'text-gray-600';
+};
+
+export default function Maaralaskenta() {
+  const [items, setItems] = useState<QuantityItem[]>(quantityItems);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
+
+  const filteredItems = items.filter(item =>
+    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.category.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalEstimated = items.reduce((sum, i) => sum + i.totalEstimated, 0);
+  const totalActual = items.reduce((sum, i) => sum + i.totalActual, 0);
+  const totalVariance = totalEstimated > 0 ? ((totalActual - totalEstimated) / totalEstimated) * 100 : 0;
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-text-primary">Määrälaskenta</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" className="gap-1.5"><Download size={16} /> Vie Excel</Button>
-          <Button className="gap-1.5 bg-primary hover:bg-primary-hover text-white"><Plus size={16} /> Lisää rivi</Button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Määrälaskenta</h1>
+          <p className="text-gray-500 mt-1">Työmäärät ja määrämuutokset</p>
         </div>
+        <Button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
+          <Plus className="w-4 h-4" />
+          Uusi määrä
+        </Button>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {quantityData.map(cat => {
-          const catTotal = cat.items.reduce((sum, item) => sum + item.total, 0);
-          return (
-            <Card key={cat.category}>
-              <CardContent className="p-4">
-                <p className="text-sm text-text-muted">{cat.category}</p>
-                <p className="text-lg font-bold text-text-primary">{new Intl.NumberFormat('fi-FI').format(catTotal)} €</p>
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Määrät yhteensä', value: items.length.toString(), icon: Package, color: 'text-blue-600' },
+          { label: 'Arvioitu arvo', value: `${totalEstimated.toLocaleString('fi-FI')} €`, icon: FileText, color: 'text-gray-600' },
+          { label: 'Toteutunut', value: `${totalActual.toLocaleString('fi-FI')} €`, icon: CheckCircle2, color: 'text-green-600' },
+          { label: 'Poikkeama', value: `${totalVariance.toFixed(1)}%`, icon: TrendingUp, color: totalVariance > 5 ? 'text-red-600' : totalVariance < 0 ? 'text-green-600' : 'text-yellow-600' },
+        ].map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.1 }}
+          >
+            <Card>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">{stat.label}</p>
+                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+                </div>
+                <stat.icon className={`w-8 h-8 ${stat.color} opacity-20`} />
               </CardContent>
             </Card>
-          );
-        })}
+          </motion.div>
+        ))}
       </div>
 
-      {/* Categories */}
+      {/* Search */}
+      <div className="flex items-center gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            placeholder="Hae määriä..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <Button variant="outline" className="flex items-center gap-2">
+          <Filter className="w-4 h-4" />
+          Suodata
+        </Button>
+      </div>
+
+      {/* Items List */}
       <div className="space-y-3">
-        {quantityData.map((cat, idx) => {
-          const catTotal = cat.items.reduce((sum, item) => sum + item.total, 0);
-          const isOpen = expanded[cat.category] ?? true;
-          return (
-            <motion.div key={cat.category} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}>
-              <Card>
-                <CardHeader className="py-3 cursor-pointer" onClick={() => toggle(cat.category)}>
-                  <div className="flex items-center justify-between">
+        {filteredItems.map((item) => (
+          <motion.div
+            key={item.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <Card
+              className="cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
+            >
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
                     <div className="flex items-center gap-3">
-                      <Ruler size={18} className="text-primary" />
-                      <CardTitle className="text-base">{cat.category}</CardTitle>
+                      <h3 className="font-semibold">{item.name}</h3>
+                      {getStatusBadge(item.status)}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-semibold text-text-primary">{new Intl.NumberFormat('fi-FI').format(catTotal)} €</span>
-                      {isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                      <span>{item.projectName}</span>
+                      <span>{item.category}</span>
+                      <span>{item.estimatedQuantity} {item.unit} (arvio)</span>
+                      <ArrowRight className="w-3 h-3" />
+                      <span>{item.actualQuantity} {item.unit} (toteuma)</span>
                     </div>
                   </div>
-                </CardHeader>
-                {isOpen && (
-                  <CardContent className="pt-0">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-text-muted border-b border-[#E2E8F0]">
-                          <th className="pb-2 font-medium">Työ</th>
-                          <th className="pb-2 font-medium text-right">Määrä</th>
-                          <th className="pb-2 font-medium">Yks.</th>
-                          <th className="pb-2 font-medium text-right">Yks. hinta</th>
-                          <th className="pb-2 font-medium text-right">Yhteensä</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {cat.items.map((item, i) => (
-                          <tr key={i} className="border-b border-[#F1F5F9]">
-                            <td className="py-2 text-text-primary">{item.work}</td>
-                            <td className="py-2 text-right font-mono">{item.quantity}</td>
-                            <td className="py-2 text-text-muted">{item.unit}</td>
-                            <td className="py-2 text-right font-mono">{item.price} €</td>
-                            <td className="py-2 text-right font-mono font-medium">{new Intl.NumberFormat('fi-FI').format(item.total)} €</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                )}
-              </Card>
-            </motion.div>
-          );
-        })}
-      </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold">{item.totalActual.toLocaleString('fi-FI')} €</p>
+                    <p className={`text-sm ${getVarianceColor(item.variance)}`}>
+                      Poikkeama: {item.variance > 0 ? '+' : ''}{item.variance.toFixed(1)}%
+                    </p>
+                  </div>
+                  {expandedItem === item.id ? (
+                    <ChevronUp className="w-5 h-5 text-gray-400 ml-4" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-gray-400 ml-4" />
+                  )}
+                </div>
 
-      <Card className="bg-primary-light border-primary">
-        <CardContent className="p-4 flex items-center justify-between">
-          <span className="font-semibold text-primary">Kokonaissumma</span>
-          <span className="text-2xl font-bold text-primary">{new Intl.NumberFormat('fi-FI').format(grandTotal)} €</span>
-        </CardContent>
-      </Card>
+                {expandedItem === item.id && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="mt-4 pt-4 border-t"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="text-sm text-gray-500">Arvioitu määrä</label>
+                        <p className="font-medium">{item.estimatedQuantity} {item.unit}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-500">Toteutunut määrä</label>
+                        <p className="font-medium">{item.actualQuantity} {item.unit}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-500">Yksikköhinta</label>
+                        <p className="font-medium">{item.unitPrice.toLocaleString('fi-FI')} €/{item.unit}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-500">Yhteensä (arvio)</label>
+                        <p className="font-medium">{item.totalEstimated.toLocaleString('fi-FI')} €</p>
+                        <label className="text-sm text-gray-500">Yhteensä (toteuma)</label>
+                        <p className="font-medium">{item.totalActual.toLocaleString('fi-FI')} €</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mt-4">
+                      <Button variant="outline" size="sm">Muokkaa</Button>
+                      <Button variant="outline" size="sm">Päivitä toteuma</Button>
+                      {item.status === 'confirmed' && (
+                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700">Laskuta</Button>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
     </div>
   );
 }
