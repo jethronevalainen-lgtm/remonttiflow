@@ -525,7 +525,7 @@ export default function Tyoturvallisuus() {
                           <YAxis domain={[60, 100]} tick={{ fontSize: 11, fill: '#64748B' }} />
                           <Tooltip
                             contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                            formatter={(value: number) => [`${value}/100`, 'Indeksi']}
+                            formatter={(value) => [`${value}/100`, 'Indeksi']}
                           />
                           <ReferenceLine y={95} stroke="#22C55E" strokeDasharray="5 5" label={{ value: 'Tavoite', position: 'right', fill: '#22C55E', fontSize: 11 }} />
                           <Area type="monotone" dataKey="indeksi" stroke="#F97316" strokeWidth={2.5} fill="url(#safetyGradient)" dot={{ r: 4, fill: '#F97316' }} activeDot={{ r: 6 }} />

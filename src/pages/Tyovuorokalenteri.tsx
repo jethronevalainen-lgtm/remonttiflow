@@ -12,8 +12,6 @@ import {
   AlertTriangle,
   Clock,
   User,
-  X,
-  Calendar as CalendarIcon,
   Briefcase,
   Umbrella,
   Stethoscope,
@@ -183,10 +181,6 @@ function getDaysInMonth(year: number, month: number): Date[] {
 
 function formatDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function formatDisplayDate(d: Date): string {
-  return `${d.getDate()}.${d.getMonth() + 1}.`;
 }
 
 function getWeekStart(d: Date): Date {
@@ -586,7 +580,6 @@ export default function Tyovuorokalenteri() {
                         </div>
                         <div className="flex-1 p-1 flex gap-1">
                           {hourShifts.map(shift => {
-                            const employee = EMPLOYEES.find(e => e.id === shift.employeeId);
                             const cfg = SHIFT_TYPES[shift.type];
                             return (
                               <div
