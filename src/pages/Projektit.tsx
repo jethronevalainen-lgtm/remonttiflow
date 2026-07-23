@@ -3,249 +3,281 @@ import { motion } from 'framer-motion';
 import {
   FolderKanban,
   Plus,
+  Download,
+  Settings,
   Search,
-  Filter,
-  MapPin,
-  Users,
-  Euro,
+  Play,
   Calendar,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowUpDown,
+  CheckCircle,
+  MapPin,
   ChevronRight,
-  Briefcase,
-  TrendingUp,
+  Eye,
+  Pencil,
+  MoreHorizontal,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
-interface Project {
-  id: string;
-  name: string;
-  address: string;
-  city: string;
-  customerName: string;
-  status: 'planning' | 'active' | 'on_hold' | 'completed';
-  startDate: string;
-  estimatedEndDate: string;
-  budget: number;
-  actualCosts: number;
-  completionPercentage: number;
-  teamSize: number;
-}
-
-const projects: Project[] = [
-  {
-    id: '1', name: 'Rivitalo A - Putkiremontti', address: 'Keltanenkatu 15', city: 'Helsinki',
-    customerName: 'Asunto Oy Keltainen Tähti', status: 'active', startDate: '2026-01-05',
-    estimatedEndDate: '2026-03-15', budget: 145000, actualCosts: 45000, completionPercentage: 35, teamSize: 5,
-  },
-  {
-    id: '2', name: 'Kerrostalo B - Kylpyhuoneet', address: 'Sinikatu 42', city: 'Helsinki',
-    customerName: 'Asunto Oy Sininen Talo', status: 'active', startDate: '2026-01-08',
-    estimatedEndDate: '2026-04-30', budget: 85000, actualCosts: 12000, completionPercentage: 15, teamSize: 4,
-  },
-  {
-    id: '3', name: 'Toimisto C - Peruskorjaus', address: 'Toimistokatu 1', city: 'Espoo',
-    customerName: 'Helsingin Kaupunki', status: 'planning', startDate: '2026-02-01',
-    estimatedEndDate: '2026-08-31', budget: 320000, actualCosts: 5000, completionPercentage: 2, teamSize: 0,
-  },
-  {
-    id: '4', name: 'Rivitalo D - Sähkötyöt', address: 'Sähkökatu 7', city: 'Vantaa',
-    customerName: 'Tmi Rakennus Rane', status: 'active', startDate: '2025-11-15',
-    estimatedEndDate: '2026-02-28', budget: 35000, actualCosts: 28000, completionPercentage: 80, teamSize: 2,
-  },
-  {
-    id: '5', name: 'Kerrostalo E - Julkisivu', address: 'Julkisivukatu 22', city: 'Helsinki',
-    customerName: 'Asunto Oy Keltainen Tähti', status: 'on_hold', startDate: '2025-09-01',
-    estimatedEndDate: '2025-12-15', budget: 180000, actualCosts: 175000, completionPercentage: 98, teamSize: 0,
-  },
+/* ─── Mock Data ─── */
+const projectsData = [
+  { id: 1, name: 'Tampereen korjaustyö', client: 'Tampereen Kaupunki', location: 'Tampere', start: '1.3.2025', end: '30.9.2025', progress: 87, status: 'Aktiivinen' as const, budget: 450000, spent: 391500 },
+  { id: 2, name: 'Espoon uudisrakennus', client: 'Espoon Asunnot Oy', location: 'Espoo', start: '15.4.2025', end: '20.12.2025', progress: 62, status: 'Aktiivinen' as const, budget: 1200000, spent: 744000 },
+  { id: 3, name: 'Helsingin saneeraus', client: 'Helsinki Rakennuttaja', location: 'Helsinki', start: '1.5.2025', end: '15.11.2025', progress: 45, status: 'Aktiivinen' as const, budget: 890000, spent: 400500 },
+  { id: 4, name: 'Turun piha-alue', client: 'Turun Kaupunki', location: 'Turku', start: '10.5.2025', end: '30.8.2025', progress: 60, status: 'Aktiivinen' as const, budget: 320000, spent: 192000 },
+  { id: 5, name: 'Vantaan toimisto', client: 'Vantaan Kiinteistöt', location: 'Vantaa', start: '1.6.2025', end: '31.10.2025', progress: 20, status: 'Aktiivinen' as const, budget: 650000, spent: 130000 },
+  { id: 6, name: 'Oulun kerrostalo', client: 'Oulun Rakennus Oy', location: 'Oulu', start: '15.6.2025', end: '28.2.2026', progress: 8, status: 'Myöhässä' as const, budget: 2100000, spent: 168000 },
+  { id: 7, name: 'Rovaniemen omakotitalo', client: 'Perhe Rantanen', location: 'Rovaniemi', start: '1.7.2025', end: '30.4.2026', progress: 0, status: 'Suunniteltu' as const, budget: 480000, spent: 0 },
+  { id: 8, name: 'Jyväskylän koulu', client: 'Jyväskylän Kaupunki', location: 'Jyväskylä', start: '1.2.2025', end: '15.6.2025', progress: 100, status: 'Valmis' as const, budget: 1500000, spent: 1485000 },
+  { id: 9, name: 'Lahti tehdaskorjaus', client: 'Lahti Industrial', location: 'Lahti', start: '15.1.2025', end: '30.4.2025', progress: 100, status: 'Valmis' as const, budget: 750000, spent: 735000 },
+  { id: 10, name: 'Kuopion rivitalo', client: 'Kuopion Asunnot', location: 'Kuopi o', start: '15.8.2025', end: '30.6.2026', progress: 0, status: 'Suunniteltu' as const, budget: 950000, spent: 0 },
 ];
 
+const statusFilters = [
+  { key: 'Kaikki', count: projectsData.length, icon: FolderKanban, bg: 'bg-bg-light', border: 'border-[#E2E8F0]', text: 'text-text-primary' },
+  { key: 'Käynnissä', count: projectsData.filter(p => p.status === 'Aktiivinen').length, icon: Play, bg: 'bg-primary-light', border: 'border-primary', text: 'text-primary' },
+  { key: 'Suunniteltu', count: projectsData.filter(p => p.status === 'Suunniteltu').length, icon: Calendar, bg: 'bg-info-light', border: 'border-info', text: 'text-info' },
+  { key: 'Valmis', count: projectsData.filter(p => p.status === 'Valmis').length, icon: CheckCircle, bg: 'bg-success-light', border: 'border-success', text: 'text-success' },
+];
+
+/* ─── Status badge helper ─── */
 const getStatusBadge = (status: string) => {
   switch (status) {
-    case 'planning': return <Badge variant="outline" className="text-gray-600">Suunnittelu</Badge>;
-    case 'active': return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Aktiivinen</Badge>;
-    case 'on_hold': return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Tauolla</Badge>;
-    case 'completed': return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Valmis</Badge>;
-    default: return null;
+    case 'Aktiivinen': return <Badge className="bg-success-light text-success border-0 font-medium">Aktiivinen</Badge>;
+    case 'Suunniteltu': return <Badge className="bg-info-light text-info border-0 font-medium">Suunniteltu</Badge>;
+    case 'Valmis': return <Badge className="bg-bg-light text-text-secondary border border-[#E2E8F0] font-medium">Valmis</Badge>;
+    case 'Myöhässä': return <Badge className="bg-danger-light text-danger border-0 font-medium">Myöhässä</Badge>;
+    default: return <Badge variant="secondary">{status}</Badge>;
   }
 };
 
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'planning': return <Clock className="w-4 h-4 text-gray-500" />;
-    case 'active': return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-    case 'on_hold': return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
-    case 'completed': return <CheckCircle2 className="w-4 h-4 text-blue-500" />;
-    default: return null;
-  }
+/* ─── Animation ─── */
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.04 } },
 };
 
+const itemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.15, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] } },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, scale: 0.95 },
+  visible: { opacity: 1, scale: 1, transition: { duration: 0.2, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] } },
+};
+
+/* ─── Component ─── */
 export default function Projektit() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
-  const [activeTab, setActiveTab] = useState('list');
+  const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState('Kaikki');
 
-  const handleSort = (key: string) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig?.key === key && sortConfig.direction === 'asc') direction = 'desc';
-    setSortConfig({ key, direction });
-  };
-
-  const sorted = [...projects].sort((a, b) => {
-    if (!sortConfig) return 0;
-    const av = a[sortConfig.key as keyof Project];
-    const bv = b[sortConfig.key as keyof Project];
-    if (av === undefined || bv === undefined) return 0;
-    if (av < bv) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (av > bv) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
+  const filteredProjects = projectsData.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
+                         p.client.toLowerCase().includes(search.toLowerCase()) ||
+                         p.location.toLowerCase().includes(search.toLowerCase());
+    const matchesFilter = activeFilter === 'Kaikki' ? true :
+                         activeFilter === 'Käynnissä' ? p.status === 'Aktiivinen' :
+                         activeFilter === 'Valmis' ? p.status === 'Valmis' :
+                         activeFilter === 'Suunniteltu' ? p.status === 'Suunniteltu' :
+                         true;
+    return matchesSearch && matchesFilter;
   });
 
-  const filtered = sorted.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.customerName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const stats = {
-    total: projects.length,
-    active: projects.filter(p => p.status === 'active').length,
-    planning: projects.filter(p => p.status === 'planning').length,
-    totalBudget: projects.reduce((s, p) => s + p.budget, 0),
-    totalActual: projects.reduce((s, p) => s + p.actualCosts, 0),
-  };
+  const totalBudget = projectsData.reduce((sum, p) => sum + p.budget, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
+      className="space-y-6"
+    >
+      {/* ── Page Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Projektit</h1>
-          <p className="text-gray-500 mt-1">Hallinnoi projekteja ja niiden etenemistä</p>
+          <div className="flex items-center gap-2 text-body-sm text-text-secondary mb-1">
+            <span>Dashboard</span>
+            <ChevronRight size={14} />
+            <span className="text-text-primary font-medium">Projektit</span>
+          </div>
+          <h1 className="text-hero text-text-primary">Projektit</h1>
+          <p className="text-body-sm text-text-secondary mt-1">Kaikki projektit yhdessä näkymässä</p>
         </div>
-        <Button className="flex items-center gap-2 bg-primary hover:bg-primary-hover">
-          <Plus className="w-4 h-4" /> Uusi projekti
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button className="bg-primary hover:bg-primary-hover text-white gap-2">
+            <Plus size={16} /> Uusi projekti
+          </Button>
+          <Button variant="outline" className="gap-2">
+            <Download size={16} /> Vie
+          </Button>
+          <Button variant="ghost" className="gap-2 text-text-secondary">
+            <Settings size={16} />
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* ── Stats Summary ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Projektit yht.', value: stats.total, icon: FolderKanban, color: 'text-primary' },
-          { label: 'Aktiiviset', value: stats.active, icon: CheckCircle2, color: 'text-green-600' },
-          { label: 'Suunnittelu', value: stats.planning, icon: Clock, color: 'text-gray-600' },
-          { label: 'Budjetti yht.', value: `${(stats.totalBudget / 1000).toFixed(0)}k €`, icon: Euro, color: 'text-purple-600' },
-        ].map((s, i) => (
-          <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-            <Card>
-              <CardContent className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">{s.label}</p>
-                  <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+          { label: 'Yhteensä', value: projectsData.length, unit: 'projektia', icon: FolderKanban, color: 'text-primary', bg: 'bg-primary-light' },
+          { label: 'Käynnissä', value: projectsData.filter(p => p.status === 'Aktiivinen').length, unit: 'projektia', icon: Play, color: 'text-success', bg: 'bg-success-light' },
+          { label: 'Valmiit', value: projectsData.filter(p => p.status === 'Valmis').length, unit: 'projektia', icon: CheckCircle, color: 'text-text-secondary', bg: 'bg-bg-light' },
+          { label: 'Budjetti', value: `€${(totalBudget / 1000000).toFixed(1)}M`, unit: 'yhteensä', icon: FolderKanban, color: 'text-warning', bg: 'bg-warning-light' },
+        ].map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: i * 0.06, duration: 0.2 }}
+          >
+            <Card className="border border-[#E2E8F0] shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all">
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-caption text-text-secondary uppercase tracking-wider">{stat.label}</span>
+                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', stat.bg)}>
+                    <stat.icon size={20} className={stat.color} />
+                  </div>
                 </div>
-                <s.icon className={`w-8 h-8 ${s.color} opacity-20`} />
+                <p className="text-[28px] font-bold text-text-primary font-mono leading-none">{stat.value}</p>
+                <p className="text-body-sm text-text-secondary mt-1">{stat.unit}</p>
               </CardContent>
             </Card>
           </motion.div>
         ))}
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="list">Lista</TabsTrigger>
-          <TabsTrigger value="kanban">Kanban</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="list" className="space-y-4 mt-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input placeholder="Hae projekteja..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
-            </div>
-            <Button variant="outline" size="sm"><Filter className="w-4 h-4 mr-1" /> Suodata</Button>
-          </div>
-
-          <Card>
-            <CardContent className="p-0">
-              <div className="grid grid-cols-12 gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-700">
-                <button className="col-span-3 flex items-center gap-1 hover:text-gray-900" onClick={() => handleSort('name')}>
-                  Nimi <ArrowUpDown className="w-3 h-3" />
-                </button>
-                <div className="col-span-2">Asiakas</div>
-                <div className="col-span-2">Tila</div>
-                <div className="col-span-2">Edistyminen</div>
-                <div className="col-span-3 text-right">Budjetti</div>
+      {/* ── Filter Cards ── */}
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-3"
+      >
+        {statusFilters.map(filter => (
+          <motion.div key={filter.key} variants={cardVariants}>
+            <button
+              onClick={() => setActiveFilter(filter.key)}
+              className={cn(
+                'w-full p-4 rounded-xl border-2 text-left transition-all hover:-translate-y-0.5',
+                activeFilter === filter.key
+                  ? `${filter.bg} ${filter.border}`
+                  : 'bg-white border-[#E2E8F0] hover:border-[#CBD5E1]'
+              )}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <filter.icon size={18} className={activeFilter === filter.key ? filter.text : 'text-text-secondary'} />
+                <span className={cn(
+                  'text-sm font-medium',
+                  activeFilter === filter.key ? filter.text : 'text-text-secondary'
+                )}>{filter.key}</span>
               </div>
-              {filtered.map(p => (
-                <div key={p.id} className="grid grid-cols-12 gap-4 p-4 border-b last:border-b-0 hover:bg-gray-50 transition-colors items-center">
-                  <div className="col-span-3">
-                    <div className="flex items-center gap-2">
-                      {getStatusIcon(p.status)}
-                      <span className="font-medium text-sm">{p.name}</span>
-                    </div>
-                    <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                      <MapPin className="w-3 h-3" />{p.address}, {p.city}
-                    </div>
-                  </div>
-                  <div className="col-span-2 text-sm">{p.customerName}</div>
-                  <div className="col-span-2">{getStatusBadge(p.status)}</div>
-                  <div className="col-span-2">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className={`h-2 rounded-full ${p.completionPercentage >= 80 ? 'bg-green-500' : p.completionPercentage > 40 ? 'bg-blue-500' : 'bg-yellow-500'}`} style={{ width: `${p.completionPercentage}%` }} />
-                    </div>
-                    <span className="text-xs text-gray-500">{p.completionPercentage}%</span>
-                  </div>
-                  <div className="col-span-3 text-right">
-                    <div className="font-medium text-sm">{p.budget.toLocaleString('fi-FI')} €</div>
-                    <div className={`text-xs ${p.actualCosts > p.budget ? 'text-red-600' : 'text-gray-500'}`}>
-                      {p.actualCosts.toLocaleString('fi-FI')} € toteutunut
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
+              <p className={cn(
+                'text-2xl font-bold font-mono',
+                activeFilter === filter.key ? filter.text : 'text-text-primary'
+              )}>{filter.count}</p>
+            </button>
+          </motion.div>
+        ))}
+      </motion.div>
 
-        <TabsContent value="kanban" className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {(['planning', 'active', 'on_hold', 'completed'] as const).map(status => {
-              const sp = filtered.filter(p => p.status === status);
-              const names: Record<string, string> = { planning: 'Suunnittelu', active: 'Aktiivinen', on_hold: 'Tauolla', completed: 'Valmis' };
-              return (
-                <div key={status} className="bg-gray-50 rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-sm">{names[status]}</h3>
-                    <Badge variant="outline">{sp.length}</Badge>
-                  </div>
-                  <div className="space-y-2">
-                    {sp.map(p => (
-                      <Card key={p.id} className="cursor-pointer hover:shadow-md transition-shadow">
-                        <CardContent className="p-3">
-                          <h4 className="font-medium text-sm">{p.name}</h4>
-                          <p className="text-xs text-gray-500 mt-1">{p.customerName}</p>
-                          <div className="mt-2">
-                            <div className="w-full bg-gray-200 rounded-full h-1.5">
-                              <div className="bg-primary h-1.5 rounded-full" style={{ width: `${p.completionPercentage}%` }} />
-                            </div>
-                            <div className="flex justify-between mt-1 text-xs text-gray-500">
-                              <span>{p.completionPercentage}%</span>
-                              <span>{p.budget.toLocaleString('fi-FI')} €</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+      {/* ── Search Bar ── */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <Input
+            placeholder="Hae projekteja..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-9 h-10 border-[#E2E8F0] focus:border-primary focus:ring-primary"
+          />
+        </div>
+      </div>
+
+      {/* ── Project Table ── */}
+      <Card className="border border-[#E2E8F0] shadow-card overflow-hidden">
+        <CardContent className="p-0">
+          {/* Table Header */}
+          <div className="hidden lg:grid lg:grid-cols-[60px_1fr_140px_100px_100px_140px_100px_120px] gap-4 px-6 py-3 bg-bg-light border-b border-[#E2E8F0]">
+            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">#</span>
+            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">Nimi</span>
+            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">Asiakas</span>
+            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">Aloitus</span>
+            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">Lopetus</span>
+            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">Edistyminen</span>
+            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">Tila</span>
+            <span className="text-caption text-text-muted uppercase tracking-wider font-semibold text-right">Toiminnot</span>
+          </div>
+
+          {/* Table Rows */}
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            {filteredProjects.map((project, idx) => (
+              <motion.div
+                key={project.id}
+                variants={itemVariants}
+                className={cn(
+                  'grid grid-cols-1 lg:grid-cols-[60px_1fr_140px_100px_100px_140px_100px_120px] gap-2 lg:gap-4 px-6 py-4 border-b border-[#F1F5F9] hover:bg-bg-light transition-colors items-center',
+                  project.status === 'Myöhässä' && 'border-l-[3px] border-l-danger'
+                )}
+              >
+                <span className="text-mono text-text-muted hidden lg:block">{idx + 1}</span>
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">{project.name}</p>
+                  <div className="flex items-center gap-1 text-body-sm text-text-secondary mt-0.5">
+                    <MapPin size={12} />
+                    {project.location}
                   </div>
                 </div>
-              );
-            })}
+                <span className="text-body-sm text-text-secondary hidden lg:block">{project.client}</span>
+                <span className="text-body-sm text-text-secondary hidden lg:block">{project.start}</span>
+                <span className="text-body-sm text-text-secondary hidden lg:block">{project.end}</span>
+                <div className="flex items-center gap-2">
+                  <Progress value={project.progress} className="h-2 w-20 hidden sm:block" />
+                  <span className="text-mono text-body-sm text-text-primary">{project.progress}%</span>
+                </div>
+                <div>{getStatusBadge(project.status)}</div>
+                <div className="flex items-center justify-end gap-1">
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-text-secondary hover:text-primary">
+                    <Eye size={16} />
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-text-secondary hover:text-primary">
+                    <Pencil size={16} />
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-text-secondary">
+                    <MoreHorizontal size={16} />
+                  </Button>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+
+          {filteredProjects.length === 0 && (
+            <div className="p-12 text-center">
+              <FolderKanban size={48} className="mx-auto text-text-muted mb-4" />
+              <p className="text-h3 text-text-primary mb-1">Ei projekteja</p>
+              <p className="text-body-sm text-text-secondary">Hakuehdoilla ei löytynyt projekteja</p>
+            </div>
+          )}
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between px-6 py-3 border-t border-[#E2E8F0] bg-bg-light">
+            <span className="text-body-sm text-text-secondary">
+              Näytetään {filteredProjects.length} / {projectsData.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled>Edellinen</Button>
+              <Button variant="outline" size="sm" disabled>Seuraava</Button>
+            </div>
           </div>
-        </TabsContent>
-      </Tabs>
-    </div>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
