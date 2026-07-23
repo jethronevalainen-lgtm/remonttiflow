@@ -7,19 +7,17 @@ import {
   Search,
   Calendar,
   CheckCircle2,
-  AlertTriangle,
-  Clock,
   MapPin,
   Gauge,
   Settings,
   PenLine,
   Trash2,
   Edit3,
-  Star,
   HardHat,
   Tag,
+  type LucideIcon,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -63,7 +61,7 @@ const kpiData = [
   { label: 'Huollossa', value: '3', icon: Settings, color: 'text-amber-500', bg: 'bg-amber-50' },
 ];
 
-const typeConfig: Record<string, { icon: React.ComponentType<{ className?: string; size?: number }>; color: string; bg: string }> = {
+const typeConfig: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
   Kaivuri: { icon: Truck, color: 'text-orange-600', bg: 'bg-orange-50' },
   Työkalu: { icon: Wrench, color: 'text-blue-600', bg: 'bg-blue-50' },
   Kontti: { icon: Tag, color: 'text-slate-600', bg: 'bg-slate-50' },

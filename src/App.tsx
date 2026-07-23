@@ -7,6 +7,7 @@ import {
   Tuntikirjaukset, Matkakulut, Tyoturvallisuus, CRM, Asiakkaat,
   AIPage, Viestinta, Kalusto, Henkilosto, Lomakkeet, Raportit,
 } from './pages';
+import NotFound from './pages/NotFound';
 
 function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: ('admin' | 'supervisor' | 'worker')[] }) {
   const { user, hasRole } = useAuth();
@@ -49,6 +50,7 @@ function AppRoutes() {
         <Route path="/henkilosto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Henkilosto /></RoleGuard>} />
         <Route path="/lomakkeet" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Lomakkeet /></RoleGuard>} />
         <Route path="/raportit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Raportit /></RoleGuard>} />
+        <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
   );

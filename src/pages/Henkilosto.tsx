@@ -5,34 +5,24 @@ import {
   UserCheck,
   Calendar,
   GraduationCap,
-  HardHat,
-  Wrench,
-  Briefcase,
   Phone,
   Mail,
   Search,
   Plus,
-  Settings,
-  MoreHorizontal,
   CheckCircle,
-  Clock,
   AlertTriangle,
-  Shield,
   Award,
-  PenLine,
   Trash2,
   Edit3,
-  Star,
-  BookOpen,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 
 /* ─── Types ─── */
@@ -89,8 +79,7 @@ export default function Henkilosto() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [newEmployee, setNewEmployee] = useState({ name: '', role: '', department: 'Yleinen', status: 'active' as const, email: '', phone: '' });
-  const [activeTab, setActiveTab] = useState('lista');
+  const [newEmployee, setNewEmployee] = useState({ name: '', role: '', department: 'Yleinen', status: 'active' as Employee['status'], email: '', phone: '' });
 
   const handleAddEmployee = () => {
     if (!newEmployee.name.trim() || !newEmployee.role.trim()) return;

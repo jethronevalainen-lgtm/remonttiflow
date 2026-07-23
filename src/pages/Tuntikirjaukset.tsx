@@ -790,7 +790,7 @@ export default function Tuntikirjaukset() {
                       <YAxis tick={{ fontSize: 12, fill: '#64748B' }} />
                       <Tooltip
                         contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                        formatter={(value: number, name: string) => [`${value}h`, name === 'tunnit' ? 'Työtunnit' : 'Ylityö']}
+                        formatter={(value, name) => [`${value}h`, name === 'tunnit' ? 'Työtunnit' : 'Ylityö']}
                       />
                       <Bar dataKey="tunnit" fill="#F97316" radius={[4, 4, 0, 0]} name="Työtunnit" />
                       <Bar dataKey="ylityo" fill="#EF4444" radius={[4, 4, 0, 0]} name="Ylityö" />
@@ -828,7 +828,7 @@ export default function Tuntikirjaukset() {
                           <Cell key={index} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value: number) => [`${value}%`, '']} />
+                      <Tooltip formatter={(value) => [`${value}%`, '']} />
                       <Legend formatter={(value: string) => <span className="text-sm text-text-secondary">{value}</span>} />
                     </PieChart>
                   </ResponsiveContainer>
@@ -897,7 +897,7 @@ export default function Tuntikirjaukset() {
                       <YAxis tick={{ fontSize: 12, fill: '#64748B' }} />
                       <Tooltip
                         contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                        formatter={(value: number) => [`${value}h`, 'Ylityötunnit']}
+                        formatter={(value) => [`${value}h`, 'Ylityötunnit']}
                       />
                       <Line type="monotone" dataKey="ylityo" stroke="#EF4444" strokeWidth={2} dot={{ r: 4, fill: '#EF4444' }} activeDot={{ r: 6 }} />
                     </LineChart>

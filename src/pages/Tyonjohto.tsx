@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Plus,
   BookOpen,
   Building2,
   Users,
-  Clock,
   CheckCircle2,
   AlertTriangle,
   ChevronRight,
@@ -13,11 +12,8 @@ import {
   Circle,
   CircleOff,
   Waves,
-  Sun,
   CloudRain,
   Wind,
-  Package,
-  XCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

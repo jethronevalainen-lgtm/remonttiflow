@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Clock,
   ClipboardCheck,
+  type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,7 +65,7 @@ const kpiData = [
   { label: 'Suosituimmat', value: '8', icon: Award, color: 'text-amber-500', bg: 'bg-amber-50' },
 ];
 
-const categoryConfig: Record<string, { icon: React.ComponentType<{ className?: string; size?: number }>; color: string; bg: string; border: string }> = {
+const categoryConfig: Record<string, { icon: LucideIcon; color: string; bg: string; border: string }> = {
   TYA: { icon: HardHat, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200' },
   Turvallisuus: { icon: ShieldCheck, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
   Laatu: { icon: ClipboardCheck, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },

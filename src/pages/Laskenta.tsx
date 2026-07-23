@@ -264,7 +264,7 @@ export default function Laskenta() {
                     ))}
                   </Pie>
                   <ReTooltip
-                    formatter={(value: number) => [`€${value.toLocaleString('fi-FI')}`, '']}
+                    formatter={(value) => [`€${Number(value).toLocaleString('fi-FI')}`, '']}
                     contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
                   />
                   <Legend

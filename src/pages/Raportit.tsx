@@ -19,6 +19,7 @@ import {
   Star,
   FolderKanban,
   Euro,
+  type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -77,7 +78,7 @@ const kpiData = [
   { label: 'Yhteensä luotu', value: '1,247', icon: TrendingUp, color: 'text-violet-500', bg: 'bg-violet-50' },
 ];
 
-const categoryConfig: Record<string, { color: string; bg: string; border: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
+const categoryConfig: Record<string, { color: string; bg: string; border: string; icon: LucideIcon }> = {
   Työaika: { icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
   Projektit: { icon: FolderKanban, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200' },
   Taloudellinen: { icon: Euro, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' },

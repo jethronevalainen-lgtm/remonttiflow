@@ -5,6 +5,7 @@ import {
   LayoutDashboard, HardHat, FolderKanban, ClipboardCheck, CalendarClock,
   Clock, Car, ShieldCheck, Users, MessageSquare, Wrench, UserCircle,
   FileText, BarChart3, ChevronDown, ChevronLeft, Sparkles, X,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth, ROLE_LABELS } from '@/contexts/AuthContext';
@@ -12,7 +13,7 @@ import type { UserRole } from '@/contexts/AuthContext';
 
 interface NavItem {
   label: string;
-  icon: React.ComponentType<{ className?: string; size?: number }>;
+  icon: LucideIcon;
   path: string;
   roles?: UserRole[];
 }

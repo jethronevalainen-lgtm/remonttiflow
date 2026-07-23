@@ -7,11 +7,17 @@ import { type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 import { toggleVariants } from "@/components/ui/toggle"
 
+const toggleVariantsDefaults = (
+  toggleVariants as unknown as {
+    defaultVariants?: VariantProps<typeof toggleVariants>
+  }
+).defaultVariants
+
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants>
 >({
-  size: toggleVariants.defaultVariants?.size,
-  variant: toggleVariants.defaultVariants?.variant,
+  size: toggleVariantsDefaults?.size,
+  variant: toggleVariantsDefaults?.variant,
 })
 
 const ToggleGroup = React.forwardRef<
