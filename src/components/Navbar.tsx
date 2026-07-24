@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, HardHat, FolderKanban, ClipboardCheck, CalendarClock,
+  LayoutDashboard, HardHat, FolderKanban, ClipboardCheck, ClipboardSignature, CalendarClock,
   Clock, Car, ShieldCheck, Users, MessageSquare, Wrench, UserCircle,
   FileText, BarChart3, ChevronDown, ChevronLeft, Sparkles, X,
   type LucideIcon,
@@ -36,6 +36,7 @@ const projectItems: NavItem[] = [
 
 const mgmtItems: NavItem[] = [
   { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
+  { label: 'Kuittaukset', icon: ClipboardSignature, path: '/kuittaukset' },
   { label: 'Työvuorokal.', icon: CalendarClock, path: '/tyovuorokalenteri', roles: ['admin', 'supervisor'] },
   { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
   { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
