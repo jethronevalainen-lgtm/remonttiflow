@@ -1,9 +1,10 @@
-name: CI
+name: Manual CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   # Supabase publishable configuration is intended for browser bundles.
@@ -28,51 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        id: typecheck
-        continue-on-error: true
-        run: npm run typecheck 2>&1 | tee typecheck.log
-
-      - name: Upload typecheck diagnostics
-        if: steps.typecheck.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: typecheck-diagnostics
-          path: typecheck.log
-          retention-days: 7
-
-      - name: Lint
-        id: lint
-        continue-on-error: true
-        run: npm run lint 2>&1 | tee lint.log
-
-      - name: Upload lint diagnostics
-        if: steps.lint.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: lint-diagnostics
-          path: lint.log
-          retention-days: 7
-
-      - name: Unit tests
-        run: npm run test
-
-      - name: Build
-        id: build
-        continue-on-error: true
-        run: npm run build 2>&1 | tee build.log
-
-      - name: Upload build diagnostics
-        if: steps.build.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-diagnostics
-          path: build.log
-          retention-days: 7
-
-      - name: Enforce quality-gate results
-        if: steps.typecheck.outcome == 'failure' || steps.lint.outcome == 'failure' || steps.build.outcome == 'failure'
-        run: exit 1
+      - name: Verify source quality and build
+        run: npm run ship:check
 
   e2e:
     name: E2E (Playwright)
