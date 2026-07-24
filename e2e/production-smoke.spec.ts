@@ -5,7 +5,16 @@ import { test, expect } from '@playwright/test';
  * user credentials. The deployment workflow supplies PLAYWRIGHT_BASE_URL and
  * EXPECTED_COMMIT_SHA.
  */
+const IS_DEPLOYMENT_CHECK = Boolean(
+  process.env.PLAYWRIGHT_BASE_URL && process.env.EXPECTED_COMMIT_SHA,
+);
+
 test.describe('production deployment', () => {
+  test.skip(
+    !IS_DEPLOYMENT_CHECK,
+    'Production smoke tests only run after a real deployment.',
+  );
+
   test.beforeEach(async ({ context }) => {
     await context.addInitScript(() => {
       window.localStorage.clear();
@@ -28,9 +37,7 @@ test.describe('production deployment', () => {
     const expectedCommit = process.env.EXPECTED_COMMIT_SHA;
 
     expect(metadata.repository).toBe('jethronevalainen-lgtm/remonttiflow');
-    if (expectedCommit) {
-      expect(metadata.commit).toBe(expectedCommit);
-    }
+    expect(metadata.commit).toBe(expectedCommit);
   });
 
   test('renders the login shell without browser errors', async ({ page }) => {
