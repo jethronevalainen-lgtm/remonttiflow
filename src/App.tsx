@@ -1,18 +1,44 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useAuth, type UserRole } from './contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
+import { LoadingState } from '@/components/states';
 import {
-  Dashboard, Tyonjohto, Projektit, Aikataulutus, Paivakirjat,
+  Dashboard, Tyonjohto, Projektit, Aikataulutus, Paivakirjat, Kuittaukset,
   Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset, Tyovuorokalenteri,
   Tuntikirjaukset, Matkakulut, Tyoturvallisuus, CRM, Asiakkaat,
-  AIPage, Viestinta, Kalusto, Henkilosto, Lomakkeet, Raportit,
+  AIPage, Viestinta, Kalusto, Henkilosto, Lomakkeet, Raportit, Hallinta,
 } from './pages';
+import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
-function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: ('admin' | 'supervisor' | 'worker')[] }) {
-  const { user, hasRole } = useAuth();
-  if (!user) return <Navigate to="/dashboard" replace />;
-  if (!hasRole(allowedRoles)) return (
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { session, loading } = useAuth();
+  const location = useLocation();
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <LoadingState text="Ladataan…" />
+      </div>
+    );
+  }
+  if (!session) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
+function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: UserRole[] }) {
+  const { currentRole, loading } = useOrganization();
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <LoadingState text="Ladataan…" />
+      </div>
+    );
+  }
+  if (!currentRole || !allowedRoles.includes(currentRole)) return (
     <div className="flex flex-col items-center justify-center h-full gap-4">
       <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
         <span className="text-2xl">🔒</span>
@@ -27,13 +53,15 @@ function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allo
 function AppRoutes() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="/login" element={<Login />} />
+      <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/tyonjohto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tyonjohto /></RoleGuard>} />
         <Route path="/projektit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Projektit /></RoleGuard>} />
         <Route path="/aikataulutus" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Aikataulutus /></RoleGuard>} />
         <Route path="/paivakirjat" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Paivakirjat /></RoleGuard>} />
+        <Route path="/kuittaukset" element={<Kuittaukset />} />
         <Route path="/laskenta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Laskenta /></RoleGuard>} />
         <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Maaralaskenta /></RoleGuard>} />
         <Route path="/jatehuolto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Jatehuolto /></RoleGuard>} />
@@ -48,8 +76,9 @@ function AppRoutes() {
         <Route path="/viestinta" element={<Viestinta />} />
         <Route path="/kalusto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Kalusto /></RoleGuard>} />
         <Route path="/henkilosto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Henkilosto /></RoleGuard>} />
-        <Route path="/lomakkeet" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Lomakkeet /></RoleGuard>} />
+        <Route path="/lomakkeet" element={<Lomakkeet />} />
         <Route path="/raportit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Raportit /></RoleGuard>} />
+        <Route path="/hallinta" element={<RoleGuard allowedRoles={['admin']}><Hallinta /></RoleGuard>} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
@@ -58,8 +87,8 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
+    <AppDataProvider>
       <AppRoutes />
-    </AuthProvider>
+    </AppDataProvider>
   );
 }
