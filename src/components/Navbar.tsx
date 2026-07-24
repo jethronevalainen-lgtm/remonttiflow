@@ -53,7 +53,7 @@ const toolItems: NavItem[] = [
   { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
   { label: 'Kalusto', icon: Wrench, path: '/kalusto', roles: ['admin', 'supervisor'] },
   { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto', roles: ['admin', 'supervisor'] },
-  { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet', roles: ['admin', 'supervisor'] },
+  { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
   { label: 'Raportit', icon: BarChart3, path: '/raportit', roles: ['admin', 'supervisor'] },
 ];
 
