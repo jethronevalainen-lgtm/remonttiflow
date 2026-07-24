@@ -30,7 +30,6 @@ export type {
   ProjectStatus, WorkOrderPriority, WorkOrderStatus, TimeEntryStatus,
   EmployeeStatus, EquipmentStatus, CustomerType, CustomerStatus,
   CrmLeadStage, SafetyItemType, SafetyItemSeverity, AnnouncementPriority,
-  ShiftEmployee,
 } from '../types';
 
 const STORAGE_VERSION = BRAND.storagePrefix;

@@ -137,6 +137,7 @@ function mapReceipt(value: unknown): SiteReceipt {
     voidReason: optionalText(row, 'void_reason'),
     createdBy: text(row, 'created_by'),
     createdAt: text(row, 'created_at'),
+    updatedAt: text(row, 'updated_at'),
     attachments: attachments.sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
   };
 }
