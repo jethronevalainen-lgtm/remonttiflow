@@ -19,6 +19,7 @@ export interface ProjectPhase {
 
 export interface Shift {
   id: string;
+  userId?: string;
   employeeId?: string;
   employeeName: string;
   projectId?: string;
@@ -40,7 +41,7 @@ function row(value: unknown): Row {
 }
 
 function text(item: Row, key: string): string {
-  return typeof item[key] === 'string' ? (item[key] as string) : '';
+  return typeof item[key] === 'string' ? item[key] as string : '';
 }
 
 function optionalText(item: Row, key: string): string | undefined {
@@ -84,7 +85,7 @@ async function loadScheduling(organizationId: string) {
     .map((item): ProjectPhase => {
       const rawStatus = text(item, 'status');
       const status: PhaseStatus = ['Käynnissä', 'Valmis', 'Myöhässä'].includes(rawStatus)
-        ? (rawStatus as PhaseStatus)
+        ? rawStatus as PhaseStatus
         : 'Suunniteltu';
       return {
         id: text(item, 'id'),
@@ -103,6 +104,7 @@ async function loadScheduling(organizationId: string) {
     .map(row)
     .map((item): Shift => ({
       id: text(item, 'id'),
+      userId: optionalText(item, 'user_id'),
       employeeId: optionalText(item, 'employee_id'),
       employeeName: text(item, 'employee_name'),
       projectId: optionalText(item, 'project_id'),
