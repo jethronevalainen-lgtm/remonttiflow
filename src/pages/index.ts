@@ -14,6 +14,7 @@ export { default as Raportit } from './Raportit';
 export { default as Aikataulutus } from './Aikataulutus';
 export { default as Tyovuorokalenteri } from './Tyovuorokalenteri';
 export { default as Paivakirjat } from './Paivakirjat';
+export { default as Kuittaukset } from './Kuittaukset';
 export { default as Matkakulut } from './Matkakulut';
 export { default as Jatehuolto } from './Jatehuolto';
 export { default as Tyonjohto } from './Tyonjohto';
