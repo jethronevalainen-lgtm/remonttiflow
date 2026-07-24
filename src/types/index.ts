@@ -19,6 +19,8 @@ export type CrmLeadStage = 'Uusi' | 'Tarjous tehty' | 'Neuvottelu' | 'Sopimus';
 export type SafetyItemType = 'incident' | 'risk' | 'inspection' | 'training';
 export type SafetyItemSeverity = 'Lievä' | 'Keskitasoinen' | 'Vakava';
 export type AnnouncementPriority = 'Tärkeä' | 'Normaali' | 'Info';
+export type DiaryStatus = 'Luonnos' | 'Valmis' | 'Lukittu';
+export type TravelExpenseStatus = 'Odottaa' | 'Hyväksytty' | 'Hylätty';
 
 /* ─── Domain interfaces ─── */
 export interface Project {
@@ -76,7 +78,7 @@ export interface Employee {
   email: string;
   startDate: string;
   status: EmployeeStatus;
-  /** Superset fields from the Henkilöstö page (seeded in initialData). */
+  /** Legacy display-only metrics retained until project assignments are normalized. */
   projects: number;
   hours: number;
   training: number;
@@ -91,7 +93,6 @@ export interface Equipment {
   location: string;
   status: EquipmentStatus;
   lastMaintenance: string;
-  /** Optional fields used by the Kalusto page view. */
   model?: string;
   year?: number;
   lastService?: string;
@@ -133,7 +134,10 @@ export interface DiaryEntry {
   temperature: string;
   workers: number;
   workDescription: string;
+  deliveries?: string;
   issues?: string;
+  delays?: string;
+  status?: DiaryStatus;
 }
 
 export interface SafetyItem {
@@ -153,6 +157,8 @@ export interface WasteEntry {
   amount: number;
   method: string;
   cost: number;
+  unit?: string;
+  notes?: string;
 }
 
 export interface DrivingLogEntry {
@@ -164,6 +170,17 @@ export interface DrivingLogEntry {
   endAddress: string;
   distance: number;
   purpose: string;
+  project?: string;
+}
+
+export interface TravelExpense {
+  id: string;
+  date: string;
+  employee: string;
+  type: string;
+  description: string;
+  amount: number;
+  status: TravelExpenseStatus;
 }
 
 export interface Announcement {
@@ -179,6 +196,7 @@ export interface Message {
   id: string;
   sender: string;
   recipient: string;
+  subject?: string;
   content: string;
   timestamp: string;
   read: boolean;
