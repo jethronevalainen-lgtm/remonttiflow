@@ -42,7 +42,17 @@ jobs:
           retention-days: 7
 
       - name: Lint
-        run: npm run lint
+        id: lint
+        continue-on-error: true
+        run: npm run lint 2>&1 | tee lint.log
+
+      - name: Upload lint diagnostics
+        if: steps.lint.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-diagnostics
+          path: lint.log
+          retention-days: 7
 
       - name: Unit tests
         run: npm run test
@@ -61,7 +71,7 @@ jobs:
           retention-days: 7
 
       - name: Enforce quality-gate results
-        if: steps.typecheck.outcome == 'failure' || steps.build.outcome == 'failure'
+        if: steps.typecheck.outcome == 'failure' || steps.lint.outcome == 'failure' || steps.build.outcome == 'failure'
         run: exit 1
 
   e2e:
