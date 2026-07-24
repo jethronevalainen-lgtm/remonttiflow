@@ -105,7 +105,10 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const label = routeLabelMap.get(location.pathname) ?? BRAND.name;
   const displayName = profile?.full_name ?? user?.email ?? '';
   const hasMultipleOrgs = organizations.length > 1;
-  const allowedPaths = currentRole ? ROLE_ROUTES[currentRole] : ['/dashboard'];
+  const allowedPaths = useMemo(
+    () => (currentRole ? ROLE_ROUTES[currentRole] : ['/dashboard']),
+    [currentRole],
+  );
 
   const alerts = useMemo(() => {
     const allowed = new Set(allowedPaths);
