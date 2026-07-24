@@ -29,8 +29,7 @@ AI-näkymä on tarkoituksellisesti pois käytöstä, kunnes palvelinpuolinen mal
 - Supabase Auth, PostgreSQL, Storage ja Edge Functions
 - Vitest ja React Testing Library
 - Playwright
-- GitHub Actions
-- Cloudflare Pages
+- Cloudflare Pagesin natiivi GitHub-integraatio
 
 ## Paikallinen kehitys
 
@@ -52,6 +51,22 @@ Sovellus käyttää oletuksena hosted Supabase -projektin julkista selainkonfigu
 
 ## Laatuportit
 
+Kaikki tuotantoon vaadittavat tarkistukset ajetaan yhdellä komennolla:
+
+```bash
+npm run ship:check
+```
+
+Komento suorittaa järjestyksessä:
+
+1. TypeScript-tyyppitarkistuksen
+2. ESLintin ilman sallittuja varoituksia
+3. Vitest-yksikkötestit
+4. tuotantobuildin
+5. `dist/version.json`-julkaisutunnisteen luonnin
+
+Muut komennot:
+
 ```bash
 npm run typecheck
 npm run lint
@@ -60,42 +75,43 @@ npm run build
 npm run test:e2e
 ```
 
-GitHub Actionsin `CI`-workflow ajaa vastaavat tarkistukset jokaiselle pull requestille ja jokaiselle `main`-haaran pushille.
-
-### E2E-tunnukset
+## E2E-tunnukset
 
 Julkisen kirjautumisnäkymän ja virhetilan testit eivät tarvitse käyttäjätunnuksia. Kirjautumista ja suojattuja reittejä testaavat tapaukset käynnistyvät vain, kun ympäristössä ovat:
 
 - `E2E_USER_EMAIL`
 - `E2E_USER_PASSWORD`
 
-GitHubissa nämä arvot tallennetaan salaisuuksiksi. Repositorioon ei saa commitoida oikeita käyttäjätunnuksia tai salasanoja.
+Käytä erillistä testikäyttäjää. Repositorioon ei saa commitoida oikeita käyttäjätunnuksia tai salasanoja.
 
 ## Tuotantoonvienti
 
-`.github/workflows/deploy-production.yml` käynnistyy vasta, kun `main`-haaran CI on onnistunut. Workflow:
+Normaali tuotantopolku on Cloudflare Pagesin oma GitHub-integraatio:
 
-1. tarkistaa hyväksytyn commitin
-2. asentaa lukitut riippuvuudet
-3. ajaa tyyppitarkistuksen, lintin ja yksikkötestit
-4. rakentaa tuotantobundlen
-5. lisää `version.json`-tiedoston commit-tunnisteella
-6. luo Cloudflare Pages -projektin tarvittaessa
-7. julkaisee `dist`-hakemiston tuotantoon
-8. ajaa Playwright-smoketestit julkaistua URL-osoitetta vasten
+```text
+feature-haara → pull request → Cloudflare preview + laatuportit
+→ merge mainiin → automaattinen tuotantobuild → Cloudflare Pages
+```
 
-### Pakolliset GitHub Actions -salaisuudet
+Tämä polku ei käytä GitHub Actions -minuutteja.
 
-Repository Settings → Secrets and variables → Actions:
+### Cloudflare Pages -projektin asetukset
 
-- `CLOUDFLARE_API_TOKEN` — token, jolla on Account / Cloudflare Pages / Edit -oikeus
-- `CLOUDFLARE_ACCOUNT_ID` — Cloudflare-tilin tunniste
+- Git repository: `jethronevalainen-lgtm/remonttiflow`
+- Production branch: `main`
+- Framework preset: `Vite`
+- Build command: `npm run ship:check`
+- Build output directory: `dist`
+- Root directory: repository root
+- Node.js: `.node-version` määrittää version 22
+- Preview deployments: käytössä kaikille pull request -haaroille
+- Automatic production deployments: käytössä vain `main`-haaralle
 
-### Valinnainen GitHub Actions -muuttuja
+`wrangler.jsonc` säilyttää Pages-outputin ja yhteensopivuuspäivän versionhallinnassa.
 
-- `CLOUDFLARE_PAGES_PROJECT` — Pages-projektin nimi; oletus on `remonttiflow`
+Cloudflare Pages lisää buildiin automaattisesti muun muassa `CF_PAGES_COMMIT_SHA`- ja `CF_PAGES_BRANCH`-arvot. `scripts/write-version.mjs` kirjoittaa ne julkaisuun tiedostoksi `/version.json`, joten tuotannossa oleva commit voidaan todistaa ilman arvailua.
 
-Deployn voi käynnistää myös käsin GitHub Actionsin **Deploy Production** -workflowsta.
+GitHubin `.github/workflows/ci.yml` on jätetty vain manuaaliseksi varajärjestelmäksi. Normaali PR- ja tuotantoketju ei riipu siitä.
 
 ## Tuotantoturvallisuus
 
@@ -105,14 +121,16 @@ Deployn voi käynnistää myös käsin GitHub Actionsin **Deploy Production** -w
 - Cloudflare Pagesiin julkaistaan CSP-, HSTS-, clickjacking-, MIME- ja referrer-suojausotsakkeet.
 - Sovellus estetään hakukoneindeksoinnilta.
 - Staattiset hashatut assetit välimuistitetaan pitkäksi aikaa, mutta `index.html` ja `version.json` eivät jää vanhaan välimuistiin.
-- Jokainen tuotantodeploy varmennetaan commit-tunnisteella ja selaintestillä.
+- Jokainen build tuottaa commit-, branch- ja ympäristötiedot sisältävän `version.json`-tiedoston.
+- Cloudflare Pages säilyttää deployment-historian nopeaa rollbackia varten.
 
 ## Kehityskäytäntö
 
 - Älä kirjoita suoraan `main`-haaraan.
 - Tee rajattu feature- tai fix-haara.
 - Avaa pull request.
-- Yhdistä vasta vihreän CI:n jälkeen.
+- Tarkista Cloudflare preview ja build-status.
+- Yhdistä vasta vihreän Cloudflare-tarkistuksen jälkeen.
 - Tietokantamuutokset toimitetaan versionoituina Supabase-migraatioina.
 - Tuotantodatan muutoksia ei tehdä UI-testien sivuvaikutuksena.
 
