@@ -70,6 +70,7 @@ export const deleteProjectPhase = (organizationId: string, id: string) =>
 
 function shiftPayload(shift: Omit<Shift, 'id'> | Partial<Shift>): Payload {
   const payload: Payload = {};
+  if (shift.userId !== undefined) payload.user_id = shift.userId || null;
   if (shift.employeeId !== undefined) payload.employee_id = shift.employeeId || null;
   if (shift.employeeName !== undefined) payload.employee_name = shift.employeeName || null;
   if (shift.projectId !== undefined) payload.project_id = shift.projectId || null;
