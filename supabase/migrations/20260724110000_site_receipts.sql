@@ -77,7 +77,7 @@ create or replace function public.enforce_site_receipt_immutability()
 returns trigger
 language plpgsql
 security invoker
-set search_path = public
+set search_path = pg_catalog, public, private
 as $$
 begin
   if old.status = 'voided' then
@@ -87,7 +87,7 @@ begin
   if old.status = 'signed' then
     if not (
       new.status = 'voided'
-      and public.has_org_role(old.organization_id, array['admin', 'supervisor'])
+      and private.has_org_role(old.organization_id, array['admin', 'supervisor'])
       and nullif(btrim(new.void_reason), '') is not null
       and (
         to_jsonb(new) - array['status', 'voided_at', 'void_reason', 'updated_at']::text[]
@@ -129,7 +129,7 @@ create or replace function public.audit_site_receipt_state()
 returns trigger
 language plpgsql
 security invoker
-set search_path = public
+set search_path = pg_catalog, public
 as $$
 begin
   if new.status = 'signed' and old.status is distinct from 'signed' then
@@ -186,13 +186,13 @@ create trigger audit_site_receipt_state
 drop policy if exists site_receipts_select on public.site_receipts;
 create policy site_receipts_select
   on public.site_receipts for select to authenticated
-  using (public.is_org_member(organization_id));
+  using (private.is_org_member(organization_id));
 
 drop policy if exists site_receipts_insert on public.site_receipts;
 create policy site_receipts_insert
   on public.site_receipts for insert to authenticated
   with check (
-    public.is_org_member(organization_id)
+    private.is_org_member(organization_id)
     and created_by = (select auth.uid())
     and status = 'draft'
   );
@@ -201,13 +201,13 @@ drop policy if exists site_receipts_update on public.site_receipts;
 create policy site_receipts_update
   on public.site_receipts for update to authenticated
   using (
-    public.has_org_role(organization_id, array['admin', 'supervisor'])
+    private.has_org_role(organization_id, array['admin', 'supervisor'])
     or (created_by = (select auth.uid()) and status = 'draft')
   )
   with check (
-    public.is_org_member(organization_id)
+    private.is_org_member(organization_id)
     and (
-      public.has_org_role(organization_id, array['admin', 'supervisor'])
+      private.has_org_role(organization_id, array['admin', 'supervisor'])
       or (
         created_by = (select auth.uid())
         and status in ('draft', 'signed')
@@ -219,20 +219,20 @@ drop policy if exists site_receipts_delete on public.site_receipts;
 create policy site_receipts_delete
   on public.site_receipts for delete to authenticated
   using (
-    public.has_org_role(organization_id, array['admin', 'supervisor'])
+    private.has_org_role(organization_id, array['admin', 'supervisor'])
     or (created_by = (select auth.uid()) and status = 'draft')
   );
 
 drop policy if exists site_receipt_attachments_select on public.site_receipt_attachments;
 create policy site_receipt_attachments_select
   on public.site_receipt_attachments for select to authenticated
-  using (public.is_org_member(organization_id));
+  using (private.is_org_member(organization_id));
 
 drop policy if exists site_receipt_attachments_insert on public.site_receipt_attachments;
 create policy site_receipt_attachments_insert
   on public.site_receipt_attachments for insert to authenticated
   with check (
-    public.is_org_member(organization_id)
+    private.is_org_member(organization_id)
     and created_by = (select auth.uid())
     and exists (
       select 1
@@ -248,7 +248,7 @@ drop policy if exists site_receipt_attachments_delete on public.site_receipt_att
 create policy site_receipt_attachments_delete
   on public.site_receipt_attachments for delete to authenticated
   using (
-    public.has_org_role(organization_id, array['admin', 'supervisor'])
+    private.has_org_role(organization_id, array['admin', 'supervisor'])
     or exists (
       select 1
       from public.site_receipts receipt
@@ -285,12 +285,7 @@ create policy site_receipt_files_select
   on storage.objects for select to authenticated
   using (
     bucket_id = 'site-receipts'
-    and exists (
-      select 1
-      from public.organization_members member
-      where member.organization_id::text = (storage.foldername(name))[1]
-        and member.user_id = (select auth.uid())
-    )
+    and private.is_org_member(((storage.foldername(name))[1])::uuid)
   );
 
 drop policy if exists site_receipt_files_insert on storage.objects;
@@ -298,12 +293,7 @@ create policy site_receipt_files_insert
   on storage.objects for insert to authenticated
   with check (
     bucket_id = 'site-receipts'
-    and exists (
-      select 1
-      from public.organization_members member
-      where member.organization_id::text = (storage.foldername(name))[1]
-        and member.user_id = (select auth.uid())
-    )
+    and private.is_org_member(((storage.foldername(name))[1])::uuid)
   );
 
 drop policy if exists site_receipt_files_delete on storage.objects;
@@ -313,12 +303,9 @@ create policy site_receipt_files_delete
     bucket_id = 'site-receipts'
     and (
       owner_id = (select auth.uid()::text)
-      or exists (
-        select 1
-        from public.organization_members member
-        where member.organization_id::text = (storage.foldername(name))[1]
-          and member.user_id = (select auth.uid())
-          and member.role in ('admin', 'supervisor')
+      or private.has_org_role(
+        ((storage.foldername(name))[1])::uuid,
+        array['admin', 'supervisor']
       )
     )
   );
