@@ -75,8 +75,24 @@ as $$
 declare
   other_admins integer;
 begin
-  if old.role = 'admin'
-     and (tg_op = 'DELETE' or new.role <> 'admin') then
+  if tg_op = 'DELETE' then
+    if old.role = 'admin' then
+      select count(*)
+      into other_admins
+      from public.organization_members
+      where organization_id = old.organization_id
+        and role = 'admin'
+        and user_id <> old.user_id;
+
+      if other_admins = 0 then
+        raise exception 'Organisaatiolla pitää olla vähintään yksi ylläpitäjä.'
+          using errcode = '23514';
+      end if;
+    end if;
+    return old;
+  end if;
+
+  if old.role = 'admin' and new.role <> 'admin' then
     select count(*)
     into other_admins
     from public.organization_members
@@ -90,9 +106,6 @@ begin
     end if;
   end if;
 
-  if tg_op = 'DELETE' then
-    return old;
-  end if;
   return new;
 end;
 $$;
@@ -116,16 +129,19 @@ declare
   action_name text;
   details jsonb;
 begin
-  target_org := coalesce(new.organization_id, old.organization_id);
-  target_user := coalesce(new.user_id, old.user_id);
-
   if tg_op = 'INSERT' then
+    target_org := new.organization_id;
+    target_user := new.user_id;
     action_name := 'organization_member_added';
     details := jsonb_build_object('role', new.role);
   elsif tg_op = 'UPDATE' then
+    target_org := new.organization_id;
+    target_user := new.user_id;
     action_name := 'organization_member_role_changed';
     details := jsonb_build_object('old_role', old.role, 'new_role', new.role);
   else
+    target_org := old.organization_id;
+    target_user := old.user_id;
     action_name := 'organization_member_removed';
     details := jsonb_build_object('role', old.role);
   end if;
@@ -146,7 +162,10 @@ begin
     details || jsonb_build_object('target_user_id', target_user)
   );
 
-  return coalesce(new, old);
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
 end;
 $$;
 
