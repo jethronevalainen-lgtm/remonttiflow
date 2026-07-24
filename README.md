@@ -1,126 +1,206 @@
-# RemonttiFlow
+# VaKantti
 
-Suomalainen rakennusalan työnohjaus- ja toiminnanohjausjärjestelmä.
+VaKantti on suomalainen rakennusalan työnhallinta- ja toiminnanohjaussovellus. Repositorion nimi on historiallisista syistä `remonttiflow`.
 
-> **Huom:** Projekti on prototyyppivaiheessa. Käyttöliittymä on laaja, mutta
-> suurin osa näkymistä toimii vielä mock-datalla, autentikointi on
-> roolinvaihto-prototyyppi eikä taustajärjestelmää (Supabase) ole vielä
-> kytketty. Katso kohta [Tunnetut rajoitteet](#tunnetut-rajoitteet).
+## Nykytila
+
+Sovellus ei ole enää pelkkä käyttöliittymäprototyyppi. Käytössä ovat muun muassa:
+
+- Supabase Auth -kirjautuminen
+- organisaatio- ja roolipohjainen moniasiakkuus
+- PostgreSQL Row Level Security
+- projektit, asiakkaat, CRM, henkilöstö ja kalusto
+- työmääräykset, työvuorot, aikataulutus ja tuntikirjaukset
+- työmaapäiväkirjat, turvallisuushavainnot ja jätehuolto
+- matka- ja ajopäiväkirjat
+- kustannus- ja määrälaskenta
+- dynaamiset lomakkeet ja raportointi
+- allekirjoitetut työmaakuittaukset liitteineen
+- organisaation käyttäjä- ja roolihallinta
+
+AI-näkymä on tarkoituksellisesti pois käytöstä, kunnes palvelinpuolinen mallipalvelu ja sen käyttöehdot on konfiguroitu.
+
+## Roolit
+
+### Työntekijä
+
+Työntekijällä ei ole organisaation yleisnäkymää. Hän näkee vain:
+
+- omalle käyttäjälle määrätyt työmääräykset
+- projektitiimille määrätyt työmääräykset, kun hän kuuluu kyseiseen projektiin
+- omat projektit ja projektivaiheet
+- omat työvuorot
+- omat tunti-, matka- ja ajopäiväkirjaukset
+- omat tai omiin töihin liittyvät työmaakuittaukset
+- omat lomakelähetykset
+- henkilökohtaiset viestit sekä organisaation tiedotteet
+
+Työntekijä voi käynnistää, keskeyttää ja valmistaa oman työmääräyksensä. Hän ei voi muuttaa työn rajausta, vastuuhenkilöitä, projektia, määräaikaa tai prioriteettia.
+
+### Työnjohtaja
+
+Työnjohtaja hallitsee operatiivista tuotantoa:
+
+- projektit ja projektitiimit
+- työmääräykset ja vastuuhenkilöt
+- aikataulut ja työvuorot
+- tuntien ja kulujen hyväksyntä
+- turvallisuus, päiväkirjat, kuittaukset ja lomakkeet
+- asiakkaat, CRM, laskenta ja raportointi
+
+### Admin
+
+Adminilla on työnjohdon oikeuksien lisäksi:
+
+- organisaation tietojen hallinta
+- käyttäjäkutsut
+- jäsenyyksien ja roolien hallinta
+- viimeisen ylläpitäjän suojaus
+- jäsenmuutosten audit trail
+
+## Työn kohdistusmalli
+
+VaKantti käyttää kahta erillistä kohdistusta:
+
+1. `project_members` määrittää, mille työmaille käyttäjä on sijoitettu.
+2. `work_order_assignees` määrittää työmääräyksen nimetyt vastuuhenkilöt.
+
+Työmääräyksen `assignment_scope` on joko:
+
+- `people`: työ näkyy vain nimetyille vastuuhenkilöille
+- `project_team`: työ näkyy kaikille projektitiimin jäsenille
+
+Kaikki rajaukset pakotetaan PostgreSQL:n RLS-politiikoissa. React-reittien ja navigaation suodatus on vain käyttöliittymäkerros, ei varsinainen tietoturvaraja.
+
+## Tietoturvaperiaatteet
+
+- Secret/service-role-avaimia käytetään vain palvelinpuolisissa Edge Function -toiminnoissa.
+- Organisaatiorajat toteutetaan tietokannassa.
+- Työntekijän työmääräyksen tilasiirtymät tarkistetaan RLS:n lisäksi tietokantatriggerillä.
+- Talous- ja hallintatiedot on rajattu admin- ja supervisor-rooleille.
+- Henkilökohtaiset viestit näkyvät vain lähettäjälle ja vastaanottajalle.
 
 ## Teknologia
 
-- **Vite 5** + **React 18** + **TypeScript** (strict-tila)
-- **Tailwind CSS** + **shadcn/ui** (Radix UI -primitiivit)
-- **React Router v6**
-- **Vitest** yksikkötesteihin, **Playwright** e2e-testeihin
-- Tuleva taustajärjestelmä: **Supabase** (ei vielä kytketty, ks. `.env.example`)
+- React 18, TypeScript ja Vite 5
+- Tailwind CSS ja Radix UI / shadcn-komponentit
+- React Router HashRouterilla
+- TanStack Query
+- Supabase Auth, PostgreSQL, Storage ja Edge Functions
+- Vitest ja React Testing Library
+- Playwright
+- Cloudflare Pagesin natiivi GitHub-integraatio
 
-## Edellytykset
+## Paikallinen kehitys
 
-- Node.js 20 tai uudempi (kehityksessä käytetty myös Node 24)
-- npm 10+
+Edellytykset:
 
-## Asennus
+- Node.js 22
+- npm 10 tai uudempi
+
+Asenna riippuvuudet ja käynnistä kehityspalvelin:
 
 ```bash
 npm ci
-```
-
-## Kehitys
-
-```bash
 npm run dev
 ```
 
-Sovellus käynnistyy Vite-kehityspalvelimelle (oletuksena `http://localhost:5173`).
+Sovellus käyttää oletuksena hosted Supabase -projektin julkista selainkonfiguraatiota. Eri backend voidaan määrittää kopioimalla `.env.example` tiedostoksi `.env` ja vaihtamalla `VITE_SUPABASE_URL` sekä `VITE_SUPABASE_ANON_KEY`.
 
-## npm-skriptit
+**Älä koskaan sijoita frontendin ympäristömuuttujiin service-role-avainta, Cloudflare-tokenia tai muuta salaista arvoa.**
 
-| Komento | Kuvaus |
-|---|---|
-| `npm run dev` | Käynnistää Vite-kehityspalvelimen |
-| `npm run build` | Tuotantobuild (`tsc` + `vite build`) kansioon `dist/` |
-| `npm run lint` | ESLint-tarkistus (max 0 varoitusta) |
-| `npm run typecheck` | TypeScript-tyyppitarkistus ilman käännöstä (`tsc --noEmit`) |
-| `npm run test` | Aja yksikkötestit (Vitest, kertakajo) |
-| `npm run test:e2e` | Aja e2e-testit (Playwright) |
-| `npm run preview` | Esikatsele tuotantobuildia paikallisesti |
+## Laatuportit
 
-## Testaus
-
-### Yksikkötestit
+Kaikki tuotantoon vaadittavat tarkistukset ajetaan yhdellä komennolla:
 
 ```bash
-npm run test
+npm run ship:check
 ```
 
-Testit ajetaan Vitestillä kertakajona. Samat testit ajetaan myös CI-putkessa
-jokaiselle pushille mainiin ja jokaiselle PR:lle.
+Komento suorittaa järjestyksessä:
 
-### E2E-testit
+1. TypeScript-tyyppitarkistuksen
+2. ESLintin ilman sallittuja varoituksia
+3. Vitest-yksikkötestit
+4. tuotantobuildin
+5. `dist/version.json`-julkaisutunnisteen luonnin
+
+Muut komennot:
 
 ```bash
-npx playwright install --with-deps chromium   # kerran, selaimen asennus
+npm run typecheck
+npm run lint
+npm run test
+npm run build
 npm run test:e2e
 ```
 
-E2E-testit ajetaan Playwrightilla. Epäonnistuessa Playwright luo raportin
-kansioon `playwright-report/` (CI:ssä raportti tallentuu artefaktiksi).
+## E2E-tunnukset
 
-## CI
+Julkisen kirjautumisnäkymän ja virhetilan testit eivät tarvitse käyttäjätunnuksia. Kirjautumista ja suojattuja reittejä testaavat tapaukset käynnistyvät vain, kun ympäristössä ovat:
 
-GitHub Actions -putki (`.github/workflows/ci.yml`) ajetaan jokaisesta
-pushista `main`-haaraan ja jokaisesta pull requestista. Putki koostuu
-kahdesta jobista:
+- `E2E_USER_EMAIL`
+- `E2E_USER_PASSWORD`
 
-1. **Typecheck, lint, unit tests & build** — `npm ci`, `npm run typecheck`,
-   `npm run lint`, `npm run test`, `npm run build` (Node 20, npm-välimuisti)
-2. **E2E (Playwright)** — `npm run test:e2e`; epäonnistuessa
-   `playwright-report/` tallentuu artefaktiksi
+Käytä erillistä testikäyttäjää. Repositorioon ei saa commitoida oikeita käyttäjätunnuksia tai salasanoja.
 
-Riippuvuuksien ja GitHub Actions -actionien versiopäivityksistä huolehtii
-Dependabot (`.github/dependabot.yml`, viikoittain).
+## Migraatiot
 
-## Kehityskäytäntö: haarat ja PR:t
+Tietokantamuutokset ovat `supabase/migrations/`-hakemistossa. Tiedoston version pitää vastata hosted Supabasen migraatiohistoriaa, jotta samaa muutosta ei yritetä suorittaa uudelleen.
 
-- **Mainiin ei koskaan commitoida suoraan.** Kaikki muutokset tehdään
-  feature-haaroissa (`feat/...`, `fix/...`, `chore/...`) ja viedään mainiin
-  pull requestin kautta.
-- Jokainen PR täytetään PR-pohjan (`.github/pull_request_template.md`)
-  mukaisesti: ongelma, juurisyy, ratkaisu, muutetut tiedostot, testitulokset,
-  build-tulos jne.
-- PR:n ehtona on vihreä CI (typecheck, lint, yksikkötestit, build, e2e).
+## Tuotantoonvienti
 
-## Projektirakenne
+Normaali tuotantopolku on Cloudflare Pagesin oma GitHub-integraatio:
 
-```
-├── .github/              # CI-putki, PR-pohja, Dependabot
-├── docs/                 # Projektidokumentaatio (esim. BASELINE_REPORT.md)
-├── src/
-│   ├── components/       # Omat komponentit ja shadcn/ui-komponentit (ui/)
-│   ├── contexts/         # React-kontekstit (mm. AuthContext, AppDataContext)
-│   ├── data/             # Alkuaineisto / mock-data (initialData)
-│   ├── hooks/            # Omat hookit
-│   ├── lib/              # Apufunktiot (mm. cn/utils)
-│   ├── pages/            # Reititetyt näkymät (~21 sivua)
-│   ├── App.tsx           # Reititys ja sovelluksen runko
-│   └── main.tsx          # Sovelluksen käynnistyspiste
-├── index.html            # Vite-HTML-pohja
-├── vite.config.ts        # Vite-konfiguraatio
-├── tailwind.config.js    # Tailwind-konfiguraatio
-└── tsconfig*.json        # TypeScript-konfiguraatiot (strict)
+```text
+feature-haara → pull request → Cloudflare preview + laatuportit
+→ merge mainiin → automaattinen tuotantobuild → Cloudflare Pages
 ```
 
-## Tunnetut rajoitteet
+Tämä polku ei käytä GitHub Actions -minuutteja.
 
-- **Mock-data:** Suurin osa näkymistä käyttää edelleen sivukohtaista
-  mock-dataa; jaettua datakerrosta (`AppDataContext`) ei ole kytketty
-  näkymiin.
-- **Autentikointi:** Kirjautuminen on roolinvaihto-prototyyppi — ei oikeaa
-  tunnistautumista, ja käyttöoikeustarkistukset tehdään vain
-  React-tasolla.
-- **Taustajärjestelmä:** Supabasea ei ole vielä kytketty. Yhteyttä varten
-  tarvittavat ympäristömuuttujat on kuvattu `.env.example`-tiedostossa, ja ne
-  tulevat pakollisiksi PR:stä `feat/supabase-auth-and-multitenancy` alkaen.
+### Cloudflare Pages -projektin asetukset
 
-Lisätietoja lähtötilanteen auditoinnista: `docs/BASELINE_REPORT.md`.
+- Git repository: `jethronevalainen-lgtm/remonttiflow`
+- Production branch: `main`
+- Framework preset: `Vite`
+- Build command: `npm run ship:check`
+- Build output directory: `dist`
+- Root directory: repository root
+- Node.js: `.node-version` määrittää version 22
+- Preview deployments: käytössä kaikille pull request -haaroille
+- Automatic production deployments: käytössä vain `main`-haaralle
+
+`wrangler.jsonc` säilyttää Pages-outputin ja yhteensopivuuspäivän versionhallinnassa.
+
+Cloudflare Pages lisää buildiin automaattisesti muun muassa `CF_PAGES_COMMIT_SHA`- ja `CF_PAGES_BRANCH`-arvot. `scripts/write-version.mjs` kirjoittaa ne julkaisuun tiedostoksi `/version.json`, joten tuotannossa oleva commit voidaan todistaa ilman arvailua.
+
+GitHubin `.github/workflows/ci.yml` on jätetty vain manuaaliseksi varajärjestelmäksi. Normaali PR- ja tuotantoketju ei riipu siitä.
+
+## Tuotantoturvallisuus
+
+- Tietokannan käyttöoikeudet ratkaistaan RLS-politiikoilla, ei käyttöliittymän piilotuksilla.
+- Selain käyttää vain Supabasen publishable-avainta.
+- Supabase Edge Functions säilyttävät palvelinavaimet palvelinympäristössä.
+- Cloudflare Pagesiin julkaistaan CSP-, HSTS-, clickjacking-, MIME- ja referrer-suojausotsakkeet.
+- Sovellus estetään hakukoneindeksoinnilta.
+- Staattiset hashatut assetit välimuistitetaan pitkäksi aikaa, mutta `index.html` ja `version.json` eivät jää vanhaan välimuistiin.
+- Jokainen build tuottaa commit-, branch- ja ympäristötiedot sisältävän `version.json`-tiedoston.
+- Cloudflare Pages säilyttää deployment-historian nopeaa rollbackia varten.
+
+## Kehityskäytäntö
+
+- Älä kirjoita suoraan `main`-haaraan.
+- Tee rajattu feature- tai fix-haara.
+- Avaa pull request.
+- Tarkista Cloudflare preview ja build-status.
+- Yhdistä vasta vihreän Cloudflare-tarkistuksen jälkeen.
+- Tietokantamuutokset toimitetaan versionoituina Supabase-migraatioina, joiden versio vastaa hosted Supabasen migraatiohistoriaa.
+- Tuotantodatan muutoksia ei tehdä UI-testien sivuvaikutuksena.
+
+## Tunnetut rajaukset
+
+- AI-mallipalvelu ei ole vielä aktiivinen.
+- Raporttiviennit ovat tällä hetkellä ensisijaisesti CSV-muodossa.
+- Lomakkeiden yleinen liitetuki on erillinen jatkokehitys; työmaakuittauksissa liitteet ovat käytössä.
+- Supabase Authin kutsusähköpostien brändäys ja lopullinen tuotantodomainin redirect-konfiguraatio pitää vahvistaa, kun lopullinen domain on päätetty.

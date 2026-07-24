@@ -28,6 +28,13 @@ module.exports = {
       env: { node: true },
     },
     {
+      files: ['supabase/functions/**/*.ts'],
+      env: { es2022: true },
+      globals: {
+        Deno: 'readonly',
+      },
+    },
+    {
       // shadcn/ui primitives export variants/helpers alongside components, and
       // context modules export hooks + providers by design; fast-refresh
       // component-only-export does not apply to these file kinds.

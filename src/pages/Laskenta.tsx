@@ -1,303 +1,378 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { AlertTriangle, Calculator, Download, Edit3, Euro, Plus, Trash2 } from 'lucide-react';
+
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import {
-  Calculator,
-  ChevronRight,
-  Plus,
-  Trash2,
-  PieChart as PieIcon,
-  Euro,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+  useFinanceFormsData,
+  type Estimate,
+  type EstimateLine,
+  type EstimateStatus,
+} from '@/hooks/useFinanceFormsData';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { cn } from '@/lib/utils';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend } from 'recharts';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import logger from '@/lib/logger';
+import {
+  createEstimate,
+  createEstimateLine,
+  deleteEstimate,
+  deleteEstimateLine,
+  updateEstimate,
+  updateEstimateLine,
+} from '@/lib/supabase/financeFormsEntities';
 
-/* ─── Mock Data ─── */
-const costCategories = [
-  {
-    name: 'Työkustannukset',
-    items: [
-      { id: 1, desc: 'Työvoima (yleinen)', quantity: 1200, unit: 'h', unitPrice: 48, total: 57600 },
-      { id: 2, desc: 'Työnjohto', quantity: 320, unit: 'h', unitPrice: 72, total: 23040 },
-      { id: 3, desc: 'Erikoistyöntekijät', quantity: 180, unit: 'h', unitPrice: 65, total: 11700 },
-      { id: 4, desc: 'Ylityökorvaukset', quantity: 80, unit: 'h', unitPrice: 72, total: 5760 },
-    ],
-  },
-  {
-    name: 'Materiaalikustannukset',
-    items: [
-      { id: 5, desc: 'Betoni C30', quantity: 85, unit: 'm³', unitPrice: 125, total: 10625 },
-      { id: 6, desc: 'Teräkset B500B', quantity: 4.5, unit: 'tn', unitPrice: 980, total: 4410 },
-      { id: 7, desc: 'Harkot 100mm', quantity: 1200, unit: 'kpl', unitPrice: 2.5, total: 3000 },
-      { id: 8, desc: 'Eristysvilla', quantity: 150, unit: 'm²', unitPrice: 18, total: 2700 },
-      { id: 9, desc: 'LVI-tarvikkeet', quantity: 1, unit: 'erä', unitPrice: 8500, total: 8500 },
-      { id: 10, desc: 'Sähkötarvikkeet', quantity: 1, unit: 'erä', unitPrice: 6200, total: 6200 },
-    ],
-  },
-  {
-    name: 'Kalustokustannukset',
-    items: [
-      { id: 11, desc: 'Nosturi', quantity: 45, unit: 'pv', unitPrice: 450, total: 20250 },
-      { id: 12, desc: 'Telineet', quantity: 120, unit: 'm²', unitPrice: 12, total: 1440 },
-      { id: 13, desc: 'Muottimateriaali', quantity: 300, unit: 'm²', unitPrice: 15, total: 4500 },
-    ],
-  },
-  {
-    name: 'Kuljetuskustannukset',
-    items: [
-      { id: 14, desc: 'Materiaalikuljetukset', quantity: 25, unit: 'kpl', unitPrice: 180, total: 4500 },
-      { id: 15, desc: 'Jätekuljetukset', quantity: 12, unit: 'kpl', unitPrice: 320, total: 3840 },
-    ],
-  },
-  {
-    name: 'Muut kustannukset',
-    items: [
-      { id: 16, desc: 'Yleiskustannukset (8%)', quantity: 1, unit: 'erä', unitPrice: 11220, total: 11220 },
-      { id: 17, desc: 'Vakuutukset', quantity: 1, unit: 'erä', unitPrice: 2800, total: 2800 },
-      { id: 18, desc: 'Luvat ja maksut', quantity: 1, unit: 'erä', unitPrice: 3500, total: 3500 },
-    ],
-  },
-];
+const ESTIMATE_STATUSES: EstimateStatus[] = ['Luonnos', 'Hyväksytty', 'Arkistoitu'];
 
-const COLORS = ['#F97316', '#3B82F6', '#22C55E', '#F59E0B', '#8B5CF6'];
+interface EstimateForm {
+  name: string;
+  projectId: string;
+  projectName: string;
+  status: EstimateStatus;
+  vatRate: string;
+  overheadPercent: string;
+  riskPercent: string;
+  marginPercent: string;
+  notes: string;
+}
 
-/* ─── Animation ─── */
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.06 } },
+interface LineForm {
+  category: string;
+  description: string;
+  quantity: string;
+  unit: string;
+  unitPrice: string;
+}
+
+const emptyEstimate: EstimateForm = {
+  name: '',
+  projectId: '',
+  projectName: '',
+  status: 'Luonnos',
+  vatRate: '0',
+  overheadPercent: '0',
+  riskPercent: '0',
+  marginPercent: '0',
+  notes: '',
 };
 
-const rowVariants = {
-  hidden: { opacity: 0, y: 8 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.15, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] } },
+const emptyLine: LineForm = {
+  category: 'Työ',
+  description: '',
+  quantity: '1',
+  unit: 'h',
+  unitPrice: '0',
 };
 
-/* ─── Component ─── */
+function euroFromCents(cents: number) {
+  return new Intl.NumberFormat('fi-FI', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
+function csvCell(value: string | number) {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+function statusBadge(status: EstimateStatus) {
+  const classes: Record<EstimateStatus, string> = {
+    Luonnos: 'bg-amber-50 text-amber-700',
+    Hyväksytty: 'bg-emerald-50 text-emerald-700',
+    Arkistoitu: 'bg-slate-100 text-slate-700',
+  };
+  return <Badge className={`border-0 ${classes[status]}`}>{status}</Badge>;
+}
+
+function calculateTotals(estimate: Estimate, lines: EstimateLine[]) {
+  const directCents = Math.round(lines.reduce(
+    (sum, line) => sum + line.quantity * line.unitPriceCents,
+    0,
+  ));
+  const overheadCents = Math.round(directCents * estimate.overheadPercent / 100);
+  const riskCents = Math.round(directCents * estimate.riskPercent / 100);
+  const marginCents = Math.round(directCents * estimate.marginPercent / 100);
+  const beforeVatCents = directCents + overheadCents + riskCents + marginCents;
+  const vatCents = Math.round(beforeVatCents * estimate.vatRate / 100);
+  return {
+    directCents,
+    overheadCents,
+    riskCents,
+    marginCents,
+    beforeVatCents,
+    vatCents,
+    totalCents: beforeVatCents + vatCents,
+  };
+}
+
 export default function Laskenta() {
-  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>(
-    Object.fromEntries(costCategories.map(c => [c.name, true]))
-  );
+  const { user } = useAuth();
+  const { currentOrg } = useOrganization();
+  const { projects } = useAppDataContext();
+  const { estimates, estimateLines, loading, error, refresh } = useFinanceFormsData();
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [estimateDialogOpen, setEstimateDialogOpen] = useState(false);
+  const [lineDialogOpen, setLineDialogOpen] = useState(false);
+  const [editingEstimate, setEditingEstimate] = useState<Estimate | null>(null);
+  const [editingLine, setEditingLine] = useState<EstimateLine | null>(null);
+  const [deleteEstimateTarget, setDeleteEstimateTarget] = useState<Estimate | null>(null);
+  const [deleteLineTarget, setDeleteLineTarget] = useState<EstimateLine | null>(null);
+  const [estimateForm, setEstimateForm] = useState<EstimateForm>(emptyEstimate);
+  const [lineForm, setLineForm] = useState<LineForm>(emptyLine);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const toggleCategory = (name: string) => {
-    setExpandedCategories(prev => ({ ...prev, [name]: !prev[name] }));
+  const selectedEstimate = estimates.find((item) => item.id === selectedId) ?? estimates[0] ?? null;
+  const selectedLines = useMemo(
+    () => selectedEstimate
+      ? estimateLines.filter((line) => line.estimateId === selectedEstimate.id)
+      : [],
+    [estimateLines, selectedEstimate],
+  );
+  const totals = selectedEstimate ? calculateTotals(selectedEstimate, selectedLines) : null;
+
+  const openEstimateCreate = () => {
+    setEditingEstimate(null);
+    setEstimateForm(emptyEstimate);
+    setFormErrors([]);
+    setOperationError(null);
+    setEstimateDialogOpen(true);
   };
 
-  const categoryTotals = costCategories.map(cat => ({
-    name: cat.name,
-    value: cat.items.reduce((sum, item) => sum + item.total, 0),
-  }));
+  const openEstimateEdit = (estimate: Estimate) => {
+    setEditingEstimate(estimate);
+    setEstimateForm({
+      name: estimate.name,
+      projectId: estimate.projectId ?? '',
+      projectName: estimate.projectName,
+      status: estimate.status,
+      vatRate: String(estimate.vatRate),
+      overheadPercent: String(estimate.overheadPercent),
+      riskPercent: String(estimate.riskPercent),
+      marginPercent: String(estimate.marginPercent),
+      notes: estimate.notes,
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setEstimateDialogOpen(true);
+  };
 
-  const grandTotal = categoryTotals.reduce((sum, cat) => sum + cat.value, 0);
+  const selectProject = (projectId: string) => {
+    const project = projects.find((item) => item.id === projectId);
+    setEstimateForm((previous) => ({
+      ...previous,
+      projectId,
+      projectName: project?.name ?? previous.projectName,
+    }));
+  };
 
-  const pieData = categoryTotals.map((cat, i) => ({
-    name: cat.name,
-    value: cat.value,
-    color: COLORS[i % COLORS.length],
-  }));
+  const saveEstimate = async () => {
+    const vatRate = Number(estimateForm.vatRate);
+    const overheadPercent = Number(estimateForm.overheadPercent);
+    const riskPercent = Number(estimateForm.riskPercent);
+    const marginPercent = Number(estimateForm.marginPercent);
+    const percentages = [vatRate, overheadPercent, riskPercent, marginPercent];
+    const nextErrors: string[] = [];
+    if (!estimateForm.name.trim()) nextErrors.push('Laskelman nimi on pakollinen.');
+    if (percentages.some((value) => !Number.isFinite(value) || value < 0 || value > 100)) {
+      nextErrors.push('Kaikkien prosenttien pitää olla 0–100.');
+    }
+    setFormErrors(nextErrors);
+    if (nextErrors.length > 0 || !currentOrg) return;
+
+    const payload: Omit<Estimate, 'id'> = {
+      name: estimateForm.name.trim(),
+      projectId: estimateForm.projectId || undefined,
+      projectName: estimateForm.projectName.trim(),
+      status: estimateForm.status,
+      vatRate,
+      overheadPercent,
+      riskPercent,
+      marginPercent,
+      notes: estimateForm.notes.trim(),
+    };
+
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editingEstimate) {
+        await updateEstimate(currentOrg.id, editingEstimate.id, payload);
+      } else {
+        await createEstimate(currentOrg.id, user?.id, payload);
+      }
+      await refresh();
+      setEstimateDialogOpen(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Kustannuslaskelman tallennus epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openLineCreate = () => {
+    if (!selectedEstimate) return;
+    setEditingLine(null);
+    setLineForm(emptyLine);
+    setFormErrors([]);
+    setOperationError(null);
+    setLineDialogOpen(true);
+  };
+
+  const openLineEdit = (line: EstimateLine) => {
+    setEditingLine(line);
+    setLineForm({
+      category: line.category,
+      description: line.description,
+      quantity: String(line.quantity),
+      unit: line.unit,
+      unitPrice: String(line.unitPriceCents / 100),
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setLineDialogOpen(true);
+  };
+
+  const saveLine = async () => {
+    const quantity = Number(lineForm.quantity);
+    const unitPriceEuros = Number(lineForm.unitPrice);
+    const nextErrors: string[] = [];
+    if (!selectedEstimate) nextErrors.push('Valitse laskelma.');
+    if (!lineForm.category.trim()) nextErrors.push('Kustannuslaji on pakollinen.');
+    if (!lineForm.description.trim()) nextErrors.push('Kuvaus on pakollinen.');
+    if (!Number.isFinite(quantity) || quantity < 0) nextErrors.push('Määrä ei voi olla negatiivinen.');
+    if (!lineForm.unit.trim()) nextErrors.push('Yksikkö on pakollinen.');
+    if (!Number.isFinite(unitPriceEuros) || unitPriceEuros < 0) nextErrors.push('Yksikköhinta ei voi olla negatiivinen.');
+    setFormErrors(nextErrors);
+    if (nextErrors.length > 0 || !currentOrg || !selectedEstimate) return;
+
+    const payload: Omit<EstimateLine, 'id'> = {
+      estimateId: selectedEstimate.id,
+      category: lineForm.category.trim(),
+      description: lineForm.description.trim(),
+      quantity,
+      unit: lineForm.unit.trim(),
+      unitPriceCents: Math.round(unitPriceEuros * 100),
+    };
+
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editingLine) await updateEstimateLine(currentOrg.id, editingLine.id, payload);
+      else await createEstimateLine(currentOrg.id, user?.id, payload);
+      await refresh();
+      setLineDialogOpen(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Kustannusrivin tallennus epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeEstimate = async () => {
+    if (!currentOrg || !deleteEstimateTarget) return;
+    setSaving(true);
+    try {
+      await deleteEstimate(currentOrg.id, deleteEstimateTarget.id);
+      if (selectedId === deleteEstimateTarget.id) setSelectedId('');
+      await refresh();
+      setDeleteEstimateTarget(null);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeLine = async () => {
+    if (!currentOrg || !deleteLineTarget) return;
+    setSaving(true);
+    try {
+      await deleteEstimateLine(currentOrg.id, deleteLineTarget.id);
+      await refresh();
+      setDeleteLineTarget(null);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportCsv = () => {
+    if (!selectedEstimate || !totals) return;
+    const rows = selectedLines.map((line) => [
+      line.category,
+      line.description,
+      line.quantity,
+      line.unit,
+      (line.unitPriceCents / 100).toFixed(2),
+      (line.quantity * line.unitPriceCents / 100).toFixed(2),
+    ]);
+    const summary = [
+      ['Suorat kustannukset', (totals.directCents / 100).toFixed(2)],
+      [`Yleiskulut ${selectedEstimate.overheadPercent}%`, (totals.overheadCents / 100).toFixed(2)],
+      [`Riskivaraus ${selectedEstimate.riskPercent}%`, (totals.riskCents / 100).toFixed(2)],
+      [`Kate ${selectedEstimate.marginPercent}%`, (totals.marginCents / 100).toFixed(2)],
+      [`ALV ${selectedEstimate.vatRate}%`, (totals.vatCents / 100).toFixed(2)],
+      ['Yhteensä', (totals.totalCents / 100).toFixed(2)],
+    ];
+    const csv = [
+      ['Kustannuslaji', 'Kuvaus', 'Määrä', 'Yksikkö', 'Yksikköhinta EUR', 'Yhteensä EUR'],
+      ...rows,
+      [],
+      ...summary,
+    ].map((row) => row.map(csvCell).join(';')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${selectedEstimate.name.replaceAll(' ', '-')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-      className="space-y-6"
-    >
-      {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-body-sm text-text-secondary mb-1">
-            <span>Dashboard</span>
-            <ChevronRight size={14} />
-            <span>Projektit</span>
-            <ChevronRight size={14} />
-            <span className="text-text-primary font-medium">Laskenta</span>
-          </div>
-          <h1 className="text-hero text-text-primary">Laskenta</h1>
-          <p className="text-body-sm text-text-secondary mt-1">Kustannuslaskenta ja arviot</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button className="bg-primary hover:bg-primary-hover text-white gap-2">
-            <Plus size={16} /> Uusi kustannus
-          </Button>
-        </div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><h1 className="text-hero text-text-primary">Kustannuslaskenta</h1><p className="mt-1 text-body-sm text-text-secondary">Laskelmat, kustannusrivit, yleiskulut, riskivaraus, kate ja ALV</p></div>
+        <Button onClick={openEstimateCreate} className="gap-2"><Plus size={16} /> Uusi laskelma</Button>
       </div>
 
-      {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: 'Kokonaissumma', value: `€${grandTotal.toLocaleString('fi-FI')}`, icon: Euro, color: 'text-primary', bg: 'bg-primary-light' },
-          { label: 'Työkustannukset', value: `€${categoryTotals[0].value.toLocaleString('fi-FI')}`, icon: Calculator, color: 'text-success', bg: 'bg-success-light' },
-          { label: 'Materiaalit', value: `€${categoryTotals[1].value.toLocaleString('fi-FI')}`, icon: Calculator, color: 'text-info', bg: 'bg-info-light' },
-          { label: 'Kalusto', value: `€${categoryTotals[2].value.toLocaleString('fi-FI')}`, icon: Calculator, color: 'text-warning', bg: 'bg-warning-light' },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.06, duration: 0.2 }}
-          >
-            <Card className="border border-[#E2E8F0] shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <span className="text-caption text-text-secondary uppercase tracking-wider">{stat.label}</span>
-                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', stat.bg)}>
-                    <stat.icon size={20} className={stat.color} />
-                  </div>
-                </div>
-                <p className="text-[24px] font-bold text-text-primary font-mono leading-none">{stat.value}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
+      {(error || operationError) && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} />{operationError ?? error}</div>}
+
+      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
+        <Card className="h-fit"><CardContent className="p-3"><div className="space-y-2">{estimates.map((estimate) => { const lines = estimateLines.filter((line) => line.estimateId === estimate.id); const estimateTotals = calculateTotals(estimate, lines); return <button key={estimate.id} type="button" onClick={() => setSelectedId(estimate.id)} className={`w-full rounded-lg border p-3 text-left transition-colors ${selectedEstimate?.id === estimate.id ? 'border-primary bg-primary-light' : 'border-slate-200 hover:bg-slate-50'}`}><div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{estimate.name}</p><p className="text-xs text-text-secondary">{estimate.projectName || 'Ei projektia'}</p></div>{statusBadge(estimate.status)}</div><p className="mt-2 font-mono text-sm font-bold">{euroFromCents(estimateTotals.totalCents)}</p></button>; })}{!loading && estimates.length === 0 && <div className="p-8 text-center"><Calculator size={38} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei laskelmia</p></div>}</div></CardContent></Card>
+
+        {selectedEstimate && totals ? <div className="space-y-4">
+          <Card><CardContent className="p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><h2 className="text-xl font-bold">{selectedEstimate.name}</h2>{statusBadge(selectedEstimate.status)}</div><p className="mt-1 text-sm text-text-secondary">{selectedEstimate.projectName || 'Ei projektia'} · {selectedEstimate.notes || 'Ei lisätietoja'}</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => openEstimateEdit(selectedEstimate)}><Edit3 size={15} className="mr-1" /> Muokkaa</Button><Button variant="outline" onClick={exportCsv}><Download size={15} className="mr-1" /> CSV</Button><Button variant="ghost" className="text-danger" onClick={() => setDeleteEstimateTarget(selectedEstimate)}><Trash2 size={15} /></Button></div></div></CardContent></Card>
+
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Suorat kustannukset</p><p className="mt-1 font-mono text-xl font-bold">{euroFromCents(totals.directCents)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Lisät yhteensä</p><p className="mt-1 font-mono text-xl font-bold">{euroFromCents(totals.overheadCents + totals.riskCents + totals.marginCents)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-text-secondary">ALV</p><p className="mt-1 font-mono text-xl font-bold">{euroFromCents(totals.vatCents)}</p></CardContent></Card><Card className="border-primary bg-primary-light"><CardContent className="p-4"><p className="text-xs text-primary">Yhteensä</p><p className="mt-1 font-mono text-xl font-bold text-primary">{euroFromCents(totals.totalCents)}</p></CardContent></Card></div>
+
+          <div className="flex justify-end"><Button onClick={openLineCreate} className="gap-2"><Plus size={15} /> Lisää kustannusrivi</Button></div>
+          <Card className="overflow-hidden"><CardContent className="p-0"><div className="hidden grid-cols-[150px_1fr_90px_80px_120px_120px_80px] gap-3 border-b bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted lg:grid"><span>Laji</span><span>Kuvaus</span><span>Määrä</span><span>Yks.</span><span>Yks. hinta</span><span>Yhteensä</span><span /></div>{selectedLines.map((line) => <div key={line.id} className="grid grid-cols-1 items-center gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-[150px_1fr_90px_80px_120px_120px_80px]"><span className="text-sm font-medium">{line.category}</span><span className="text-sm">{line.description}</span><span className="font-mono text-sm">{line.quantity}</span><span className="text-sm text-text-secondary">{line.unit}</span><span className="font-mono text-sm">{euroFromCents(line.unitPriceCents)}</span><span className="font-mono text-sm font-semibold">{euroFromCents(Math.round(line.quantity * line.unitPriceCents))}</span><div className="flex justify-end gap-1"><Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openLineEdit(line)}><Edit3 size={14} /></Button><Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-danger" onClick={() => setDeleteLineTarget(line)}><Trash2 size={14} /></Button></div></div>)}{selectedLines.length === 0 && <div className="p-10 text-center text-sm text-text-secondary">Ei kustannusrivejä.</div>}</CardContent></Card>
+
+          <Card><CardContent className="space-y-2 p-5"><div className="flex justify-between text-sm"><span>Suorat kustannukset</span><span>{euroFromCents(totals.directCents)}</span></div><div className="flex justify-between text-sm"><span>Yleiskulut {selectedEstimate.overheadPercent}%</span><span>{euroFromCents(totals.overheadCents)}</span></div><div className="flex justify-between text-sm"><span>Riskivaraus {selectedEstimate.riskPercent}%</span><span>{euroFromCents(totals.riskCents)}</span></div><div className="flex justify-between text-sm"><span>Kate {selectedEstimate.marginPercent}%</span><span>{euroFromCents(totals.marginCents)}</span></div><div className="flex justify-between border-t pt-2 font-semibold"><span>Veroton summa</span><span>{euroFromCents(totals.beforeVatCents)}</span></div><div className="flex justify-between text-sm"><span>ALV {selectedEstimate.vatRate}%</span><span>{euroFromCents(totals.vatCents)}</span></div><div className="flex justify-between border-t pt-3 text-lg font-bold"><span>Yhteensä</span><span>{euroFromCents(totals.totalCents)}</span></div><p className="pt-2 text-xs text-text-muted">Yleiskulut, riskivaraus ja kate lasketaan kukin suorista kustannuksista. ALV lasketaan verottomasta loppusummasta.</p></CardContent></Card>
+        </div> : <Card><CardContent className="p-12 text-center"><Euro size={42} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Valitse tai luo laskelma</p></CardContent></Card>}
       </div>
 
-      {/* ── Main Content: Table + Chart ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Cost Table */}
-        <div className="lg:col-span-2 space-y-4">
-          <Card className="border border-[#E2E8F0] shadow-card overflow-hidden">
-            <CardHeader>
-              <CardTitle className="text-h2 text-text-primary flex items-center gap-2">
-                <Calculator size={20} className="text-primary" />
-                Kustannuslaskelma
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-              >
-                {/* Table Header */}
-                <div className="grid grid-cols-[1fr_80px_60px_100px_100px_60px] gap-2 px-6 py-3 bg-bg-light border-b border-[#E2E8F0] text-caption text-text-muted uppercase tracking-wider font-semibold">
-                  <span>Kustannuslaji</span>
-                  <span className="text-right">Määrä</span>
-                  <span className="text-right">Yks.</span>
-                  <span className="text-right">Yks. hinta</span>
-                  <span className="text-right">Yhteensä</span>
-                  <span></span>
-                </div>
+      <Dialog open={estimateDialogOpen} onOpenChange={setEstimateDialogOpen}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{editingEstimate ? 'Muokkaa laskelmaa' : 'Uusi laskelma'}</DialogTitle></DialogHeader>{formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label htmlFor="estimate-name">Nimi *</Label><Input id="estimate-name" value={estimateForm.name} onChange={(event) => setEstimateForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Projekti</Label>{projects.length > 0 ? <Select value={estimateForm.projectId} onValueChange={selectProject}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select> : <Input value={estimateForm.projectName} onChange={(event) => setEstimateForm((previous) => ({ ...previous, projectName: event.target.value }))} />}</div><div className="space-y-2"><Label>Tila</Label><Select value={estimateForm.status} onValueChange={(status: EstimateStatus) => setEstimateForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ESTIMATE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="estimate-vat">ALV %</Label><Input id="estimate-vat" type="number" min="0" max="100" step="0.1" value={estimateForm.vatRate} onChange={(event) => setEstimateForm((previous) => ({ ...previous, vatRate: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="estimate-overhead">Yleiskulut %</Label><Input id="estimate-overhead" type="number" min="0" max="100" step="0.1" value={estimateForm.overheadPercent} onChange={(event) => setEstimateForm((previous) => ({ ...previous, overheadPercent: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="estimate-risk">Riskivaraus %</Label><Input id="estimate-risk" type="number" min="0" max="100" step="0.1" value={estimateForm.riskPercent} onChange={(event) => setEstimateForm((previous) => ({ ...previous, riskPercent: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="estimate-margin">Kate %</Label><Input id="estimate-margin" type="number" min="0" max="100" step="0.1" value={estimateForm.marginPercent} onChange={(event) => setEstimateForm((previous) => ({ ...previous, marginPercent: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="estimate-notes">Huomiot</Label><Textarea id="estimate-notes" value={estimateForm.notes} onChange={(event) => setEstimateForm((previous) => ({ ...previous, notes: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setEstimateDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveEstimate()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter></DialogContent></Dialog>
 
-                {costCategories.map((category, ci) => {
-                  const catTotal = category.items.reduce((sum, item) => sum + item.total, 0);
-                  const isOpen = expandedCategories[category.name];
-                  return (
-                    <div key={category.name}>
-                      {/* Category Header */}
-                      <button
-                        onClick={() => toggleCategory(category.name)}
-                        className="w-full grid grid-cols-[1fr_80px_60px_100px_100px_60px] gap-2 px-6 py-3 bg-[#FAFBFC] border-b border-[#F1F5F9] hover:bg-bg-light transition-colors items-center"
-                      >
-                        <span className="text-sm font-semibold text-text-primary text-left flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: COLORS[ci % COLORS.length] }} />
-                          {category.name}
-                        </span>
-                        <span className="text-right text-mono text-body-sm text-text-secondary">{category.items.length} kpl</span>
-                        <span></span>
-                        <span></span>
-                        <span className="text-right text-mono text-sm font-semibold text-text-primary">€{catTotal.toLocaleString('fi-FI')}</span>
-                        <span className="text-right text-caption text-text-muted">{isOpen ? '▼' : '▶'}</span>
-                      </button>
+      <Dialog open={lineDialogOpen} onOpenChange={setLineDialogOpen}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{editingLine ? 'Muokkaa kustannusriviä' : 'Uusi kustannusrivi'}</DialogTitle></DialogHeader>{formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="line-category">Kustannuslaji *</Label><Input id="line-category" value={lineForm.category} onChange={(event) => setLineForm((previous) => ({ ...previous, category: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="line-description">Kuvaus *</Label><Input id="line-description" value={lineForm.description} onChange={(event) => setLineForm((previous) => ({ ...previous, description: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="line-quantity">Määrä</Label><Input id="line-quantity" type="number" min="0" step="0.01" value={lineForm.quantity} onChange={(event) => setLineForm((previous) => ({ ...previous, quantity: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="line-unit">Yksikkö *</Label><Input id="line-unit" value={lineForm.unit} onChange={(event) => setLineForm((previous) => ({ ...previous, unit: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="line-price">Yksikköhinta €</Label><Input id="line-price" type="number" min="0" step="0.01" value={lineForm.unitPrice} onChange={(event) => setLineForm((previous) => ({ ...previous, unitPrice: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setLineDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveLine()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter></DialogContent></Dialog>
 
-                      {/* Items */}
-                      {isOpen && category.items.map(item => (
-                        <motion.div
-                          key={item.id}
-                          variants={rowVariants}
-                          className="grid grid-cols-[1fr_80px_60px_100px_100px_60px] gap-2 px-6 py-2.5 border-b border-[#F1F5F9] hover:bg-bg-light transition-colors items-center"
-                        >
-                          <span className="text-sm text-text-primary pl-5">{item.desc}</span>
-                          <span className="text-right text-mono text-body-sm text-text-primary">{item.quantity}</span>
-                          <span className="text-right text-body-sm text-text-secondary">{item.unit}</span>
-                          <span className="text-right text-mono text-body-sm text-text-primary">€{item.unitPrice.toLocaleString('fi-FI')}</span>
-                          <span className="text-right text-mono text-sm font-medium text-text-primary">€{item.total.toLocaleString('fi-FI')}</span>
-                          <div className="flex justify-end">
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-text-muted hover:text-danger">
-                              <Trash2 size={14} />
-                            </Button>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  );
-                })}
-
-                {/* Grand Total */}
-                <div className="grid grid-cols-[1fr_80px_60px_100px_100px_60px] gap-2 px-6 py-4 bg-primary-light border-t border-primary">
-                  <span className="text-sm font-bold text-primary">YHTEENSÄ</span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span className="text-right text-mono text-base font-bold text-primary">€{grandTotal.toLocaleString('fi-FI')}</span>
-                  <span></span>
-                </div>
-              </motion.div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Pie Chart */}
-        <div className="space-y-4">
-          <Card className="border border-[#E2E8F0] shadow-card">
-            <CardHeader>
-              <CardTitle className="text-h3 text-text-primary flex items-center gap-2">
-                <PieIcon size={18} className="text-primary" />
-                Kustannusrakenne
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
-                    dataKey="value"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <ReTooltip
-                    formatter={(value) => [`€${Number(value).toLocaleString('fi-FI')}`, '']}
-                    contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    iconType="circle"
-                    iconSize={8}
-                    formatter={(value: string) => <span className="text-body-sm text-text-secondary">{value}</span>}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-
-              {/* Percentage Breakdown */}
-              <div className="mt-4 space-y-2">
-                {categoryTotals.map((cat, i) => {
-                  const pct = ((cat.value / grandTotal) * 100).toFixed(1);
-                  return (
-                    <div key={cat.name}>
-                      <div className="flex items-center justify-between text-body-sm mb-1">
-                        <span className="text-text-secondary flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                          {cat.name}
-                        </span>
-                        <span className="text-mono text-text-primary font-medium">{pct}%</span>
-                      </div>
-                      <Progress value={parseFloat(pct)} className="h-1.5" />
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <Dialog open={Boolean(deleteEstimateTarget)} onOpenChange={(open) => !open && setDeleteEstimateTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista laskelma</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko laskelma <strong>{deleteEstimateTarget?.name}</strong> ja kaikki sen kustannusrivit?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteEstimateTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeEstimate()} disabled={saving}>Poista</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={Boolean(deleteLineTarget)} onOpenChange={(open) => !open && setDeleteLineTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista kustannusrivi</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko <strong>{deleteLineTarget?.description}</strong>?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteLineTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeLine()} disabled={saving}>Poista</Button></DialogFooter></DialogContent></Dialog>
     </motion.div>
   );
 }
