@@ -39,19 +39,19 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
   admin: [
-    '/dashboard', '/tyonjohto', '/projektit', '/aikataulutus', '/paivakirjat',
+    '/dashboard', '/tyonjohto', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
     '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tyovuorokalenteri',
     '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus', '/crm', '/asiakkaat',
     '/ai', '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet', '/raportit',
   ],
   supervisor: [
-    '/dashboard', '/tyonjohto', '/projektit', '/aikataulutus', '/paivakirjat',
+    '/dashboard', '/tyonjohto', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
     '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tyovuorokalenteri',
     '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus', '/crm', '/asiakkaat',
     '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet', '/raportit',
   ],
   worker: [
-    '/dashboard', '/tyomaaraykset', '/tuntikirjaukset', '/matkakulut', '/viestinta',
+    '/dashboard', '/tyomaaraykset', '/kuittaukset', '/tuntikirjaukset', '/matkakulut', '/viestinta',
   ],
 };
 

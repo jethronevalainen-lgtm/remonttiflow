@@ -5,7 +5,7 @@ import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
 import { LoadingState } from '@/components/states';
 import {
-  Dashboard, Tyonjohto, Projektit, Aikataulutus, Paivakirjat,
+  Dashboard, Tyonjohto, Projektit, Aikataulutus, Paivakirjat, Kuittaukset,
   Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset, Tyovuorokalenteri,
   Tuntikirjaukset, Matkakulut, Tyoturvallisuus, CRM, Asiakkaat,
   AIPage, Viestinta, Kalusto, Henkilosto, Lomakkeet, Raportit,
@@ -61,6 +61,7 @@ function AppRoutes() {
         <Route path="/projektit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Projektit /></RoleGuard>} />
         <Route path="/aikataulutus" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Aikataulutus /></RoleGuard>} />
         <Route path="/paivakirjat" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Paivakirjat /></RoleGuard>} />
+        <Route path="/kuittaukset" element={<Kuittaukset />} />
         <Route path="/laskenta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Laskenta /></RoleGuard>} />
         <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Maaralaskenta /></RoleGuard>} />
         <Route path="/jatehuolto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Jatehuolto /></RoleGuard>} />

@@ -21,6 +21,15 @@ export type SafetyItemSeverity = 'Lievä' | 'Keskitasoinen' | 'Vakava';
 export type AnnouncementPriority = 'Tärkeä' | 'Normaali' | 'Info';
 export type DiaryStatus = 'Luonnos' | 'Valmis' | 'Lukittu';
 export type TravelExpenseStatus = 'Odottaa' | 'Hyväksytty' | 'Hylätty';
+export type SiteReceiptType =
+  | 'work_acceptance'
+  | 'delivery_receipt'
+  | 'measurement_record'
+  | 'waybill'
+  | 'material_receipt'
+  | 'other';
+export type SiteReceiptStatus = 'draft' | 'signed' | 'voided';
+export type SiteReceiptAttachmentKind = 'photo' | 'document' | 'signature';
 
 /* ─── Domain interfaces ─── */
 export interface Project {
@@ -200,6 +209,40 @@ export interface Message {
   content: string;
   timestamp: string;
   read: boolean;
+}
+
+export interface SiteReceiptAttachment {
+  id: string;
+  receiptId: string;
+  kind: SiteReceiptAttachmentKind;
+  fileName: string;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface SiteReceipt {
+  id: string;
+  organizationId: string;
+  projectId?: string;
+  workOrderId?: string;
+  project: string;
+  title: string;
+  type: SiteReceiptType;
+  referenceNumber?: string;
+  occurredAt: string;
+  signerName: string;
+  signerRole?: string;
+  signerCompany?: string;
+  notes?: string;
+  status: SiteReceiptStatus;
+  signedAt?: string;
+  voidedAt?: string;
+  voidReason?: string;
+  createdBy: string;
+  createdAt: string;
+  attachments: SiteReceiptAttachment[];
 }
 
 /* ─── View types ─── */
