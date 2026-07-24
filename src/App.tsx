@@ -76,7 +76,7 @@ function AppRoutes() {
         <Route path="/viestinta" element={<Viestinta />} />
         <Route path="/kalusto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Kalusto /></RoleGuard>} />
         <Route path="/henkilosto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Henkilosto /></RoleGuard>} />
-        <Route path="/lomakkeet" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Lomakkeet /></RoleGuard>} />
+        <Route path="/lomakkeet" element={<Lomakkeet />} />
         <Route path="/raportit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Raportit /></RoleGuard>} />
         <Route path="*" element={<NotFound />} />
       </Route>
