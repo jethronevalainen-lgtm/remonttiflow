@@ -1,126 +1,108 @@
-# VaKantti (aiemmin RemonttiFlow — repon nimi on edelleen `remonttiflow`)
+# VaKantti
 
-Suomalainen rakennusalan työnohjaus- ja toiminnanohjausjärjestelmä.
+VaKantti on suomalainen rakennusalan työnohjaus- ja toiminnanohjausjärjestelmä. Repositorion tekninen nimi on edelleen `remonttiflow`.
 
-> **Huom:** Projekti on prototyyppivaiheessa. Käyttöliittymä on laaja, mutta
-> suurin osa näkymistä toimii vielä mock-datalla, autentikointi on
-> roolinvaihto-prototyyppi eikä taustajärjestelmää (Supabase) ole vielä
-> kytketty. Katso kohta [Tunnetut rajoitteet](#tunnetut-rajoitteet).
+## Nykyinen arkkitehtuuri
 
-## Teknologia
+- React 18, TypeScript strict, Vite 5
+- Tailwind CSS ja shadcn/ui
+- React Router v6
+- TanStack Query
+- Supabase Auth, PostgreSQL, Row Level Security, Storage ja Edge Functions
+- Vitest-yksikkötestit ja Playwright-E2E-testit
+- GitHub Actions -laatuketju Node.js 22:lla
 
-- **Vite 5** + **React 18** + **TypeScript** (strict-tila)
-- **Tailwind CSS** + **shadcn/ui** (Radix UI -primitiivit)
-- **React Router v6**
-- **Vitest** yksikkötesteihin, **Playwright** e2e-testeihin
-- Tuleva taustajärjestelmä: **Supabase** (ei vielä kytketty, ks. `.env.example`)
+## Roolit
 
-## Edellytykset
+### Työntekijä
 
-- Node.js 20 tai uudempi (kehityksessä käytetty myös Node 24)
-- npm 10+
+Työntekijällä ei ole organisaation yleisnäkymää. Hän näkee vain:
 
-## Asennus
+- omalle käyttäjälle määrätyt työmääräykset
+- projektitiimille määrätyt työmääräykset, kun hän kuuluu kyseiseen projektiin
+- omat projektit ja projektivaiheet
+- omat työvuorot
+- omat tunti-, matka- ja ajopäiväkirjaukset
+- omat tai omiin töihin liittyvät työmaakuittaukset
+- omat lomakelähetykset
+- henkilökohtaiset viestit sekä organisaation tiedotteet
 
-```bash
-npm ci
-```
+Työntekijä voi käynnistää, keskeyttää ja valmistaa oman työmääräyksensä. Hän ei voi muuttaa työn rajausta, vastuuhenkilöitä, projektia, määräaikaa tai prioriteettia.
+
+### Työnjohtaja
+
+Työnjohtaja hallitsee operatiivista tuotantoa:
+
+- projektit ja projektitiimit
+- työmääräykset ja vastuuhenkilöt
+- aikataulut ja työvuorot
+- tuntien ja kulujen hyväksyntä
+- turvallisuus, päiväkirjat, kuittaukset ja lomakkeet
+- asiakkaat, CRM, laskenta ja raportointi
+
+### Admin
+
+Adminilla on työnjohdon oikeuksien lisäksi:
+
+- organisaation tietojen hallinta
+- käyttäjäkutsut
+- jäsenyyksien ja roolien hallinta
+- viimeisen ylläpitäjän suojaus
+- jäsenmuutosten audit trail
+
+## Työn kohdistusmalli
+
+VaKantti käyttää kahta erillistä kohdistusta:
+
+1. `project_members` määrittää, mille työmaille käyttäjä on sijoitettu.
+2. `work_order_assignees` määrittää työmääräyksen nimetyt vastuuhenkilöt.
+
+Työmääräyksen `assignment_scope` on joko:
+
+- `people`: työ näkyy vain nimetyille vastuuhenkilöille
+- `project_team`: työ näkyy kaikille projektitiimin jäsenille
+
+Kaikki rajaukset pakotetaan PostgreSQL:n RLS-politiikoissa. React-reittien ja navigaation suodatus on vain käyttöliittymäkerros, ei varsinainen tietoturvaraja.
+
+## Tietoturvaperiaatteet
+
+- Selain käyttää vain Supabasen publishable-avainta.
+- Secret/service-role-avaimia käytetään vain palvelinpuolisissa Edge Function -toiminnoissa.
+- Organisaatiorajat toteutetaan tietokannassa.
+- Työntekijän työmääräyksen tilasiirtymät tarkistetaan RLS:n lisäksi tietokantatriggerillä.
+- Talous- ja hallintatiedot on rajattu admin- ja supervisor-rooleille.
+- Henkilökohtaiset viestit näkyvät vain lähettäjälle ja vastaanottajalle.
 
 ## Kehitys
 
 ```bash
+npm ci
 npm run dev
 ```
 
-Sovellus käynnistyy Vite-kehityspalvelimelle (oletuksena `http://localhost:5173`).
-
-## npm-skriptit
-
-| Komento | Kuvaus |
-|---|---|
-| `npm run dev` | Käynnistää Vite-kehityspalvelimen |
-| `npm run build` | Tuotantobuild (`tsc` + `vite build`) kansioon `dist/` |
-| `npm run lint` | ESLint-tarkistus (max 0 varoitusta) |
-| `npm run typecheck` | TypeScript-tyyppitarkistus ilman käännöstä (`tsc --noEmit`) |
-| `npm run test` | Aja yksikkötestit (Vitest, kertakajo) |
-| `npm run test:e2e` | Aja e2e-testit (Playwright) |
-| `npm run preview` | Esikatsele tuotantobuildia paikallisesti |
-
-## Testaus
-
-### Yksikkötestit
+## Tarkistukset
 
 ```bash
+npm run typecheck
+npm run lint
 npm run test
-```
-
-Testit ajetaan Vitestillä kertakajona. Samat testit ajetaan myös CI-putkessa
-jokaiselle pushille mainiin ja jokaiselle PR:lle.
-
-### E2E-testit
-
-```bash
-npx playwright install --with-deps chromium   # kerran, selaimen asennus
+npm run build
 npm run test:e2e
 ```
 
-E2E-testit ajetaan Playwrightilla. Epäonnistuessa Playwright luo raportin
-kansioon `playwright-report/` (CI:ssä raportti tallentuu artefaktiksi).
+GitHub Actions ajaa samat tarkistukset jokaiselle pull requestille. `main`-haaraan yhdistetään vain vihreän CI:n läpäisseet muutokset.
 
-## CI
+## Ympäristömuuttujat
 
-GitHub Actions -putki (`.github/workflows/ci.yml`) ajetaan jokaisesta
-pushista `main`-haaraan ja jokaisesta pull requestista. Putki koostuu
-kahdesta jobista:
+Selain tarvitsee:
 
-1. **Typecheck, lint, unit tests & build** — `npm ci`, `npm run typecheck`,
-   `npm run lint`, `npm run test`, `npm run build` (Node 20, npm-välimuisti)
-2. **E2E (Playwright)** — `npm run test:e2e`; epäonnistuessa
-   `playwright-report/` tallentuu artefaktiksi
-
-Riippuvuuksien ja GitHub Actions -actionien versiopäivityksistä huolehtii
-Dependabot (`.github/dependabot.yml`, viikoittain).
-
-## Kehityskäytäntö: haarat ja PR:t
-
-- **Mainiin ei koskaan commitoida suoraan.** Kaikki muutokset tehdään
-  feature-haaroissa (`feat/...`, `fix/...`, `chore/...`) ja viedään mainiin
-  pull requestin kautta.
-- Jokainen PR täytetään PR-pohjan (`.github/pull_request_template.md`)
-  mukaisesti: ongelma, juurisyy, ratkaisu, muutetut tiedostot, testitulokset,
-  build-tulos jne.
-- PR:n ehtona on vihreä CI (typecheck, lint, yksikkötestit, build, e2e).
-
-## Projektirakenne
-
-```
-├── .github/              # CI-putki, PR-pohja, Dependabot
-├── docs/                 # Projektidokumentaatio (esim. BASELINE_REPORT.md)
-├── src/
-│   ├── components/       # Omat komponentit ja shadcn/ui-komponentit (ui/)
-│   ├── contexts/         # React-kontekstit (mm. AuthContext, AppDataContext)
-│   ├── data/             # Alkuaineisto / mock-data (initialData)
-│   ├── hooks/            # Omat hookit
-│   ├── lib/              # Apufunktiot (mm. cn/utils)
-│   ├── pages/            # Reititetyt näkymät (~21 sivua)
-│   ├── App.tsx           # Reititys ja sovelluksen runko
-│   └── main.tsx          # Sovelluksen käynnistyspiste
-├── index.html            # Vite-HTML-pohja
-├── vite.config.ts        # Vite-konfiguraatio
-├── tailwind.config.js    # Tailwind-konfiguraatio
-└── tsconfig*.json        # TypeScript-konfiguraatiot (strict)
+```env
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
 ```
 
-## Tunnetut rajoitteet
+Palvelinsalaisuuksia ei saa lisätä `.env`-tiedostoihin, selaimen Vite-muuttujiin tai GitHub-repositorioon.
 
-- **Mock-data:** Suurin osa näkymistä käyttää edelleen sivukohtaista
-  mock-dataa; jaettua datakerrosta (`AppDataContext`) ei ole kytketty
-  näkymiin.
-- **Autentikointi:** Kirjautuminen on roolinvaihto-prototyyppi — ei oikeaa
-  tunnistautumista, ja käyttöoikeustarkistukset tehdään vain
-  React-tasolla.
-- **Taustajärjestelmä:** Supabasea ei ole vielä kytketty. Yhteyttä varten
-  tarvittavat ympäristömuuttujat on kuvattu `.env.example`-tiedostossa, ja ne
-  tulevat pakollisiksi PR:stä `feat/supabase-auth-and-multitenancy` alkaen.
+## Migraatiot
 
-Lisätietoja lähtötilanteen auditoinnista: `docs/BASELINE_REPORT.md`.
+Tietokantamuutokset ovat `supabase/migrations/`-hakemistossa. Tiedoston version pitää vastata hosted Supabasen migraatiohistoriaa, jotta samaa muutosta ei yritetä suorittaa uudelleen.
