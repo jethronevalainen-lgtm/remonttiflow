@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # Supabase publishable configuration is intended for browser bundles.
+  # Authorization is enforced by Row Level Security, not by hiding this key.
+  VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+  VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
+
 jobs:
   build:
     name: Typecheck, lint, unit tests & build
@@ -16,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -44,7 +50,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -54,11 +60,6 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        # Publishable Supabase key — julkiseen selaimeen tarkoitettu, ei salaisuus.
-        # Vite poimii VITE_*-muuttujat suoraan prosessiympäristöstä (.env:ää ei ole CI:ssä).
-        env:
-          VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
-          VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
         run: npm run test:e2e
 
       - name: Upload Playwright report
