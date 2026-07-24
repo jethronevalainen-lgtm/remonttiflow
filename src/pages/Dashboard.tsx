@@ -1,236 +1,183 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import {
-  FolderOpen,
-  HardHat,
-  Clock,
-  Users,
-  TrendingUp,
-  TrendingDown,
   AlertTriangle,
-  CheckCircle2,
-  Plus,
-  FileText,
-  Wrench,
-  Calendar,
   ArrowRight,
-  Bell,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  Euro,
+  FolderKanban,
+  HardHat,
+  MapPin,
+  ShieldCheck,
+  UsersRound,
+  Wrench,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
+import { useSchedulingData } from '@/hooks/useSchedulingData';
+import { cn } from '@/lib/utils';
 
-/* Mock Data */
-const kpiData = [
-  {
-    label: 'Aktiiviset projektit',
-    value: '12',
-    change: '+2',
-    trend: 'up' as const,
-    icon: FolderOpen,
-    color: 'text-blue-600',
-    bg: 'bg-blue-50',
-  },
-  {
-    label: 'Tämän kuun liikevaihto',
-    value: '45 230 €',
-    change: '+12.5 %',
-    trend: 'up' as const,
-    icon: HardHat,
-    color: 'text-green-600',
-    bg: 'bg-green-50',
-  },
-  {
-    label: 'Avoimet työmääräykset',
-    value: '8',
-    change: '-3',
-    trend: 'down' as const,
-    icon: Wrench,
-    color: 'text-purple-600',
-    bg: 'bg-purple-50',
-  },
-  {
-    label: 'Henkilöstö paikalla',
-    value: '18 / 22',
-    change: '-4',
-    trend: 'down' as const,
-    icon: Users,
-    color: 'text-orange-600',
-    bg: 'bg-orange-50',
-  },
-];
+function currency(value: number) {
+  return new Intl.NumberFormat('fi-FI', {
+    style: 'currency', currency: 'EUR', maximumFractionDigits: 0,
+  }).format(value);
+}
 
-const recentEvents = [
-  { id: '1', type: 'project', title: 'Projekti "Rivitalo A" siirtynyt vaiheeseen "Laatoitus"', date: '15.1.2026 klo 10.30.00', icon: FolderOpen, iconColor: 'text-blue-600', bg: 'bg-blue-50' },
-  { id: '2', type: 'alert', title: 'Työmaalla "Kerrostalo B" havaittu vesivuoto - korjaustoimet käynnistetty', date: '15.1.2026 klo 9.15.00', icon: AlertTriangle, iconColor: 'text-red-600', bg: 'bg-red-50' },
-  { id: '3', type: 'task', title: 'Uusi työmaaräys #1287 luotu - Sähkötyöt', date: '15.1.2026 klo 8.45.00', icon: CheckCircle2, iconColor: 'text-green-600', bg: 'bg-green-50' },
-  { id: '4', type: 'message', title: 'Asiakas "Asunto Oy Keltainen Tähti" lähetti viestin', date: '14.1.2026 klo 16.20.00', icon: FileText, iconColor: 'text-purple-600', bg: 'bg-purple-50' },
-  { id: '5', type: 'project', title: 'Projekti "Toimisto C" - tuntikirjaukset hyväksytty', date: '14.1.2026 klo 14.00.00', icon: FolderOpen, iconColor: 'text-blue-600', bg: 'bg-blue-50' },
-  { id: '6', type: 'alert', title: 'Materiaalitoimitus viivästynyt 2 päivällä - Projekti "Rivitalo D"', date: '14.1.2026 klo 11.30.00', icon: AlertTriangle, iconColor: 'text-orange-600', bg: 'bg-orange-50' },
-];
+function isoToday() {
+  const now = new Date();
+  return [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+}
 
-const quickActions = [
-  { label: 'Uusi projekti', icon: Plus, path: '/projektit', color: 'bg-blue-600 hover:bg-blue-700' },
-  { label: 'Uusi työmääräys', icon: Wrench, path: '/tyomaaraykset', color: 'bg-purple-600 hover:bg-purple-700' },
-  { label: 'Kirjaa tunnit', icon: Clock, path: '/tuntikirjaukset', color: 'bg-green-600 hover:bg-green-700' },
-  { label: 'Lisää asiakas', icon: Users, path: '/asiakkaat', color: 'bg-orange-600 hover:bg-orange-700' },
-  { label: 'Luo lasku', icon: FileText, path: '/laskenta', color: 'bg-pink-600 hover:bg-pink-700' },
-];
+function dateLabel(value: string) {
+  if (!value) return 'Ei määräaikaa';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('fi-FI');
+}
 
-const upcomingDeadlines = [
-  { date: '16', month: 'tammi', title: 'Putkityön tarkastus', project: 'Rivitalo A' },
-  { date: '18', month: 'tammi', title: 'Sähkötyön välitarkastus', project: 'Kerrostalo B' },
-  { date: '20', month: 'tammi', title: 'Laatoituksen aloitus', project: 'Rivitalo A' },
-  { date: '22', month: 'tammi', title: 'Työturvallisuustarkastus', project: 'Toimisto C' },
-  { date: '25', month: 'tammi', title: 'Loppukatselmus', project: 'Kerrostalo B' },
-];
+function timeEntryHours(hours: number, overtime: number) {
+  return hours + overtime;
+}
 
-export default function Dashboard() {
+function WorkerDashboard() {
   const navigate = useNavigate();
+  const { profile, user } = useAuth();
+  const { currentOrg } = useOrganization();
+  const { projects, timeEntries } = useAppDataContext();
+  const { workOrders, loading, error } = useRoleWorkspace();
+  const { shifts } = useSchedulingData();
+
+  const today = isoToday();
+  const activeOrders = workOrders.filter((order) => order.status === 'Käynnissä');
+  const openOrders = workOrders.filter((order) => order.status === 'Avoin');
+  const waitingOrders = workOrders.filter((order) => order.status === 'Odottaa');
+  const pendingHours = timeEntries
+    .filter((entry) => entry.status === 'Odottaa')
+    .reduce((sum, entry) => sum + timeEntryHours(entry.hours, entry.overtime), 0);
+  const approvedHours = timeEntries
+    .filter((entry) => entry.status === 'Hyväksytty')
+    .reduce((sum, entry) => sum + timeEntryHours(entry.hours, entry.overtime), 0);
+  const upcomingShifts = shifts
+    .filter((shift) => shift.date >= today)
+    .sort((a, b) => `${a.date}T${a.startTime}`.localeCompare(`${b.date}T${b.startTime}`))
+    .slice(0, 5);
+  const priorityOrders = [...activeOrders, ...openOrders, ...waitingOrders]
+    .sort((a, b) => {
+      const priority = { Korkea: 0, Normaali: 1, Matala: 2 };
+      return priority[a.priority] - priority[b.priority]
+        || (a.dueDate || '9999').localeCompare(b.dueDate || '9999');
+    })
+    .slice(0, 6);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Yleisnäkymä</h1>
-          <p className="text-gray-500 mt-1">Tervetuloa takaisin, Jethro!</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Badge className="bg-red-100 text-red-800 flex items-center gap-1">
-            <Bell className="w-3 h-3" />
-            3 uutta ilmoitusta
-          </Badge>
-          <Badge variant="outline" className="flex items-center gap-1">
-            <Calendar className="w-3 h-3" />
-            Tänään: {new Date().toLocaleDateString('fi-FI')}
-          </Badge>
+    <div className="mx-auto max-w-[1400px] space-y-6">
+      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-white shadow-xl sm:p-8">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300"><HardHat size={16} /> Oma työtila</div>
+            <h1 className="text-3xl font-bold tracking-tight">Hei, {profile?.full_name || user?.email || 'työntekijä'}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{currentOrg?.name}. Tässä näkyvät vain sinulle tai omalle projektitiimillesi kohdistetut työt, vuorot ja kirjaukset.</p>
+          </div>
+          <Badge className="w-fit border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100">{new Date().toLocaleDateString('fi-FI', { weekday: 'long', day: 'numeric', month: 'long' })}</Badge>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiData.map((kpi, i) => (
-          <motion.div
-            key={kpi.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-          >
-            <Card className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', kpi.bg)}>
-                    <kpi.icon className={cn('w-5 h-5', kpi.color)} />
-                  </div>
-                  <div className={cn('flex items-center gap-1 text-xs font-medium', kpi.trend === 'up' ? 'text-green-600' : 'text-red-600')}>
-                    {kpi.trend === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {kpi.change}
-                  </div>
-                </div>
-                <p className="text-2xl font-bold text-gray-900">{kpi.value}</p>
-                <p className="text-sm text-gray-500">{kpi.label}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
+      {error && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={17} />{error}</div>}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: 'Työ käynnissä', value: activeOrders.length, detail: 'aktiivista tehtävää', icon: Wrench, tone: 'bg-orange-50 text-orange-700' },
+          { label: 'Avoimet tehtävät', value: openOrders.length, detail: `${waitingOrders.length} odottaa`, icon: ClipboardList, tone: 'bg-blue-50 text-blue-700' },
+          { label: 'Omat tunnit', value: `${approvedHours.toFixed(1)} h`, detail: `${pendingHours.toFixed(1)} h odottaa`, icon: Clock3, tone: 'bg-emerald-50 text-emerald-700' },
+          { label: 'Omat kohteet', value: projects.length, detail: 'projektia käytettävissä', icon: MapPin, tone: 'bg-purple-50 text-purple-700' },
+        ].map((item) => (
+          <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 font-mono text-3xl font-bold text-slate-950">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.detail}</p></div><div className={cn('flex h-11 w-11 items-center justify-center rounded-xl', item.tone)}><item.icon size={21} /></div></div></CardContent></Card>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Events */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Clock className="w-5 h-5 text-primary" />
-                Viimeisimmät tapahtumat
-              </CardTitle>
-              <Button variant="ghost" size="sm" className="text-primary">
-                Näytä kaikki <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {recentEvents.map(event => (
-                  <motion.div
-                    key={event.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-                  >
-                    <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0', event.bg)}>
-                      <event.icon className={cn('w-4 h-4', event.iconColor)} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{event.title}</p>
-                      <p className="text-xs text-gray-500 mt-1">{event.date}</p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2 text-lg"><ClipboardList size={19} className="text-orange-600" />Seuraavat työni</CardTitle><Button variant="ghost" size="sm" onClick={() => navigate('/tyomaaraykset')} className="gap-1">Kaikki <ArrowRight size={14} /></Button></CardHeader>
+          <CardContent className="space-y-3">
+            {priorityOrders.map((order) => (
+              <button key={order.id} type="button" onClick={() => navigate('/tyomaaraykset')} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 p-4 text-left transition-colors hover:bg-slate-50">
+                <div className={cn('flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl', order.status === 'Käynnissä' ? 'bg-orange-50 text-orange-700' : order.priority === 'Korkea' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700')}>{order.status === 'Käynnissä' ? <Wrench size={19} /> : <ClipboardList size={19} />}</div>
+                <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-semibold text-slate-900">{order.title}</p><Badge variant="outline">{order.status}</Badge></div><p className="mt-1 truncate text-xs text-slate-500">{order.project} · {dateLabel(order.dueDate)}</p></div><ArrowRight size={16} className="text-slate-400" />
+              </button>
+            ))}
+            {!loading && priorityOrders.length === 0 && <div className="py-10 text-center"><CheckCircle2 size={38} className="mx-auto mb-3 text-emerald-500" /><p className="font-semibold text-slate-800">Ei avoimia tehtäviä</p><p className="mt-1 text-sm text-slate-500">Työnjohdon kohdistamat tehtävät ilmestyvät tähän.</p></div>}
+          </CardContent>
+        </Card>
 
-        {/* Right Column */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-primary" />
-                Pikatoimenpiteet
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {quickActions.map(action => (
-                  <Button
-                    key={action.label}
-                    variant="outline"
-                    className="w-full justify-start gap-2"
-                    onClick={() => navigate(action.path)}
-                  >
-                    <action.icon className="w-4 h-4" />
-                    {action.label}
-                  </Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Upcoming Deadlines */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-primary" />
-                Tulevat määräajat
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {upcomingDeadlines.map((item, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-primary-light flex flex-col items-center justify-center flex-shrink-0">
-                      <span className="text-[10px] text-primary font-medium uppercase">{item.month}</span>
-                      <span className="text-lg font-bold text-primary leading-tight">{item.date}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{item.title}</p>
-                      <p className="text-xs text-gray-500">{item.project}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><CalendarDays size={19} className="text-blue-600" />Omat vuorot</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {upcomingShifts.map((shift) => <div key={shift.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{dateLabel(shift.date)}</p><p className="mt-1 text-sm text-slate-600">{shift.startTime}–{shift.endTime}</p></div><Badge variant="outline">{shift.shiftType || 'Työvuoro'}</Badge></div><p className="mt-3 flex items-center gap-1.5 text-sm text-slate-500"><MapPin size={14} />{shift.project || 'Projektia ei määritetty'}</p></div>)}
+            {upcomingShifts.length === 0 && <div className="py-8 text-center text-sm text-slate-500">Ei tulevia omia vuoroja.</div>}
+          </CardContent>
+        </Card>
       </div>
+
+      <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="text-lg">Pikatoiminnot</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Button variant="outline" className="h-auto justify-start gap-3 p-4" onClick={() => navigate('/tyomaaraykset')}><ClipboardList size={19} className="text-orange-600" /><span className="text-left"><span className="block font-semibold">Omat työt</span><span className="block text-xs font-normal text-slate-500">Aloita ja kuittaa tehtäviä</span></span></Button><Button variant="outline" className="h-auto justify-start gap-3 p-4" onClick={() => navigate('/tuntikirjaukset')}><Clock3 size={19} className="text-blue-600" /><span className="text-left"><span className="block font-semibold">Kirjaa tunnit</span><span className="block text-xs font-normal text-slate-500">Oma työaika</span></span></Button><Button variant="outline" className="h-auto justify-start gap-3 p-4" onClick={() => navigate('/kuittaukset')}><CheckCircle2 size={19} className="text-emerald-600" /><span className="text-left"><span className="block font-semibold">Työmaakuittaus</span><span className="block text-xs font-normal text-slate-500">Kuvat ja allekirjoitus</span></span></Button><Button variant="outline" className="h-auto justify-start gap-3 p-4" onClick={() => navigate('/lomakkeet')}><ShieldCheck size={19} className="text-purple-600" /><span className="text-left"><span className="block font-semibold">Lomakkeet</span><span className="block text-xs font-normal text-slate-500">Täytä työmaalta</span></span></Button></CardContent></Card>
     </div>
   );
 }
 
-// Helper
-function cn(...classes: (string | false | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
+function ManagementDashboard() {
+  const navigate = useNavigate();
+  const { profile, user } = useAuth();
+  const { currentOrg, currentRole } = useOrganization();
+  const { projects, workOrders, timeEntries, employees, safetyItems, stats } = useAppDataContext();
+
+  const pendingHours = timeEntries.filter((entry) => entry.status === 'Odottaa').reduce((sum, entry) => sum + entry.hours + entry.overtime, 0);
+  const highPriorityOrders = workOrders.filter((order) => order.priority === 'Korkea' && !['Valmis', 'Peruttu'].includes(order.status));
+  const openSafetyItems = safetyItems.filter((item) => !['Valmis', 'Suljettu', 'Korjattu'].includes(item.status));
+  const delayedProjects = projects.filter((project) => project.status === 'Myöhässä');
+  const totalSpent = projects.reduce((sum, project) => sum + project.spent, 0);
+  const budgetUsage = stats.totalRevenue > 0 ? Math.min(totalSpent / stats.totalRevenue * 100, 100) : 0;
+
+  const deadlines = useMemo(() => [
+    ...workOrders.filter((order) => order.dueDate && !['Valmis', 'Peruttu'].includes(order.status)).map((order) => ({ id: `work-${order.id}`, date: order.dueDate, title: order.title, context: order.project, path: '/tyomaaraykset' })),
+    ...projects.filter((project) => project.endDate && project.status !== 'Valmis').map((project) => ({ id: `project-${project.id}`, date: project.endDate, title: `${project.name} päättyy`, context: project.customer, path: '/projektit' })),
+  ].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6), [projects, workOrders]);
+
+  return (
+    <div className="mx-auto max-w-[1500px] space-y-6">
+      <div className="rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-white shadow-xl sm:p-8"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300"><HardHat size={16} />{currentRole === 'admin' ? 'Adminin tilannekuva' : 'Työnjohdon tilannekuva'}</div><h1 className="text-3xl font-bold tracking-tight">{currentOrg?.name}</h1><p className="mt-2 text-sm text-slate-300">Tervetuloa, {profile?.full_name || user?.email}. Operatiivinen tilanne perustuu organisaation ajantasaisiin tietoihin.</p></div><Badge className="w-fit border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100">{new Date().toLocaleDateString('fi-FI', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</Badge></div></div>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[
+        { label: 'Aktiiviset projektit', value: stats.activeProjects, detail: `${stats.totalProjects} yhteensä`, icon: FolderKanban, tone: 'bg-blue-50 text-blue-700' },
+        { label: 'Projektibudjetit', value: currency(stats.totalRevenue), detail: `${currency(totalSpent)} toteutunut`, icon: Euro, tone: 'bg-emerald-50 text-emerald-700' },
+        { label: 'Avoimet työt', value: stats.openWorkOrders + stats.inProgressWorkOrders, detail: `${stats.inProgressWorkOrders} käynnissä`, icon: Wrench, tone: 'bg-purple-50 text-purple-700' },
+        { label: 'Henkilöstö', value: `${stats.activeEmployees} / ${stats.totalEmployees}`, detail: `${employees.length} rekisterissä`, icon: UsersRound, tone: 'bg-orange-50 text-orange-700' },
+      ].map((item) => <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 font-mono text-2xl font-bold text-slate-950">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.detail}</p></div><div className={cn('flex h-11 w-11 items-center justify-center rounded-xl', item.tone)}><item.icon size={21} /></div></div></CardContent></Card>)}</div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle size={19} className="text-orange-600" />Toimenpiteitä vaativat</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{[
+          { label: 'Myöhässä olevat projektit', value: delayedProjects.length, path: '/projektit', icon: FolderKanban, danger: delayedProjects.length > 0 },
+          { label: 'Kiireelliset työmääräykset', value: highPriorityOrders.length, path: '/tyomaaraykset', icon: Wrench, danger: highPriorityOrders.length > 0 },
+          { label: 'Hyväksyntää odottavat tunnit', value: `${pendingHours.toFixed(1)} h`, path: '/tuntikirjaukset', icon: Clock3, danger: pendingHours > 0 },
+          { label: 'Avoimet turvallisuusasiat', value: openSafetyItems.length, path: '/tyoturvallisuus', icon: ShieldCheck, danger: openSafetyItems.length > 0 },
+        ].map((item) => <button key={item.label} type="button" onClick={() => navigate(item.path)} className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-left hover:bg-slate-50"><div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', item.danger ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700')}><item.icon size={19} /></div><div className="flex-1"><p className="text-sm text-slate-500">{item.label}</p><p className="text-xl font-bold text-slate-950">{item.value}</p></div><ArrowRight size={16} className="text-slate-400" /></button>)}</CardContent></Card>
+
+        <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="text-lg">Pikatoiminnot</CardTitle></CardHeader><CardContent className="space-y-2"><Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/projektit')}><FolderKanban size={16} /> Projektit ja tiimit</Button><Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/tyomaaraykset')}><Wrench size={16} /> Kohdista työmääräys</Button><Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/tyovuorokalenteri')}><CalendarDays size={16} /> Suunnittele vuorot</Button><Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/raportit')}><Euro size={16} /> Avaa raportit</Button></CardContent></Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2"><Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><CalendarDays size={19} className="text-blue-600" />Tulevat määräajat</CardTitle></CardHeader><CardContent className="space-y-2">{deadlines.map((item) => <button key={item.id} type="button" onClick={() => navigate(item.path)} className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-slate-50"><div className="min-w-24 rounded-lg bg-blue-50 px-2 py-2 text-center text-xs font-semibold text-blue-700">{dateLabel(item.date)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-slate-900">{item.title}</p><p className="truncate text-xs text-slate-500">{item.context}</p></div><ArrowRight size={15} className="text-slate-400" /></button>)}{deadlines.length === 0 && <div className="py-8 text-center text-sm text-slate-500">Ei tulevia määräaikoja.</div>}</CardContent></Card><Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Euro size={19} className="text-emerald-600" />Budjetin käyttö</CardTitle></CardHeader><CardContent className="space-y-4"><div className="flex items-end justify-between"><div><p className="text-sm text-slate-500">Toteutunut</p><p className="text-2xl font-bold text-slate-950">{currency(totalSpent)}</p></div><p className="font-mono text-sm font-semibold">{budgetUsage.toFixed(1)} %</p></div><Progress value={budgetUsage} className="h-3" /><div className="flex justify-between text-sm text-slate-500"><span>Kokonaisbudjetti</span><strong className="text-slate-800">{currency(stats.totalRevenue)}</strong></div><Button variant="ghost" className="w-full justify-between" onClick={() => navigate('/laskenta')}>Avaa kustannuslaskenta <ArrowRight size={15} /></Button></CardContent></Card></div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  const { currentRole } = useOrganization();
+  return currentRole === 'worker' ? <WorkerDashboard /> : <ManagementDashboard />;
 }

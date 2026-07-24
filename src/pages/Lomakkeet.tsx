@@ -1,393 +1,587 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  FileText,
-  Search,
-  Plus,
-  Trash2,
-  Edit3,
-  Download,
-  PenLine,
-  ShieldCheck,
-  Award,
-  Leaf,
-  HardHat,
-  BookOpen,
+  AlertTriangle,
   CheckCircle2,
-  Clock,
-  ClipboardCheck,
-  type LucideIcon,
+  Download,
+  Edit3,
+  FileText,
+  Plus,
+  Search,
+  Send,
+  ShieldCheck,
+  Trash2,
+  XCircle,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
 
-/* ─── Types ─── */
-interface Form {
-  id: string;
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import {
+  useFinanceFormsData,
+  type FormFieldDefinition,
+  type FormFieldType,
+  type FormSubmission,
+  type FormSubmissionStatus,
+  type FormTemplate,
+} from '@/hooks/useFinanceFormsData';
+import logger from '@/lib/logger';
+import {
+  createFormSubmission,
+  createFormTemplate,
+  deleteFormSubmission,
+  deleteFormTemplate,
+  updateFormSubmission,
+  updateFormTemplate,
+} from '@/lib/supabase/financeFormsEntities';
+
+const FIELD_TYPES: Array<{ value: FormFieldType; label: string }> = [
+  { value: 'text', label: 'Lyhyt teksti' },
+  { value: 'textarea', label: 'Pitkä teksti' },
+  { value: 'number', label: 'Numero' },
+  { value: 'date', label: 'Päivämäärä' },
+  { value: 'checkbox', label: 'Kyllä / ei' },
+];
+
+const CATEGORIES = ['TYA', 'Turvallisuus', 'Laatu', 'Koulutus', 'Ympäristö', 'Muu'];
+
+interface TemplateDraft {
   name: string;
+  category: string;
   description: string;
-  category: 'TYA' | 'Turvallisuus' | 'Laatu' | 'Koulutus' | 'Ympäristö';
-  fillRate: number;
-  totalFields: number;
-  filledFields: number;
-  lastUsed: Date;
-  isPopular: boolean;
-  version: string;
+  active: boolean;
+  fields: FormFieldDefinition[];
 }
 
-/* ─── Mock Data ─── */
-const initialForms: Form[] = [
-  { id: '1', name: 'TYA-kortti', description: 'Työturvallisuusasiakirja aliurakoitsijoiden rekisteröintiin', category: 'TYA', fillRate: 85, totalFields: 20, filledFields: 17, lastUsed: new Date(2025, 6, 22), isPopular: true, version: '2.1' },
-  { id: '2', name: 'Perehdytyslomake', description: 'Uuden työntekijän työmaaperehdytys ja allekirjoitus', category: 'TYA', fillRate: 92, totalFields: 12, filledFields: 11, lastUsed: new Date(2025, 6, 21), isPopular: true, version: '1.3' },
-  { id: '3', name: 'Turvallisuustarkastus', description: 'Viikoittainen työmaan turvallisuustarkastuslomake', category: 'Turvallisuus', fillRate: 60, totalFields: 25, filledFields: 15, lastUsed: new Date(2025, 6, 20), isPopular: true, version: '3.0' },
-  { id: '4', name: 'Vaarojen tunnistaminen', description: 'Riskien arviointi ja hallintatoimenpiteet', category: 'Turvallisuus', fillRate: 45, totalFields: 18, filledFields: 8, lastUsed: new Date(2025, 6, 18), isPopular: false, version: '1.5' },
-  { id: '5', name: 'Tapaturmailmoitus', description: 'Työtapaturman kirjaaminen ja raportointi', category: 'Turvallisuus', fillRate: 100, totalFields: 15, filledFields: 15, lastUsed: new Date(2025, 6, 15), isPopular: false, version: '2.2' },
-  { id: '6', name: 'Laaduntarkastus', description: 'Työvaiheen laaduntarkastus ja hyväksyntä', category: 'Laatu', fillRate: 75, totalFields: 16, filledFields: 12, lastUsed: new Date(2025, 6, 22), isPopular: true, version: '1.8' },
-  { id: '7', name: 'Virheilmoitus', description: 'Laatupoikkeaman kirjaus ja korjaustoimenpiteet', category: 'Laatu', fillRate: 30, totalFields: 14, filledFields: 4, lastUsed: new Date(2025, 6, 10), isPopular: false, version: '1.0' },
-  { id: '8', name: 'Koulutuskirjaus', description: 'Suoritetun koulutuksen tallennus ja sertifiointi', category: 'Koulutus', fillRate: 88, totalFields: 10, filledFields: 9, lastUsed: new Date(2025, 6, 19), isPopular: false, version: '1.4' },
-  { id: '9', name: 'Pätevyystodistus', description: 'Työntekijän pätevyyden voimassaoloseuranta', category: 'Koulutus', fillRate: 70, totalFields: 8, filledFields: 6, lastUsed: new Date(2025, 6, 17), isPopular: false, version: '2.0' },
-  { id: '10', name: 'Jäteluettelo', description: 'Rakennusjätteiden lajittelu ja määräkirjaus', category: 'Ympäristö', fillRate: 55, totalFields: 22, filledFields: 12, lastUsed: new Date(2025, 6, 16), isPopular: false, version: '1.2' },
-  { id: '11', name: 'Melumittaus', description: 'Työmaan melumittaus ja raja-arvojen seuranta', category: 'Ympäristö', fillRate: 40, totalFields: 12, filledFields: 5, lastUsed: new Date(2025, 6, 14), isPopular: false, version: '1.1' },
-  { id: '12', name: 'Työmaa-alueen siivous', description: 'Päivittäinen siivouksen tarkistuslista', category: 'Ympäristö', fillRate: 95, totalFields: 10, filledFields: 10, lastUsed: new Date(2025, 6, 23), isPopular: true, version: '1.6' },
-];
+interface SubmissionDraft {
+  templateId: string;
+  projectId: string;
+  title: string;
+  data: Record<string, unknown>;
+}
 
-const kpiData = [
-  { label: 'Lomakkeet yhteensä', value: '48', icon: FileText, color: 'text-blue-500', bg: 'bg-blue-50' },
-  { label: 'Keskim. täyttöaste', value: '73%', icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-  { label: 'Täytetyt', value: '156', icon: PenLine, color: 'text-violet-500', bg: 'bg-violet-50' },
-  { label: 'Suosituimmat', value: '8', icon: Award, color: 'text-amber-500', bg: 'bg-amber-50' },
-];
-
-const categoryConfig: Record<string, { icon: LucideIcon; color: string; bg: string; border: string }> = {
-  TYA: { icon: HardHat, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200' },
-  Turvallisuus: { icon: ShieldCheck, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' },
-  Laatu: { icon: ClipboardCheck, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200' },
-  Koulutus: { icon: BookOpen, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200' },
-  Ympäristö: { icon: Leaf, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200' },
+const EMPTY_TEMPLATE: TemplateDraft = {
+  name: '',
+  category: 'TYA',
+  description: '',
+  active: true,
+  fields: [],
 };
 
-/* ─── Component ─── */
+const EMPTY_SUBMISSION: SubmissionDraft = {
+  templateId: '',
+  projectId: '',
+  title: '',
+  data: {},
+};
+
+function makeField(): FormFieldDefinition {
+  return { id: crypto.randomUUID(), label: '', type: 'text', required: false };
+}
+
+function statusBadge(status: FormSubmissionStatus) {
+  const classes: Record<FormSubmissionStatus, string> = {
+    Luonnos: 'bg-slate-100 text-slate-700',
+    Lähetetty: 'bg-blue-50 text-blue-700',
+    Hyväksytty: 'bg-emerald-50 text-emerald-700',
+    Hylätty: 'bg-red-50 text-red-700',
+  };
+  return <Badge className={`border-0 ${classes[status]}`}>{status}</Badge>;
+}
+
+function hasRequiredValue(field: FormFieldDefinition, value: unknown) {
+  if (field.type === 'checkbox') return value === true;
+  if (field.type === 'number') return value !== '' && Number.isFinite(Number(value));
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function downloadCsv(filename: string, rows: unknown[][]) {
+  const cell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+  const csv = rows.map((row) => row.map(cell).join(';')).join('\n');
+  const url = URL.createObjectURL(
+    new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }),
+  );
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function Lomakkeet() {
-  const [forms, setForms] = useState<Form[]>(initialForms);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('Kaikki');
-  const [editingForm, setEditingForm] = useState<Form | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [newForm, setNewForm] = useState<{ name: string; description: string; category: 'TYA' | 'Turvallisuus' | 'Laatu' | 'Koulutus' | 'Ympäristö'; totalFields: number }>({ name: '', description: '', category: 'TYA', totalFields: 10 });
-  const [fillDialogOpen, setFillDialogOpen] = useState(false);
-  const [fillingForm, setFillingForm] = useState<Form | null>(null);
-  const [fillProgress, setFillProgress] = useState(0);
+  const { user } = useAuth();
+  const { currentOrg, currentRole } = useOrganization();
+  const { projects } = useAppDataContext();
+  const { templates, submissions, loading, error, refresh } = useFinanceFormsData();
+  const canManage = currentRole === 'admin' || currentRole === 'supervisor';
 
-  const handleAddForm = () => {
-    if (!newForm.name.trim()) return;
-    const form: Form = {
-      id: Date.now().toString(),
-      name: newForm.name,
-      description: newForm.description,
-      category: newForm.category,
-      fillRate: 0,
-      totalFields: newForm.totalFields,
-      filledFields: 0,
-      lastUsed: new Date(),
-      isPopular: false,
-      version: '1.0',
+  const [search, setSearch] = useState('');
+  const [templateDialog, setTemplateDialog] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<FormTemplate | null>(null);
+  const [templateDraft, setTemplateDraft] = useState<TemplateDraft>(EMPTY_TEMPLATE);
+  const [fillDialog, setFillDialog] = useState(false);
+  const [editingSubmission, setEditingSubmission] = useState<FormSubmission | null>(null);
+  const [submissionDraft, setSubmissionDraft] = useState<SubmissionDraft>(EMPTY_SUBMISSION);
+  const [viewSubmission, setViewSubmission] = useState<FormSubmission | null>(null);
+  const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<FormTemplate | null>(null);
+  const [deleteSubmissionTarget, setDeleteSubmissionTarget] = useState<FormSubmission | null>(null);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const filteredTemplates = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('fi');
+    if (!query) return templates;
+    return templates.filter((template) =>
+      `${template.name} ${template.category} ${template.description}`
+        .toLocaleLowerCase('fi')
+        .includes(query),
+    );
+  }, [search, templates]);
+
+  const selectedTemplate = templates.find(
+    (template) => template.id === submissionDraft.templateId,
+  ) ?? null;
+  const templateFor = (submission: FormSubmission) =>
+    templates.find((template) => template.id === submission.templateId);
+  const projectFor = (submission: FormSubmission) =>
+    projects.find((project) => project.id === submission.projectId);
+
+  const openTemplateCreate = () => {
+    setEditingTemplate(null);
+    setTemplateDraft({ ...EMPTY_TEMPLATE, fields: [makeField()] });
+    setFormErrors([]);
+    setOperationError(null);
+    setTemplateDialog(true);
+  };
+
+  const openTemplateEdit = (template: FormTemplate) => {
+    setEditingTemplate(template);
+    setTemplateDraft({
+      name: template.name,
+      category: template.category,
+      description: template.description,
+      active: template.active,
+      fields: template.fields.map((field) => ({ ...field })),
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setTemplateDialog(true);
+  };
+
+  const patchField = (id: string, patch: Partial<FormFieldDefinition>) => {
+    setTemplateDraft((previous) => ({
+      ...previous,
+      fields: previous.fields.map((field) =>
+        field.id === id ? { ...field, ...patch } : field,
+      ),
+    }));
+  };
+
+  const saveTemplate = async () => {
+    const fields = templateDraft.fields.map((field) => ({
+      ...field,
+      label: field.label.trim(),
+    }));
+    const nextErrors: string[] = [];
+    if (!templateDraft.name.trim()) nextErrors.push('Nimi on pakollinen.');
+    if (fields.length === 0) nextErrors.push('Lisää vähintään yksi kenttä.');
+    if (fields.some((field) => !field.label)) {
+      nextErrors.push('Jokaisella kentällä pitää olla nimi.');
+    }
+    setFormErrors(nextErrors);
+    if (nextErrors.length || !currentOrg || !canManage) return;
+
+    const payload: Omit<FormTemplate, 'id'> = {
+      name: templateDraft.name.trim(),
+      category: templateDraft.category,
+      description: templateDraft.description.trim(),
+      active: templateDraft.active,
+      fields,
     };
-    setForms(prev => [...prev, form]);
-    setNewForm({ name: '', description: '', category: 'TYA', totalFields: 10 });
-    setAddDialogOpen(false);
+
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editingTemplate) {
+        await updateFormTemplate(currentOrg.id, editingTemplate.id, payload);
+      } else {
+        await createFormTemplate(currentOrg.id, user?.id, payload);
+      }
+      await refresh();
+      setTemplateDialog(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Lomakepohjan tallennus epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleEditForm = (form: Form) => {
-    setForms(prev => prev.map(f => (f.id === form.id ? form : f)));
-    setEditingForm(null);
+  const openFill = (template: FormTemplate) => {
+    setEditingSubmission(null);
+    setSubmissionDraft({
+      templateId: template.id,
+      projectId: '',
+      title: template.name,
+      data: Object.fromEntries(
+        template.fields.map((field) => [field.id, field.type === 'checkbox' ? false : '']),
+      ),
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setFillDialog(true);
   };
 
-  const handleDeleteForm = (id: string) => {
-    setForms(prev => prev.filter(f => f.id !== id));
-    setDeleteConfirm(null);
+  const openDraft = (submission: FormSubmission) => {
+    setEditingSubmission(submission);
+    setSubmissionDraft({
+      templateId: submission.templateId,
+      projectId: submission.projectId ?? '',
+      title: submission.title,
+      data: { ...submission.data },
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setFillDialog(true);
   };
 
-  const handleOpenFill = (form: Form) => {
-    setFillingForm(form);
-    setFillProgress(form.fillRate);
-    setFillDialogOpen(true);
+  const patchSubmissionValue = (field: FormFieldDefinition, value: unknown) => {
+    const normalized = field.type === 'number' && value !== '' ? Number(value) : value;
+    setSubmissionDraft((previous) => ({
+      ...previous,
+      data: { ...previous.data, [field.id]: normalized },
+    }));
   };
 
-  const handleSaveFill = () => {
-    if (!fillingForm) return;
-    const filledFields = Math.round((fillProgress / 100) * fillingForm.totalFields);
-    setForms(prev => prev.map(f => f.id === fillingForm.id ? { ...f, fillRate: fillProgress, filledFields, lastUsed: new Date() } : f));
-    setFillDialogOpen(false);
-    setFillingForm(null);
+  const saveSubmission = async (status: 'Luonnos' | 'Lähetetty') => {
+    const nextErrors: string[] = [];
+    if (!selectedTemplate) nextErrors.push('Lomakepohja puuttuu.');
+    if (!submissionDraft.title.trim()) nextErrors.push('Otsikko on pakollinen.');
+    if (status === 'Lähetetty' && selectedTemplate) {
+      selectedTemplate.fields.forEach((field) => {
+        if (field.required && !hasRequiredValue(field, submissionDraft.data[field.id])) {
+          nextErrors.push(`Täytä pakollinen kenttä: ${field.label}.`);
+        }
+      });
+    }
+    setFormErrors(nextErrors);
+    if (nextErrors.length || !currentOrg || !user || !selectedTemplate) return;
+
+    const payload: Omit<FormSubmission, 'id'> = {
+      templateId: selectedTemplate.id,
+      projectId: submissionDraft.projectId || undefined,
+      title: submissionDraft.title.trim(),
+      status,
+      data: submissionDraft.data,
+      submittedAt: status === 'Lähetetty' ? new Date().toISOString() : undefined,
+      submittedBy: user.id,
+    };
+
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editingSubmission) {
+        await updateFormSubmission(currentOrg.id, editingSubmission.id, payload);
+      } else {
+        await createFormSubmission(currentOrg.id, user.id, payload);
+      }
+      await refresh();
+      setFillDialog(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Lomakelähetyksen tallennus epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const filteredForms = forms.filter(f => {
-    const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      f.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === 'Kaikki' || f.category === categoryFilter;
-    return matchesSearch && matchesCategory;
-  });
-
-  const categories = ['Kaikki', 'TYA', 'Turvallisuus', 'Laatu', 'Koulutus', 'Ympäristö'];
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
+  const reviewSubmission = async (
+    submission: FormSubmission,
+    status: 'Hyväksytty' | 'Hylätty',
+  ) => {
+    if (!currentOrg || !canManage) return;
+    setSaving(true);
+    try {
+      await updateFormSubmission(currentOrg.id, submission.id, { status });
+      await refresh();
+      setViewSubmission(null);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Käsittely epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
   };
-  const itemVariants = {
-    hidden: { opacity: 0, y: 12 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] } },
+
+  const removeTemplate = async () => {
+    if (!currentOrg || !deleteTemplateTarget || !canManage) return;
+    setSaving(true);
+    try {
+      await deleteFormTemplate(currentOrg.id, deleteTemplateTarget.id);
+      await refresh();
+      setDeleteTemplateTarget(null);
+    } catch (caught) {
+      setOperationError(
+        caught instanceof Error
+          ? caught.message
+          : 'Pohjaa ei voi poistaa, jos sillä on lähetyksiä.',
+      );
+      setDeleteTemplateTarget(null);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const removeSubmission = async () => {
+    if (!currentOrg || !deleteSubmissionTarget) return;
+    setSaving(true);
+    try {
+      await deleteFormSubmission(currentOrg.id, deleteSubmissionTarget.id);
+      await refresh();
+      setDeleteSubmissionTarget(null);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportCsv = () => {
+    downloadCsv('lomakelahetykset.csv', [
+      ['Otsikko', 'Pohja', 'Projekti', 'Tila', 'Lähetetty'],
+      ...submissions.map((submission) => [
+        submission.title,
+        templateFor(submission)?.name ?? '',
+        projectFor(submission)?.name ?? '',
+        submission.status,
+        submission.submittedAt
+          ? new Date(submission.submittedAt).toLocaleString('fi-FI')
+          : '',
+      ]),
+    ]);
+  };
+
+  const canEditDraft = (submission: FormSubmission) =>
+    submission.status === 'Luonnos' &&
+    (canManage || submission.submittedBy === user?.id);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-      className="space-y-6"
-    >
-      {/* ─── Header ─── */}
-      <div className="flex items-center justify-between">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#1E293B] flex items-center gap-2">
-            <FileText className="text-violet-500" size={28} />
-            Lomakkeet
-          </h1>
-          <p className="text-sm text-[#64748B] mt-1">Lomakekirjasto ja täyttöseuranta</p>
+          <h1 className="text-hero text-text-primary">Lomakkeet</h1>
+          <p className="mt-1 text-body-sm text-text-secondary">
+            Lomakepohjat, työmaalta täyttäminen ja hyväksyntäkierto
+          </p>
         </div>
-        <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-[#1E293B] hover:bg-[#334155] text-white">
-              <Plus size={18} className="mr-2" />
-              Uusi lomake
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader><DialogTitle className="text-lg font-semibold text-[#1E293B]">Luo uusi lomake</DialogTitle></DialogHeader>
-            <div className="space-y-3 pt-4">
-              <Input value={newForm.name} onChange={e => setNewForm(p => ({ ...p, name: e.target.value }))} placeholder="Lomakkeen nimi" className="border-[#E2E8F0]" />
-              <textarea value={newForm.description} onChange={e => setNewForm(p => ({ ...p, description: e.target.value }))} placeholder="Kuvaus..." className="w-full min-h-[80px] px-3 py-2 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-none" />
-              <Select value={newForm.category} onValueChange={v => setNewForm(p => ({ ...p, category: v as 'TYA' | 'Turvallisuus' | 'Laatu' | 'Koulutus' | 'Ympäristö' }))}>
-                <SelectTrigger className="border-[#E2E8F0]"><SelectValue placeholder="Kategoria" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="TYA">TYA</SelectItem>
-                  <SelectItem value="Turvallisuus">Turvallisuus</SelectItem>
-                  <SelectItem value="Laatu">Laatu</SelectItem>
-                  <SelectItem value="Koulutus">Koulutus</SelectItem>
-                  <SelectItem value="Ympäristö">Ympäristö</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input type="number" value={newForm.totalFields} onChange={e => setNewForm(p => ({ ...p, totalFields: Number(e.target.value) }))} placeholder="Kenttien määrä" className="border-[#E2E8F0]" />
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Peruuta</Button>
-                <Button onClick={handleAddForm} className="bg-violet-500 hover:bg-violet-600 text-white">Luo lomake</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {canManage && (
+          <Button onClick={openTemplateCreate} className="gap-2">
+            <Plus size={16} /> Uusi lomakepohja
+          </Button>
+        )}
       </div>
 
-      {/* ─── KPI Cards ─── */}
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiData.map((kpi, i) => (
-          <motion.div key={i} variants={itemVariants}>
-            <Card className="border border-[#E2E8F0] shadow-sm hover:shadow-md transition-shadow">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className={cn('w-11 h-11 rounded-xl flex items-center justify-center', kpi.bg)}>
-                  <kpi.icon size={20} className={kpi.color} />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-[#1E293B]">{kpi.value}</div>
-                  <div className="text-xs text-[#64748B]">{kpi.label}</div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </motion.div>
-
-      {/* ─── Category Tabs & Search ─── */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-          <Input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Hae lomakkeista..." className="pl-8 border-[#E2E8F0]" />
+      {(error || operationError) && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <AlertTriangle size={16} /> {operationError ?? error}
         </div>
-        <Tabs value={categoryFilter} onValueChange={setCategoryFilter}>
-          <TabsList className="bg-[#F1F5F9]">
-            {categories.map(c => (
-              <TabsTrigger key={c} value={c} className="text-xs data-[state=active]:bg-white">{c}</TabsTrigger>
-            ))}
+      )}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Aktiivisia pohjia</p><p className="mt-1 font-mono text-2xl font-bold">{templates.filter((item) => item.active).length}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Lähetyksiä</p><p className="mt-1 font-mono text-2xl font-bold">{submissions.length}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Odottaa käsittelyä</p><p className="mt-1 font-mono text-2xl font-bold text-blue-700">{submissions.filter((item) => item.status === 'Lähetetty').length}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Hyväksytty</p><p className="mt-1 font-mono text-2xl font-bold text-emerald-700">{submissions.filter((item) => item.status === 'Hyväksytty').length}</p></CardContent></Card>
+      </div>
+
+      <Tabs defaultValue="templates" className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <TabsList>
+            <TabsTrigger value="templates">Pohjat</TabsTrigger>
+            <TabsTrigger value="submissions">Täytetyt ({submissions.length})</TabsTrigger>
           </TabsList>
-        </Tabs>
-      </div>
-
-      {/* ─── Form Cards ─── */}
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <AnimatePresence>
-          {filteredForms.map(form => {
-            const cat = categoryConfig[form.category];
-            const CatIcon = cat.icon;
-            const isComplete = form.fillRate === 100;
-            return (
-              <motion.div key={form.id} variants={itemVariants} layout>
-                <Card className={cn('border shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 group relative overflow-hidden', isComplete ? 'border-emerald-200' : 'border-[#E2E8F0]')}>
-                  {form.isPopular && (
-                    <div className="absolute top-0 right-0">
-                      <Badge className="rounded-tl-none rounded-br-none rounded-tr-md rounded-bl-none bg-amber-500 text-white text-[10px]">
-                        <Award size={10} className="mr-0.5" /> SUOSITTU
-                      </Badge>
-                    </div>
-                  )}
-                  {isComplete && (
-                    <div className="absolute top-0 left-0">
-                      <Badge className="rounded-tr-none rounded-bl-none rounded-tl-md rounded-br-none bg-emerald-500 text-white text-[10px]">
-                        <CheckCircle2 size={10} className="mr-0.5" /> VALMIS
-                      </Badge>
-                    </div>
-                  )}
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', cat.bg)}>
-                        <CatIcon size={20} className={cat.color} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm text-[#1E293B] truncate">{form.name}</h3>
-                        <Badge className={cn('text-[9px] mt-1 border', cat.bg, cat.color)}>{form.category}</Badge>
-                      </div>
-                    </div>
-                    <p className="text-xs text-[#64748B] mb-3 line-clamp-2">{form.description}</p>
-
-                    {/* Fill Progress */}
-                    <div className="mb-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] text-[#64748B]">Täyttöaste</span>
-                        <span className={cn('text-[10px] font-semibold', isComplete ? 'text-emerald-600' : form.fillRate >= 50 ? 'text-blue-600' : 'text-amber-600')}>
-                          {form.fillRate}%
-                        </span>
-                      </div>
-                      <Progress value={form.fillRate} className={cn('h-2', isComplete ? '[&>div]:bg-emerald-500' : form.fillRate >= 50 ? '[&>div]:bg-blue-500' : '[&>div]:bg-amber-500')} />
-                      <div className="text-[10px] text-[#94A3B8] mt-0.5">{form.filledFields} / {form.totalFields} kenttää täytetty</div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center justify-between pt-2 border-t border-[#F1F5F9]">
-                      <div className="flex items-center gap-1 text-[10px] text-[#94A3B8]">
-                        <Clock size={10} /> {form.lastUsed.toLocaleDateString('fi-FI')}
-                        <span className="mx-1">•</span>
-                        <span>v{form.version}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => handleOpenFill(form)}>
-                          <PenLine size={12} className="mr-1" /> Täytä
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-[#64748B]">
-                          <Download size={12} />
-                        </Button>
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                          <button onClick={() => setEditingForm(form)} className="p-1 rounded hover:bg-[#F1F5F9] text-[#64748B]"><Edit3 size={11} /></button>
-                          <button onClick={() => setDeleteConfirm(form.id)} className="p-1 rounded hover:bg-red-50 text-[#64748B] hover:text-red-500"><Trash2 size={11} /></button>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* ─── Fill Form Dialog ─── */}
-      <Dialog open={fillDialogOpen} onOpenChange={setFillDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-[#1E293B] flex items-center gap-2">
-              <PenLine size={20} className="text-violet-500" />
-              {fillingForm?.name}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
-            <p className="text-sm text-[#64748B]">{fillingForm?.description}</p>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-[#1E293B]">Täyttöaste</span>
-                <span className="text-sm font-bold text-violet-600">{fillProgress}%</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={fillProgress}
-                onChange={e => setFillProgress(Number(e.target.value))}
-                className="w-full h-2 bg-[#E2E8F0] rounded-full appearance-none cursor-pointer accent-violet-500"
+          <div className="flex gap-2">
+            <div className="relative sm:w-72">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Hae lomakkeita..."
+                className="pl-9"
               />
-              <div className="flex justify-between text-[10px] text-[#94A3B8] mt-1">
-                <span>0%</span>
-                <span>25%</span>
-                <span>50%</span>
-                <span>75%</span>
-                <span>100%</span>
-              </div>
             </div>
-            <div className="bg-[#F8FAFC] rounded-lg p-4 border border-[#E2E8F0]">
-              <h4 className="text-xs font-semibold text-[#1E293B] mb-2">Simuloitu lomakenäkymä</h4>
-              <div className="space-y-2">
-                {Array.from({ length: Math.min(5, fillingForm?.totalFields || 5) }, (_, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className={cn('w-4 h-4 rounded border flex items-center justify-center', i < (fillingForm?.filledFields || 0) ? 'bg-emerald-500 border-emerald-500' : 'border-[#CBD5E1]')}>
-                      {i < (fillingForm?.filledFields || 0) && <CheckCircle2 size={10} className="text-white" />}
-                    </div>
-                    <span className={cn('text-xs', i < (fillingForm?.filledFields || 0) ? 'text-[#64748B] line-through' : 'text-[#1E293B]')}>
-                      Kenttä {i + 1}: {['Henkilötiedot', 'Yritystiedot', 'Pätevyys', 'Turvallisuus', 'Allekirjoitus'][i] || `Tieto ${i + 1}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setFillDialogOpen(false)}>Peruuta</Button>
-              <Button onClick={handleSaveFill} className="bg-violet-500 hover:bg-violet-600 text-white">Tallenna täyttö</Button>
-            </div>
+            <Button variant="outline" onClick={exportCsv} disabled={!submissions.length}>
+              <Download size={15} className="mr-1" /> CSV
+            </Button>
           </div>
+        </div>
+
+        <TabsContent value="templates" className="mt-0">
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {filteredTemplates.map((template) => (
+              <Card key={template.id} className={!template.active ? 'opacity-60' : ''}>
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="font-semibold">{template.name}</h2>
+                      <p className="text-xs text-text-secondary">
+                        {template.category} · {template.fields.length} kenttää
+                      </p>
+                    </div>
+                    <Badge variant="outline">
+                      {template.active ? 'Aktiivinen' : 'Pois käytöstä'}
+                    </Badge>
+                  </div>
+                  <p className="mt-4 min-h-10 text-sm text-text-secondary">
+                    {template.description || 'Ei kuvausta.'}
+                  </p>
+                  <div className="mt-4 flex items-center justify-between gap-2">
+                    <Button onClick={() => openFill(template)} disabled={!template.active}>
+                      <FileText size={15} className="mr-1" /> Täytä
+                    </Button>
+                    {canManage && (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openTemplateEdit(template)}>
+                          <Edit3 size={15} />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-danger" onClick={() => setDeleteTemplateTarget(template)}>
+                          <Trash2 size={15} />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {!loading && filteredTemplates.length === 0 && (
+            <Card><CardContent className="p-12 text-center"><FileText size={42} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei lomakepohjia</p></CardContent></Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="submissions" className="mt-0">
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              {submissions.map((submission) => (
+                <div key={submission.id} className="grid gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-[1.2fr_1fr_1fr_130px_160px] lg:items-center">
+                  <button type="button" onClick={() => setViewSubmission(submission)} className="text-left font-medium hover:text-primary">
+                    {submission.title}
+                  </button>
+                  <span className="text-sm text-text-secondary">{templateFor(submission)?.name ?? 'Pohja puuttuu'}</span>
+                  <span className="text-sm text-text-secondary">{projectFor(submission)?.name ?? 'Ei projektia'}</span>
+                  <span>{statusBadge(submission.status)}</span>
+                  <div className="flex gap-1 lg:justify-end">
+                    <Button variant="outline" size="sm" onClick={() => setViewSubmission(submission)}>Avaa</Button>
+                    {canEditDraft(submission) && (
+                      <Button variant="ghost" size="sm" onClick={() => openDraft(submission)}><Edit3 size={14} /></Button>
+                    )}
+                    {(canManage || canEditDraft(submission)) && (
+                      <Button variant="ghost" size="sm" className="text-danger" onClick={() => setDeleteSubmissionTarget(submission)}><Trash2 size={14} /></Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!loading && submissions.length === 0 && (
+                <div className="p-12 text-center"><FileText size={42} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei täytettyjä lomakkeita</p></div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={templateDialog} onOpenChange={setTemplateDialog}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader><DialogTitle>{editingTemplate ? 'Muokkaa lomakepohjaa' : 'Uusi lomakepohja'}</DialogTitle></DialogHeader>
+          {formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="template-name">Nimi *</Label><Input id="template-name" value={templateDraft.name} onChange={(event) => setTemplateDraft((previous) => ({ ...previous, name: event.target.value }))} /></div>
+            <div className="space-y-2"><Label>Kategoria</Label><Select value={templateDraft.category} onValueChange={(category) => setTemplateDraft((previous) => ({ ...previous, category }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent></Select></div>
+            <label className="flex items-center gap-2 pt-7 text-sm"><Checkbox checked={templateDraft.active} onCheckedChange={(checked) => setTemplateDraft((previous) => ({ ...previous, active: checked === true }))} /> Pohja käytössä</label>
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="template-description">Kuvaus</Label><Textarea id="template-description" value={templateDraft.description} onChange={(event) => setTemplateDraft((previous) => ({ ...previous, description: event.target.value }))} /></div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between"><h3 className="font-semibold">Kentät</h3><Button variant="outline" size="sm" onClick={() => setTemplateDraft((previous) => ({ ...previous, fields: [...previous.fields, makeField()] }))}><Plus size={14} className="mr-1" /> Lisää kenttä</Button></div>
+            {templateDraft.fields.map((field, index) => (
+              <div key={field.id} className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[1fr_170px_auto_auto] sm:items-end">
+                <div className="space-y-2"><Label htmlFor={`field-${field.id}`}>Kenttä {index + 1}</Label><Input id={`field-${field.id}`} value={field.label} onChange={(event) => patchField(field.id, { label: event.target.value })} /></div>
+                <div className="space-y-2"><Label>Tyyppi</Label><Select value={field.type} onValueChange={(type: FormFieldType) => patchField(field.id, { type })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{FIELD_TYPES.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select></div>
+                <label className="flex h-10 items-center gap-2 text-sm"><Checkbox checked={field.required} onCheckedChange={(checked) => patchField(field.id, { required: checked === true })} /> Pakollinen</label>
+                <Button variant="ghost" className="text-danger" onClick={() => setTemplateDraft((previous) => ({ ...previous, fields: previous.fields.filter((item) => item.id !== field.id) }))}><Trash2 size={15} /></Button>
+              </div>
+            ))}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setTemplateDialog(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveTemplate()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna pohja'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── Edit Dialog ─── */}
-      <Dialog open={!!editingForm} onOpenChange={() => setEditingForm(null)}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader><DialogTitle className="text-lg font-semibold text-[#1E293B]">Muokkaa lomaketta</DialogTitle></DialogHeader>
-          {editingForm && (
-            <div className="space-y-3 pt-4">
-              <Input value={editingForm.name} onChange={e => setEditingForm(p => p ? { ...p, name: e.target.value } : null)} placeholder="Nimi" className="border-[#E2E8F0]" />
-              <textarea value={editingForm.description} onChange={e => setEditingForm(p => p ? { ...p, description: e.target.value } : null)} placeholder="Kuvaus" className="w-full min-h-[80px] px-3 py-2 rounded-md border border-[#E2E8F0] text-sm focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 resize-none" />
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setEditingForm(null)}>Peruuta</Button>
-                <Button onClick={() => editingForm && handleEditForm(editingForm)} className="bg-violet-500 hover:bg-violet-600 text-white">Tallenna</Button>
-              </div>
+      <Dialog open={fillDialog} onOpenChange={setFillDialog}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader><DialogTitle>{editingSubmission ? 'Muokkaa luonnosta' : selectedTemplate?.name ?? 'Täytä lomake'}</DialogTitle></DialogHeader>
+          {formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="submission-title">Otsikko *</Label><Input id="submission-title" value={submissionDraft.title} onChange={(event) => setSubmissionDraft((previous) => ({ ...previous, title: event.target.value }))} /></div>
+            <div className="space-y-2 sm:col-span-2"><Label>Projekti</Label><Select value={submissionDraft.projectId || 'none'} onValueChange={(value) => setSubmissionDraft((previous) => ({ ...previous, projectId: value === 'none' ? '' : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Ei projektia</SelectItem>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>
+          </div>
+          <div className="space-y-4">
+            {selectedTemplate?.fields.map((field) => {
+              const value = submissionDraft.data[field.id];
+              if (field.type === 'textarea') return <div key={field.id} className="space-y-2"><Label>{field.label}{field.required ? ' *' : ''}</Label><Textarea value={typeof value === 'string' ? value : ''} onChange={(event) => patchSubmissionValue(field, event.target.value)} /></div>;
+              if (field.type === 'checkbox') return <label key={field.id} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3"><Checkbox checked={value === true} onCheckedChange={(checked) => patchSubmissionValue(field, checked === true)} /><span className="text-sm">{field.label}{field.required ? ' *' : ''}</span></label>;
+              return <div key={field.id} className="space-y-2"><Label>{field.label}{field.required ? ' *' : ''}</Label><Input type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} value={typeof value === 'number' || typeof value === 'string' ? value : ''} onChange={(event) => patchSubmissionValue(field, event.target.value)} /></div>;
+            })}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setFillDialog(false)} disabled={saving}>Peruuta</Button><Button variant="secondary" onClick={() => void saveSubmission('Luonnos')} disabled={saving}>Tallenna luonnos</Button><Button onClick={() => void saveSubmission('Lähetetty')} disabled={saving}><Send size={15} className="mr-1" /> Lähetä</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(viewSubmission)} onOpenChange={(open) => !open && setViewSubmission(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader><DialogTitle>{viewSubmission?.title}</DialogTitle></DialogHeader>
+          {viewSubmission && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">{statusBadge(viewSubmission.status)}<Badge variant="outline">{templateFor(viewSubmission)?.name ?? 'Pohja puuttuu'}</Badge><Badge variant="outline">{projectFor(viewSubmission)?.name ?? 'Ei projektia'}</Badge></div>
+              {templateFor(viewSubmission)?.fields.map((field) => {
+                const value = viewSubmission.data[field.id];
+                return <div key={field.id} className="rounded-lg border border-slate-200 p-3"><p className="text-xs font-semibold uppercase tracking-wider text-text-muted">{field.label}</p><p className="mt-1 whitespace-pre-wrap text-sm">{field.type === 'checkbox' ? (value === true ? 'Kyllä' : 'Ei') : String(value ?? '—')}</p></div>;
+              })}
+              {canManage && viewSubmission.status === 'Lähetetty' && (
+                <div className="flex justify-end gap-2 border-t pt-4"><Button variant="outline" className="text-red-700" onClick={() => void reviewSubmission(viewSubmission, 'Hylätty')} disabled={saving}><XCircle size={15} className="mr-1" /> Hylkää</Button><Button onClick={() => void reviewSubmission(viewSubmission, 'Hyväksytty')} disabled={saving}><CheckCircle2 size={15} className="mr-1" /> Hyväksy</Button></div>
+              )}
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* ─── Delete Confirm ─── */}
-      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader><DialogTitle className="text-lg font-semibold text-[#1E293B]">Vahvista poisto</DialogTitle></DialogHeader>
-          <p className="text-sm text-[#64748B] pt-2">Haluatko varmasti poistaa tämän lomakkeen? Toimintoa ei voi peruuttaa.</p>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Peruuta</Button>
-            <Button variant="destructive" onClick={() => deleteConfirm && handleDeleteForm(deleteConfirm)}>Poista</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <Dialog open={Boolean(deleteTemplateTarget)} onOpenChange={(open) => !open && setDeleteTemplateTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista lomakepohja</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko <strong>{deleteTemplateTarget?.name}</strong>?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteTemplateTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeTemplate()} disabled={saving}>Poista</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={Boolean(deleteSubmissionTarget)} onOpenChange={(open) => !open && setDeleteSubmissionTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista lomake</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko <strong>{deleteSubmissionTarget?.title}</strong>?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteSubmissionTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeSubmission()} disabled={saving}>Poista</Button></DialogFooter></DialogContent></Dialog>
+
+      {!canManage && (
+        <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><ShieldCheck size={16} /> Näet vain omat lähetyksesi. Työnjohto käsittelee lähetetyt lomakkeet.</div>
+      )}
     </motion.div>
   );
 }

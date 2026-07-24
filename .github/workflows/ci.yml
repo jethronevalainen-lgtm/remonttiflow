@@ -1,9 +1,16 @@
-name: CI
+name: Manual CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Supabase publishable configuration is intended for browser bundles.
+  # Authorization is enforced by Row Level Security, not by hiding this key.
+  VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+  VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
 
 jobs:
   build:
@@ -11,40 +18,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Unit tests
-        run: npm run test
-
-      - name: Build
-        run: npm run build
+      - name: Verify source quality and build
+        run: npm run ship:check
 
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -54,11 +52,14 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
+        env:
+          E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+          E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
         run: npm run test:e2e
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/

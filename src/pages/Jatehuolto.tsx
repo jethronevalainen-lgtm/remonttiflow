@@ -1,378 +1,259 @@
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Trash2,
-  ChevronRight,
+  AlertTriangle,
+  Download,
+  Edit3,
+  Euro,
   Plus,
   Recycle,
-  AlertTriangle,
-  Leaf,
-  Factory,
-  CheckCircle2,
-  XCircle,
-  Download,
-  TrendingUp,
-  TrendingDown,
+  Search,
+  Trash2,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+import { useAuth } from '@/contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useOperationsData } from '@/hooks/useOperationsData';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { cn } from '@/lib/utils';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, Legend } from 'recharts';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import logger from '@/lib/logger';
+import {
+  createWasteEntryRecord,
+  deleteWasteEntryRecord,
+  updateWasteEntryRecord,
+} from '@/lib/supabase/operationsEntities';
+import type { WasteEntry } from '@/types';
 
-/* ─── Mock Data ─── */
-const wasteStats = {
-  recycled: 4520,
-  landfill: 1840,
-  hazardous: 320,
-  total: 6680,
-  recycledTrend: +12,
-  landfillTrend: -8,
-  hazardousTrend: +3,
+interface WasteForm {
+  date: string;
+  project: string;
+  wasteType: string;
+  amount: string;
+  unit: string;
+  cost: string;
+  notes: string;
+}
+
+const emptyForm: WasteForm = {
+  date: new Date().toISOString().slice(0, 10),
+  project: '',
+  wasteType: '',
+  amount: '',
+  unit: 'kg',
+  cost: '0',
+  notes: '',
 };
 
-const wasteLogEntries = [
-  { id: 1, date: '23.6.2025', project: 'Tampere, Hatanpää', type: 'Sekajäte', amount: 450, method: 'Lajittelu', cost: 180, typeColor: 'gray' as const },
-  { id: 2, date: '22.6.2025', project: 'Espoo, Suurpelto', type: 'Puu', amount: 890, method: 'Kierrätys', cost: 0, typeColor: 'brown' as const },
-  { id: 3, date: '21.6.2025', project: 'Tampere, Hatanpää', type: 'Metalli', amount: 320, method: 'Kierrätys', cost: 0, typeColor: 'silver' as const },
-  { id: 4, date: '20.6.2025', project: 'Helsinki, Kruununhaka', type: 'Betoni', amount: 1200, method: 'Murskaus', cost: 240, typeColor: 'darkgray' as const },
-  { id: 5, date: '19.6.2025', project: 'Espoo, Suurpelto', type: 'Maalijäte', amount: 45, method: 'Vaarallinen', cost: 320, typeColor: 'orange' as const },
-  { id: 6, date: '18.6.2025', project: 'Vantaa, Tikkurila', type: 'Sekajäte', amount: 380, method: 'Kaatopaikka', cost: 290, typeColor: 'gray' as const },
-  { id: 7, date: '17.6.2025', project: 'Tampere, Hatanpää', type: 'Asbesti', amount: 15, method: 'Vaarallinen', cost: 850, typeColor: 'red' as const },
-  { id: 8, date: '16.6.2025', project: 'Helsinki, Kruununhaka', type: 'Puu', amount: 670, method: 'Kierrätys', cost: 0, typeColor: 'brown' as const },
-];
+function money(value: number) {
+  return new Intl.NumberFormat('fi-FI', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 2,
+  }).format(value);
+}
 
-const chartData = [
-  { type: 'Sekajäte', amount: 830, kierrätys: 450, kaatopaikka: 380 },
-  { type: 'Puu', amount: 1560, kierrätys: 1560, kaatopaikka: 0 },
-  { type: 'Metalli', amount: 320, kierrätys: 320, kaatopaikka: 0 },
-  { type: 'Betoni', amount: 1200, kierrätys: 1200, kaatopaikka: 0 },
-  { type: 'Maalijäte', amount: 45, kierrätys: 0, kaatopaikka: 45 },
-  { type: 'Asbesti', amount: 15, kierrätys: 0, kaatopaikka: 15 },
-  { type: 'Sähkölaitteet', amount: 120, kierrätys: 120, kaatopaikka: 0 },
-];
+function csvCell(value: string | number) {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
 
-const complianceItems = [
-  { label: 'Jäteselvitys ajantasalla', status: true },
-  { label: 'Vaaralliset jätteet kirjattu', status: true },
-  { label: 'Kierrätysaste > 60%', status: true },
-  { label: 'Kuukausiraportti lähetetty', status: false },
-  { label: 'Jätehuoltosuunnitelma hyväksytty', status: true },
-  { label: 'SER-jätteet eroteltu', status: true },
-];
-
-/* ─── Waste Type Badge ─── */
-const getWasteTypeBadge = (type: string, color: string) => {
-  const colorClasses: Record<string, string> = {
-    gray: 'bg-gray-100 text-gray-700',
-    brown: 'bg-amber-100 text-amber-800',
-    silver: 'bg-slate-200 text-slate-700',
-    darkgray: 'bg-stone-200 text-stone-700',
-    orange: 'bg-orange-100 text-orange-700',
-    red: 'bg-red-100 text-red-700',
-  };
-  return <Badge className={cn('border-0', colorClasses[color] || 'bg-gray-100 text-gray-700')}>{type}</Badge>;
-};
-
-const getMethodBadge = (method: string) => {
-  switch (method) {
-    case 'Kierrätys': return <Badge className="bg-success-light text-success border-0">{method}</Badge>;
-    case 'Lajittelu': return <Badge className="bg-info-light text-info border-0">{method}</Badge>;
-    case 'Murskaus': return <Badge className="bg-warning-light text-warning border-0">{method}</Badge>;
-    case 'Kaatopaikka': return <Badge className="bg-bg-light text-text-secondary border border-[#E2E8F0]">{method}</Badge>;
-    case 'Vaarallinen': return <Badge className="bg-danger-light text-danger border-0">{method}</Badge>;
-    default: return <Badge variant="secondary">{method}</Badge>;
-  }
-};
-
-/* ─── Animation ─── */
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.04 } },
-};
-
-const rowVariants = {
-  hidden: { opacity: 0, y: 8 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.15, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] } },
-};
-
-/* ─── Component ─── */
 export default function Jatehuolto() {
-  const recyclingRate = Math.round((wasteStats.recycled / wasteStats.total) * 100);
+  const { user } = useAuth();
+  const { currentOrg } = useOrganization();
+  const { wasteEntries, loading, error, refresh } = useOperationsData();
+  const [search, setSearch] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<WasteEntry | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WasteEntry | null>(null);
+  const [form, setForm] = useState<WasteForm>(emptyForm);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const filteredEntries = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return wasteEntries.filter((entry) =>
+      !query ||
+      entry.project.toLowerCase().includes(query) ||
+      entry.wasteType.toLowerCase().includes(query) ||
+      (entry.notes ?? '').toLowerCase().includes(query),
+    );
+  }, [search, wasteEntries]);
+
+  const totalAmount = wasteEntries.reduce((sum, entry) => sum + entry.amount, 0);
+  const totalCost = wasteEntries.reduce((sum, entry) => sum + entry.cost, 0);
+  const typeCount = new Set(wasteEntries.map((entry) => entry.wasteType).filter(Boolean)).size;
+  const projectCount = new Set(wasteEntries.map((entry) => entry.project).filter(Boolean)).size;
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ ...emptyForm, date: new Date().toISOString().slice(0, 10) });
+    setFormErrors([]);
+    setOperationError(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (entry: WasteEntry) => {
+    setEditing(entry);
+    setForm({
+      date: entry.date,
+      project: entry.project,
+      wasteType: entry.wasteType,
+      amount: String(entry.amount),
+      unit: entry.unit ?? entry.method ?? 'kg',
+      cost: String(entry.cost),
+      notes: entry.notes ?? '',
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setDialogOpen(true);
+  };
+
+  const save = async () => {
+    const amount = Number(form.amount);
+    const cost = Number(form.cost);
+    const nextErrors: string[] = [];
+    if (!form.date) nextErrors.push('Päivämäärä on pakollinen.');
+    if (!form.project.trim()) nextErrors.push('Projekti on pakollinen.');
+    if (!form.wasteType.trim()) nextErrors.push('Jätelaji on pakollinen.');
+    if (!Number.isFinite(amount) || amount <= 0) nextErrors.push('Määrän pitää olla positiivinen numero.');
+    if (!form.unit.trim()) nextErrors.push('Yksikkö on pakollinen.');
+    if (!Number.isFinite(cost) || cost < 0) nextErrors.push('Kustannus ei voi olla negatiivinen.');
+    setFormErrors(nextErrors);
+    if (nextErrors.length > 0 || !currentOrg) return;
+
+    const payload: Omit<WasteEntry, 'id'> = {
+      date: form.date,
+      project: form.project.trim(),
+      wasteType: form.wasteType.trim(),
+      amount,
+      method: form.unit.trim(),
+      unit: form.unit.trim(),
+      cost,
+      notes: form.notes.trim() || undefined,
+    };
+
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editing) await updateWasteEntryRecord(currentOrg.id, editing.id, payload);
+      else await createWasteEntryRecord(currentOrg.id, user?.id, payload);
+      await refresh();
+      setDialogOpen(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Jätekirjauksen tallennus epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeEntry = async () => {
+    if (!deleteTarget || !currentOrg) return;
+    setSaving(true);
+    setOperationError(null);
+    try {
+      await deleteWasteEntryRecord(currentOrg.id, deleteTarget.id);
+      await refresh();
+      setDeleteTarget(null);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.';
+      setOperationError(message);
+      logger.error('Jätekirjauksen poistaminen epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportCsv = () => {
+    const rows = wasteEntries.map((entry) => [
+      entry.date,
+      entry.project,
+      entry.wasteType,
+      entry.amount,
+      entry.unit ?? entry.method,
+      entry.cost,
+      entry.notes ?? '',
+    ]);
+    const csv = [
+      ['Päivä', 'Projekti', 'Jätelaji', 'Määrä', 'Yksikkö', 'Kustannus', 'Huomiot'],
+      ...rows,
+    ].map((row) => row.map(csvCell).join(';')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `jatehuolto-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-      className="space-y-6"
-    >
-      {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-body-sm text-text-secondary mb-1">
-            <span>Dashboard</span>
-            <ChevronRight size={14} />
-            <span>Projektit</span>
-            <ChevronRight size={14} />
-            <span className="text-text-primary font-medium">Jätehuolto</span>
-          </div>
           <h1 className="text-hero text-text-primary">Jätehuolto</h1>
-          <p className="text-body-sm text-text-secondary mt-1">Jätteiden seuranta ja kierrätysraportointi</p>
+          <p className="mt-1 text-body-sm text-text-secondary">Työmaiden jätemäärät, jätelajit ja kustannukset</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2">
-            <Download size={16} /> Vie raportti
-          </Button>
-          <Button className="bg-primary hover:bg-primary-hover text-white gap-2">
-            <Plus size={16} /> Lisää jätekuorma
-          </Button>
+        <div className="flex gap-2">
+          <Button onClick={openCreate} className="gap-2"><Plus size={16} /> Uusi kirjaus</Button>
+          <Button variant="outline" onClick={exportCsv} disabled={wasteEntries.length === 0} className="gap-2"><Download size={16} /> Vie CSV</Button>
         </div>
       </div>
 
-      {/* ── Waste Stats Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {(error || operationError) && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} />{operationError ?? error}</div>}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          {
-            label: 'Kierrätetty',
-            value: `${wasteStats.recycled.toLocaleString('fi-FI')} kg`,
-            trend: wasteStats.recycledTrend,
-            icon: Recycle,
-            color: 'text-success',
-            bg: 'bg-success-light',
-            barColor: '#22C55E',
-          },
-          {
-            label: 'Kaatopaikalle',
-            value: `${wasteStats.landfill.toLocaleString('fi-FI')} kg`,
-            trend: wasteStats.landfillTrend,
-            icon: Factory,
-            color: 'text-text-secondary',
-            bg: 'bg-bg-light',
-            barColor: '#94A3B8',
-          },
-          {
-            label: 'Vaarallinen',
-            value: `${wasteStats.hazardous.toLocaleString('fi-FI')} kg`,
-            trend: wasteStats.hazardousTrend,
-            icon: AlertTriangle,
-            color: 'text-danger',
-            bg: 'bg-danger-light',
-            barColor: '#EF4444',
-          },
-          {
-            label: 'Kokonaisjäte',
-            value: `${wasteStats.total.toLocaleString('fi-FI')} kg`,
-            trend: null,
-            icon: Trash2,
-            color: 'text-primary',
-            bg: 'bg-primary-light',
-            barColor: '#F97316',
-          },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.06, duration: 0.2 }}
-          >
-            <Card className="border border-[#E2E8F0] shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <span className="text-caption text-text-secondary uppercase tracking-wider">{stat.label}</span>
-                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', stat.bg)}>
-                    <stat.icon size={20} className={stat.color} />
-                  </div>
-                </div>
-                <p className="text-[24px] font-bold text-text-primary font-mono leading-none">{stat.value}</p>
-                {stat.trend !== null && (
-                  <div className="flex items-center gap-1 mt-2">
-                    {stat.trend > 0 ? (
-                      <TrendingUp size={14} className={stat.trend > 0 && stat.label === 'Kierrätetty' ? 'text-success' : stat.label === 'Vaarallinen' ? 'text-danger' : 'text-warning'} />
-                    ) : (
-                      <TrendingDown size={14} className="text-success" />
-                    )}
-                    <span className={cn(
-                      'text-body-sm font-medium',
-                      stat.trend > 0 ? (stat.label === 'Kierrätetty' ? 'text-success' : stat.label === 'Vaarallinen' ? 'text-danger' : 'text-warning') : 'text-success'
-                    )}>
-                      {stat.trend > 0 ? '+' : ''}{stat.trend}%
-                    </span>
-                    <span className="text-caption text-text-muted">vs kk sitten</span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
+          { label: 'Kirjauksia', value: wasteEntries.length, icon: Recycle },
+          { label: 'Määrä yhteensä', value: totalAmount.toLocaleString('fi-FI'), icon: Recycle },
+          { label: 'Kustannukset', value: money(totalCost), icon: Euro },
+          { label: 'Projektit / jätelajit', value: `${projectCount} / ${typeCount}`, icon: Recycle },
+        ].map((item) => <Card key={item.label} className="border-slate-200 shadow-card"><CardContent className="p-5"><div className="mb-3 flex justify-between"><span className="text-xs uppercase tracking-wider text-text-secondary">{item.label}</span><item.icon size={18} className="text-primary" /></div><p className="font-mono text-2xl font-bold">{item.value}</p></CardContent></Card>)}
       </div>
 
-      {/* ── Main Content: Table + Charts ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Waste Log Table */}
-        <div className="lg:col-span-2">
-          <Card className="border border-[#E2E8F0] shadow-card overflow-hidden">
-            <CardHeader>
-              <CardTitle className="text-h2 text-text-primary flex items-center gap-2">
-                <Trash2 size={20} className="text-primary" />
-                Jätekirjaus
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <motion.div
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-              >
-                {/* Table Header */}
-                <div className="hidden md:grid md:grid-cols-[100px_1fr_120px_80px_100px_100px_80px] gap-4 px-6 py-3 bg-bg-light border-b border-[#E2E8F0] text-caption text-text-muted uppercase tracking-wider font-semibold">
-                  <span>Päivämäärä</span>
-                  <span>Projekti</span>
-                  <span>Jätteen laji</span>
-                  <span className="text-right">Määrä (kg)</span>
-                  <span>Käsittelytapa</span>
-                  <span className="text-right">Kustannus</span>
-                  <span></span>
-                </div>
+      <div className="relative max-w-md"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae projektilla tai jätelajilla…" className="pl-9" /></div>
 
-                {wasteLogEntries.map(entry => (
-                  <motion.div
-                    key={entry.id}
-                    variants={rowVariants}
-                    className="grid grid-cols-1 md:grid-cols-[100px_1fr_120px_80px_100px_100px_80px] gap-2 md:gap-4 px-6 py-3 border-b border-[#F1F5F9] hover:bg-bg-light transition-colors items-center"
-                  >
-                    <span className="text-body-sm text-text-secondary">{entry.date}</span>
-                    <span className="text-sm text-text-primary truncate">{entry.project}</span>
-                    <div>{getWasteTypeBadge(entry.type, entry.typeColor)}</div>
-                    <span className="text-right text-mono text-body-sm text-text-primary">{entry.amount}</span>
-                    <div>{getMethodBadge(entry.method)}</div>
-                    <span className="text-right text-mono text-body-sm text-text-primary">€{entry.cost.toLocaleString('fi-FI')}</span>
-                    <div className="flex justify-end">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-text-muted">
-                        <ChevronRight size={14} />
-                      </Button>
-                    </div>
-                  </motion.div>
-                ))}
-              </motion.div>
+      <Card className="overflow-hidden border-slate-200 shadow-card">
+        <CardContent className="p-0">
+          <div className="hidden grid-cols-[110px_1.2fr_1fr_100px_110px_1fr_90px] gap-3 border-b bg-slate-50 px-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted lg:grid"><span>Päivä</span><span>Projekti</span><span>Jätelaji</span><span>Määrä</span><span>Kustannus</span><span>Huomiot</span><span className="text-right">Toiminnot</span></div>
+          {filteredEntries.map((entry) => (
+            <div key={entry.id} className="grid grid-cols-1 items-center gap-3 border-b border-slate-100 px-6 py-4 lg:grid-cols-[110px_1.2fr_1fr_100px_110px_1fr_90px]">
+              <span className="text-sm text-text-secondary">{entry.date}</span>
+              <span className="font-medium text-text-primary">{entry.project}</span>
+              <span className="text-sm text-text-secondary">{entry.wasteType}</span>
+              <span className="font-mono text-sm">{entry.amount.toLocaleString('fi-FI')} {entry.unit ?? entry.method}</span>
+              <span className="font-mono text-sm">{money(entry.cost)}</span>
+              <span className="truncate text-sm text-text-secondary">{entry.notes || '—'}</span>
+              <div className="flex justify-end gap-1"><Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(entry)} aria-label={`Muokkaa ${entry.wasteType}`}><Edit3 size={15} /></Button><Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-danger" onClick={() => setDeleteTarget(entry)} aria-label={`Poista ${entry.wasteType}`}><Trash2 size={15} /></Button></div>
+            </div>
+          ))}
+          {!loading && filteredEntries.length === 0 && <div className="p-12 text-center"><Recycle size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei jätekirjauksia</p><p className="mt-1 text-sm text-text-secondary">Luo ensimmäinen kirjaus.</p></div>}
+        </CardContent>
+      </Card>
 
-              {/* Pagination */}
-              <div className="flex items-center justify-between px-6 py-3 border-t border-[#E2E8F0] bg-bg-light">
-                <span className="text-body-sm text-text-secondary">Näytetään {wasteLogEntries.length} merkintää</span>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" disabled>Edellinen</Button>
-                  <Button variant="outline" size="sm" disabled>Seuraava</Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader><DialogTitle>{editing ? 'Muokkaa jätekirjausta' : 'Uusi jätekirjaus'}</DialogTitle></DialogHeader>
+          {formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2"><Label htmlFor="waste-date">Päivämäärä *</Label><Input id="waste-date" type="date" value={form.date} onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="waste-project">Projekti *</Label><Input id="waste-project" value={form.project} onChange={(event) => setForm((previous) => ({ ...previous, project: event.target.value }))} /></div>
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="waste-type">Jätelaji *</Label><Input id="waste-type" value={form.wasteType} onChange={(event) => setForm((previous) => ({ ...previous, wasteType: event.target.value }))} placeholder="Esim. puu, metalli, vaarallinen jäte" /></div>
+            <div className="space-y-2"><Label htmlFor="waste-amount">Määrä *</Label><Input id="waste-amount" type="number" min="0" step="0.01" value={form.amount} onChange={(event) => setForm((previous) => ({ ...previous, amount: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="waste-unit">Yksikkö *</Label><Input id="waste-unit" value={form.unit} onChange={(event) => setForm((previous) => ({ ...previous, unit: event.target.value }))} placeholder="kg, t, m³" /></div>
+            <div className="space-y-2"><Label htmlFor="waste-cost">Kustannus €</Label><Input id="waste-cost" type="number" min="0" step="0.01" value={form.cost} onChange={(event) => setForm((previous) => ({ ...previous, cost: event.target.value }))} /></div>
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="waste-notes">Huomiot</Label><Textarea id="waste-notes" value={form.notes} onChange={(event) => setForm((previous) => ({ ...previous, notes: event.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void save()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {/* Right sidebar: Chart + Compliance */}
-        <div className="space-y-4">
-          {/* Recycling Rate */}
-          <Card className="border border-[#E2E8F0] shadow-card">
-            <CardHeader>
-              <CardTitle className="text-h3 text-text-primary flex items-center gap-2">
-                <Leaf size={18} className="text-success" />
-                Kierrätysaste
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-center mb-4">
-                <div className="relative w-32 h-32">
-                  <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="42" fill="none" stroke="#F1F5F9" strokeWidth="10" />
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="42"
-                      fill="none"
-                      stroke="#22C55E"
-                      strokeWidth="10"
-                      strokeDasharray={`${(recyclingRate / 100) * 264} 264`}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-bold text-text-primary font-mono">{recyclingRate}%</span>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-body-sm">
-                <span className="text-text-secondary">Tavoite: 70%</span>
-                <span className={cn(
-                  'font-medium',
-                  recyclingRate >= 60 ? 'text-success' : 'text-warning'
-                )}>
-                  {recyclingRate >= 60 ? 'Hyvä' : 'Kehitettävää'}
-                </span>
-              </div>
-              <Progress value={recyclingRate} max={70} className="h-2 mt-2" />
-            </CardContent>
-          </Card>
-
-          {/* Waste Type Breakdown Chart */}
-          <Card className="border border-[#E2E8F0] shadow-card">
-            <CardHeader>
-              <CardTitle className="text-h3 text-text-primary">Jätteen määrä tyypeittäin</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                  <XAxis type="number" tick={{ fontSize: 11, fill: '#64748B' }} />
-                  <YAxis dataKey="type" type="category" tick={{ fontSize: 11, fill: '#64748B' }} width={80} />
-                  <ReTooltip
-                    contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                  />
-                  <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="kierrätys" name="Kierrätys" fill="#22C55E" radius={[0, 4, 4, 0]} barSize={12} />
-                  <Bar dataKey="kaatopaikka" name="Kaatopaikka" fill="#94A3B8" radius={[0, 4, 4, 0]} barSize={12} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Compliance Status */}
-          <Card className="border border-[#E2E8F0] shadow-card">
-            <CardHeader>
-              <CardTitle className="text-h3 text-text-primary flex items-center gap-2">
-                <CheckCircle2 size={18} className="text-success" />
-                Vaatimustenmukaisuus
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {complianceItems.map(item => (
-                <div key={item.label} className="flex items-center gap-3">
-                  {item.status ? (
-                    <CheckCircle2 size={18} className="text-success flex-shrink-0" />
-                  ) : (
-                    <XCircle size={18} className="text-danger flex-shrink-0" />
-                  )}
-                  <span className={cn(
-                    'text-body-sm',
-                    item.status ? 'text-text-secondary' : 'text-danger'
-                  )}>{item.label}</span>
-                </div>
-              ))}
-              <div className="pt-2 border-t border-[#E2E8F0]">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-text-primary">Yhteenveto</span>
-                  <Badge className={cn(
-                    'border-0',
-                    complianceItems.filter(i => i.status).length / complianceItems.length >= 0.8
-                      ? 'bg-success-light text-success'
-                      : 'bg-warning-light text-warning'
-                  )}>
-                    {complianceItems.filter(i => i.status).length}/{complianceItems.length} kunnossa
-                  </Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista jätekirjaus</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko {deleteTarget?.wasteType}-kirjaus projektilta {deleteTarget?.project}?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={saving}>Peruuta</Button><Button variant="destructive" onClick={() => void removeEntry()} disabled={saving}>{saving ? 'Poistetaan…' : 'Poista'}</Button></DialogFooter></DialogContent></Dialog>
     </motion.div>
   );
 }

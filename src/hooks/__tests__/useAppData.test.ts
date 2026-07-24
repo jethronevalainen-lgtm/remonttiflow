@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { useAppData, generateId, type Project, type WorkOrder } from '../useAppData';
+import { useAppData, generateId, type Project, type WorkOrder, type Customer, type CrmLead, type TimeEntry, type SafetyItem } from '../useAppData';
 
 // useAppData persists under 'vakantti-v1-*' keys; start each test from a
 // clean slate so hooks always seed from initialData.
@@ -155,6 +155,201 @@ describe('useAppData — work order CRUD', () => {
     });
     expect(result.current.workOrders).toHaveLength(7);
     expect(result.current.workOrders.find((wo) => wo.id === target.id)).toBeUndefined();
+  });
+});
+
+describe('useAppData — customer CRUD', () => {
+  const newCustomerInput = {
+    name: 'Testiasiakas Oy',
+    type: 'Yritys',
+    contactPerson: 'Testi Henkilö',
+    phone: '040-1234567',
+    email: 'testi@example.com',
+    address: 'Testikatu 1, 00100 Helsinki',
+    projectCount: 0,
+    lastContact: '2026-08-01',
+    status: 'Aktiivinen',
+  } as const;
+
+  it('addCustomer prepends a customer with a generated AS id and returns it', () => {
+    const { result } = renderHook(() => useAppData());
+    let created: Customer | undefined;
+    act(() => {
+      created = result.current.addCustomer({ ...newCustomerInput });
+    });
+    expect(created).toBeDefined();
+    expect(created!.id).toMatch(/^AS-/);
+    expect(created!.name).toBe('Testiasiakas Oy');
+    expect(result.current.customers).toHaveLength(5);
+    expect(result.current.customers[0]).toEqual(created);
+  });
+
+  it('updateCustomer merges partial updates into the matching customer only', () => {
+    const { result } = renderHook(() => useAppData());
+    const target = result.current.customers[0];
+    act(() => {
+      result.current.updateCustomer(target.id, { status: 'Epäaktiivinen', projectCount: 9 });
+    });
+    const updated = result.current.customers.find((c) => c.id === target.id)!;
+    expect(updated.status).toBe('Epäaktiivinen');
+    expect(updated.projectCount).toBe(9);
+    expect(updated.name).toBe(target.name);
+    expect(result.current.customers.filter((c) => c.id !== target.id)).toEqual(
+      result.current.customers.slice(1),
+    );
+  });
+
+  it('deleteCustomer removes only the matching customer', () => {
+    const { result } = renderHook(() => useAppData());
+    const target = result.current.customers[0];
+    act(() => {
+      result.current.deleteCustomer(target.id);
+    });
+    expect(result.current.customers).toHaveLength(3);
+    expect(result.current.customers.find((c) => c.id === target.id)).toBeUndefined();
+  });
+
+  it('persists customer changes to localStorage under the vakantti-v1 key', () => {
+    const { result } = renderHook(() => useAppData());
+    act(() => {
+      result.current.addCustomer({ ...newCustomerInput });
+    });
+    const persisted = JSON.parse(
+      window.localStorage.getItem('vakantti-v1-customers')!,
+    ) as Customer[];
+    expect(persisted).toHaveLength(5);
+    expect(persisted[0].name).toBe('Testiasiakas Oy');
+  });
+});
+
+describe('useAppData — CRM lead CRUD', () => {
+  const newLeadInput = {
+    name: 'Testi Liidi',
+    company: 'Liidi Oy',
+    value: 50000,
+    stage: 'Uusi',
+    assignee: 'Myyjä',
+    date: '2026-08-01',
+  } as const;
+
+  it('addCrmLead prepends a lead with a generated LEAD id and returns it', () => {
+    const { result } = renderHook(() => useAppData());
+    let created: CrmLead | undefined;
+    act(() => {
+      created = result.current.addCrmLead({ ...newLeadInput });
+    });
+    expect(created).toBeDefined();
+    expect(created!.id).toMatch(/^LEAD-/);
+    expect(created!.name).toBe('Testi Liidi');
+    expect(result.current.crmLeads).toHaveLength(4);
+    expect(result.current.crmLeads[0]).toEqual(created);
+  });
+
+  it('updateCrmLead merges partial updates into the matching lead only', () => {
+    const { result } = renderHook(() => useAppData());
+    const target = result.current.crmLeads[0];
+    act(() => {
+      result.current.updateCrmLead(target.id, { stage: 'Sopimus', value: 123456 });
+    });
+    const updated = result.current.crmLeads.find((l) => l.id === target.id)!;
+    expect(updated.stage).toBe('Sopimus');
+    expect(updated.value).toBe(123456);
+    expect(updated.company).toBe(target.company);
+    expect(result.current.crmLeads.filter((l) => l.id !== target.id)).toEqual(
+      result.current.crmLeads.slice(1),
+    );
+  });
+
+  it('deleteCrmLead removes only the matching lead', () => {
+    const { result } = renderHook(() => useAppData());
+    const target = result.current.crmLeads[0];
+    act(() => {
+      result.current.deleteCrmLead(target.id);
+    });
+    expect(result.current.crmLeads).toHaveLength(2);
+    expect(result.current.crmLeads.find((l) => l.id === target.id)).toBeUndefined();
+  });
+
+  it('persists lead changes to localStorage under the vakantti-v1 key', () => {
+    const { result } = renderHook(() => useAppData());
+    act(() => {
+      result.current.addCrmLead({ ...newLeadInput });
+    });
+    const persisted = JSON.parse(
+      window.localStorage.getItem('vakantti-v1-crmLeads')!,
+    ) as CrmLead[];
+    expect(persisted).toHaveLength(4);
+    expect(persisted[0].name).toBe('Testi Liidi');
+  });
+});
+
+describe('useAppData — time entry & safety item add helpers', () => {
+  const newTimeEntryInput = {
+    date: '2026-08-01',
+    employee: 'Testaaja',
+    project: 'Testiprojekti',
+    hours: 8,
+    overtime: 0,
+    description: 'Testikirjaus',
+    status: 'Odottaa',
+  } as const;
+
+  const newSafetyItemInput = {
+    type: 'incident',
+    title: 'Testitapaturma',
+    date: '2026-08-01',
+    severity: 'Lievä',
+    status: 'Avoin',
+  } as const;
+
+  it('addTimeEntry prepends an entry with a generated TK id and returns it', () => {
+    const { result } = renderHook(() => useAppData());
+    let created: TimeEntry | undefined;
+    act(() => {
+      created = result.current.addTimeEntry({ ...newTimeEntryInput });
+    });
+    expect(created).toBeDefined();
+    expect(created!.id).toMatch(/^TK-/);
+    expect(created!.description).toBe('Testikirjaus');
+    expect(result.current.timeEntries).toHaveLength(6);
+    expect(result.current.timeEntries[0]).toEqual(created);
+  });
+
+  it('persists time entry changes to localStorage under the vakantti-v1 key', () => {
+    const { result } = renderHook(() => useAppData());
+    act(() => {
+      result.current.addTimeEntry({ ...newTimeEntryInput });
+    });
+    const persisted = JSON.parse(
+      window.localStorage.getItem('vakantti-v1-timeEntries')!,
+    ) as TimeEntry[];
+    expect(persisted).toHaveLength(6);
+    expect(persisted[0].description).toBe('Testikirjaus');
+  });
+
+  it('addSafetyItem prepends an item with a generated TURV id and returns it', () => {
+    const { result } = renderHook(() => useAppData());
+    let created: SafetyItem | undefined;
+    act(() => {
+      created = result.current.addSafetyItem({ ...newSafetyItemInput });
+    });
+    expect(created).toBeDefined();
+    expect(created!.id).toMatch(/^TURV-/);
+    expect(created!.title).toBe('Testitapaturma');
+    expect(result.current.safetyItems).toHaveLength(3);
+    expect(result.current.safetyItems[0]).toEqual(created);
+  });
+
+  it('persists safety item changes to localStorage under the vakantti-v1 key', () => {
+    const { result } = renderHook(() => useAppData());
+    act(() => {
+      result.current.addSafetyItem({ ...newSafetyItemInput });
+    });
+    const persisted = JSON.parse(
+      window.localStorage.getItem('vakantti-v1-safetyItems')!,
+    ) as SafetyItem[];
+    expect(persisted).toHaveLength(3);
+    expect(persisted[0].title).toBe('Testitapaturma');
   });
 });
 
