@@ -42,7 +42,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
     '/dashboard', '/tyonjohto', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
     '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tyovuorokalenteri',
     '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus', '/crm', '/asiakkaat',
-    '/ai', '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet', '/raportit',
+    '/ai', '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet', '/raportit', '/hallinta',
   ],
   supervisor: [
     '/dashboard', '/tyonjohto', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
