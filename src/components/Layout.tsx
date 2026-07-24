@@ -3,15 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Navbar from './Navbar';
 import Header from './Header';
 import { useState } from 'react';
-import { AlertTriangle, Home, Loader2, Wrench, Clock, MessageSquare, User } from 'lucide-react';
+import { AlertTriangle, Home, Loader2, Wrench, Clock, MessageSquare, ClipboardSignature } from 'lucide-react';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 
 const bottomNavItems = [
   { path: '/dashboard', label: 'Etusivu', icon: Home },
   { path: '/tyomaaraykset', label: 'Määräykset', icon: Wrench },
+  { path: '/kuittaukset', label: 'Kuittaukset', icon: ClipboardSignature },
   { path: '/tuntikirjaukset', label: 'Tunnit', icon: Clock },
   { path: '/viestinta', label: 'Viestit', icon: MessageSquare },
-  { path: '/dashboard', label: 'Profiili', icon: User },
 ];
 
 export default function Layout() {
@@ -77,7 +77,7 @@ export default function Layout() {
         <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-200 z-30 flex items-center justify-around px-2">
           {bottomNavItems.map(item => (
             <a key={item.label} href={`#${item.path}`}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors ${location.pathname === item.path ? 'text-orange-500' : 'text-gray-500'}`}>
+              className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors ${location.pathname === item.path ? 'text-orange-500' : 'text-gray-500'}`}>
               <item.icon size={20} />
               <span className="text-[10px] font-medium">{item.label}</span>
             </a>
