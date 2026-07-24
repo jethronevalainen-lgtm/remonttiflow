@@ -26,6 +26,7 @@ export interface OrganizationRow {
 
 export interface ProfileRow {
   id: string;
+  email: string | null;
   full_name: string | null;
   avatar_url: string | null;
   phone: string | null;
