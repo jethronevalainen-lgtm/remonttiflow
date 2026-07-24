@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, HardHat, FolderKanban, ClipboardCheck, ClipboardSignature, CalendarClock,
   Clock, Car, ShieldCheck, Users, MessageSquare, Wrench, UserCircle,
-  FileText, BarChart3, ChevronDown, ChevronLeft, Sparkles, X,
+  FileText, BarChart3, ChevronDown, ChevronLeft, Sparkles, Settings, X,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -55,6 +55,7 @@ const toolItems: NavItem[] = [
   { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto', roles: ['admin', 'supervisor'] },
   { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
   { label: 'Raportit', icon: BarChart3, path: '/raportit', roles: ['admin', 'supervisor'] },
+  { label: 'Organisaation hallinta', icon: Settings, path: '/hallinta', roles: ['admin'] },
 ];
 
 function initialsOf(name: string): string {

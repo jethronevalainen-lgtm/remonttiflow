@@ -28,6 +28,7 @@ const routeLabels: Record<string, string> = {
   '/henkilosto': 'Henkilöstö',
   '/lomakkeet': 'Lomakkeet',
   '/raportit': 'Raportit',
+  '/hallinta': 'Organisaation hallinta',
 };
 
 const notifications = [

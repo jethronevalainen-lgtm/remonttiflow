@@ -20,3 +20,4 @@ export { default as Jatehuolto } from './Jatehuolto';
 export { default as Tyonjohto } from './Tyonjohto';
 export { default as CRM } from './CRM';
 export { default as AIPage } from './AI';
+export { default as Hallinta } from './Hallinta';
