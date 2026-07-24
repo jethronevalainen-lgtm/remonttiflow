@@ -1,0 +1,151 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT || 'remonttiflow' }}
+  VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+  VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
+
+jobs:
+  deploy:
+    name: Build, deploy and verify
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.deployment-url }}
+
+    steps:
+      - name: Checkout approved main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify source quality
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run test
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Add immutable deployment metadata
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const metadata = {
+            commit: process.env.DEPLOY_SHA,
+            repository: process.env.GITHUB_REPOSITORY,
+            deployedAt: new Date().toISOString(),
+          };
+          fs.writeFileSync(
+            'dist/version.json',
+            `${JSON.stringify(metadata, null, 2)}\n`,
+            'utf8',
+          );
+          NODE
+
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Cloudflare deployment requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets."
+            exit 1
+          fi
+
+      - name: Ensure Cloudflare Pages project exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          PROJECTS_JSON="$(npx --yes wrangler@4.102.0 pages project list --json)"
+          export PROJECTS_JSON
+          if node <<'NODE'
+          const parsed = JSON.parse(process.env.PROJECTS_JSON || '[]');
+          const projects = Array.isArray(parsed)
+            ? parsed
+            : parsed.result || parsed.projects || [];
+          const exists = projects.some(
+            (project) => project.name === process.env.CLOUDFLARE_PAGES_PROJECT,
+          );
+          process.exit(exists ? 0 : 1);
+          NODE
+          then
+            echo "Cloudflare Pages project '$CLOUDFLARE_PAGES_PROJECT' already exists."
+          else
+            npx --yes wrangler@4.102.0 pages project create "$CLOUDFLARE_PAGES_PROJECT" --production-branch=main
+          fi
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ env.CLOUDFLARE_PAGES_PROJECT }} --branch=main --commit-hash=${{ env.DEPLOY_SHA }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install production smoke-test browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify deployed application
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.deploy.outputs.deployment-url }}
+          EXPECTED_COMMIT_SHA: ${{ env.DEPLOY_SHA }}
+        run: |
+          if [ -z "$PLAYWRIGHT_BASE_URL" ]; then
+            echo "::error::Cloudflare deployment did not return a deployment URL."
+            exit 1
+          fi
+          npx playwright test e2e/production-smoke.spec.ts --project=chromium
+
+      - name: Upload production smoke report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-smoke-report
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Write deployment summary
+        if: success()
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          {
+            echo "## Production deployment"
+            echo
+            echo "- Commit: \`$DEPLOY_SHA\`"
+            echo "- Cloudflare project: \`$CLOUDFLARE_PAGES_PROJECT\`"
+            echo "- URL: $DEPLOYMENT_URL"
+            echo "- Post-deployment Playwright smoke test: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
