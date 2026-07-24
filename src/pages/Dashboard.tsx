@@ -1,240 +1,294 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
+  AlertTriangle,
+  ArrowRight,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Euro,
   FolderOpen,
   HardHat,
-  Clock,
-  Users,
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-  CheckCircle2,
   Plus,
-  FileText,
+  ShieldCheck,
+  Users,
   Wrench,
-  Calendar,
-  ArrowRight,
-  Bell,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+
 import { useAuth } from '@/contexts/AuthContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 
-/* Mock Data */
-const kpiData = [
-  {
-    label: 'Aktiiviset projektit',
-    value: '12',
-    change: '+2',
-    trend: 'up' as const,
-    icon: FolderOpen,
-    color: 'text-blue-600',
-    bg: 'bg-blue-50',
-  },
-  {
-    label: 'Tämän kuun liikevaihto',
-    value: '45 230 €',
-    change: '+12.5 %',
-    trend: 'up' as const,
-    icon: HardHat,
-    color: 'text-green-600',
-    bg: 'bg-green-50',
-  },
-  {
-    label: 'Avoimet työmääräykset',
-    value: '8',
-    change: '-3',
-    trend: 'down' as const,
-    icon: Wrench,
-    color: 'text-purple-600',
-    bg: 'bg-purple-50',
-  },
-  {
-    label: 'Henkilöstö paikalla',
-    value: '18 / 22',
-    change: '-4',
-    trend: 'down' as const,
-    icon: Users,
-    color: 'text-orange-600',
-    bg: 'bg-orange-50',
-  },
-];
+function currency(value: number) {
+  return new Intl.NumberFormat('fi-FI', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+  }).format(value);
+}
 
-const recentEvents = [
-  { id: '1', type: 'project', title: 'Projekti "Rivitalo A" siirtynyt vaiheeseen "Laatoitus"', date: '15.1.2026 klo 10.30.00', icon: FolderOpen, iconColor: 'text-blue-600', bg: 'bg-blue-50' },
-  { id: '2', type: 'alert', title: 'Työmaalla "Kerrostalo B" havaittu vesivuoto - korjaustoimet käynnistetty', date: '15.1.2026 klo 9.15.00', icon: AlertTriangle, iconColor: 'text-red-600', bg: 'bg-red-50' },
-  { id: '3', type: 'task', title: 'Uusi työmaaräys #1287 luotu - Sähkötyöt', date: '15.1.2026 klo 8.45.00', icon: CheckCircle2, iconColor: 'text-green-600', bg: 'bg-green-50' },
-  { id: '4', type: 'message', title: 'Asiakas "Asunto Oy Keltainen Tähti" lähetti viestin', date: '14.1.2026 klo 16.20.00', icon: FileText, iconColor: 'text-purple-600', bg: 'bg-purple-50' },
-  { id: '5', type: 'project', title: 'Projekti "Toimisto C" - tuntikirjaukset hyväksytty', date: '14.1.2026 klo 14.00.00', icon: FolderOpen, iconColor: 'text-blue-600', bg: 'bg-blue-50' },
-  { id: '6', type: 'alert', title: 'Materiaalitoimitus viivästynyt 2 päivällä - Projekti "Rivitalo D"', date: '14.1.2026 klo 11.30.00', icon: AlertTriangle, iconColor: 'text-orange-600', bg: 'bg-orange-50' },
-];
+function parseDate(value: string): Date | null {
+  if (!value) return null;
+  const finnish = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(value);
+  const parsed = finnish
+    ? new Date(Number(finnish[3]), Number(finnish[2]) - 1, Number(finnish[1]))
+    : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
-const quickActions = [
-  { label: 'Uusi projekti', icon: Plus, path: '/projektit', color: 'bg-blue-600 hover:bg-blue-700' },
-  { label: 'Uusi työmääräys', icon: Wrench, path: '/tyomaaraykset', color: 'bg-purple-600 hover:bg-purple-700' },
-  { label: 'Kirjaa tunnit', icon: Clock, path: '/tuntikirjaukset', color: 'bg-green-600 hover:bg-green-700' },
-  { label: 'Lisää asiakas', icon: Users, path: '/asiakkaat', color: 'bg-orange-600 hover:bg-orange-700' },
-  { label: 'Luo lasku', icon: FileText, path: '/laskenta', color: 'bg-pink-600 hover:bg-pink-700' },
-];
-
-const upcomingDeadlines = [
-  { date: '16', month: 'tammi', title: 'Putkityön tarkastus', project: 'Rivitalo A' },
-  { date: '18', month: 'tammi', title: 'Sähkötyön välitarkastus', project: 'Kerrostalo B' },
-  { date: '20', month: 'tammi', title: 'Laatoituksen aloitus', project: 'Rivitalo A' },
-  { date: '22', month: 'tammi', title: 'Työturvallisuustarkastus', project: 'Toimisto C' },
-  { date: '25', month: 'tammi', title: 'Loppukatselmus', project: 'Kerrostalo B' },
-];
+function dateLabel(value: string) {
+  const date = parseDate(value);
+  return date ? date.toLocaleDateString('fi-FI') : value || 'Ei määräaikaa';
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { profile, user } = useAuth();
-  const displayName =
-    profile?.full_name?.trim().split(' ')[0] ?? user?.email?.split('@')[0] ?? 'käyttäjä';
+  const { currentOrg } = useOrganization();
+  const {
+    projects,
+    workOrders,
+    timeEntries,
+    employees,
+    safetyItems,
+    stats,
+  } = useAppDataContext();
+
+  const pendingHours = timeEntries
+    .filter((entry) => entry.status === 'Odottaa')
+    .reduce((sum, entry) => sum + entry.hours, 0);
+  const highPriorityOrders = workOrders.filter(
+    (order) => order.priority === 'Korkea' && !['Valmis', 'Peruttu'].includes(order.status),
+  );
+  const openSafetyItems = safetyItems.filter((item) =>
+    !['Valmis', 'Suljettu', 'Korjattu'].includes(item.status),
+  );
+  const delayedProjects = projects.filter((project) => project.status === 'Myöhässä');
+  const totalSpent = projects.reduce((sum, project) => sum + project.spent, 0);
+  const budgetUsage = stats.totalRevenue > 0
+    ? Math.min((totalSpent / stats.totalRevenue) * 100, 100)
+    : 0;
+
+  const deadlines = useMemo(() => {
+    const candidates = [
+      ...workOrders
+        .filter((order) => order.dueDate && !['Valmis', 'Peruttu'].includes(order.status))
+        .map((order) => ({
+          id: `work-${order.id}`,
+          date: order.dueDate,
+          title: order.title,
+          context: order.project || 'Työmääräys',
+          path: '/tyomaaraykset',
+        })),
+      ...projects
+        .filter((project) => project.endDate && project.status !== 'Valmis')
+        .map((project) => ({
+          id: `project-${project.id}`,
+          date: project.endDate,
+          title: `${project.name} päättyy`,
+          context: project.customer,
+          path: '/projektit',
+        })),
+    ];
+
+    return candidates
+      .map((candidate) => ({ ...candidate, parsed: parseDate(candidate.date) }))
+      .filter((candidate) => candidate.parsed !== null)
+      .sort((a, b) => (a.parsed as Date).getTime() - (b.parsed as Date).getTime())
+      .slice(0, 6);
+  }, [projects, workOrders]);
+
+  const kpis = [
+    {
+      label: 'Aktiiviset projektit',
+      value: stats.activeProjects,
+      detail: `${stats.totalProjects} projektia yhteensä`,
+      icon: FolderOpen,
+      color: 'text-blue-600',
+      bg: 'bg-blue-50',
+    },
+    {
+      label: 'Projektibudjetit',
+      value: currency(stats.totalRevenue),
+      detail: `${currency(totalSpent)} toteutunut`,
+      icon: Euro,
+      color: 'text-emerald-600',
+      bg: 'bg-emerald-50',
+    },
+    {
+      label: 'Avoimet työmääräykset',
+      value: stats.openWorkOrders + stats.inProgressWorkOrders,
+      detail: `${stats.inProgressWorkOrders} käynnissä`,
+      icon: Wrench,
+      color: 'text-purple-600',
+      bg: 'bg-purple-50',
+    },
+    {
+      label: 'Aktiivinen henkilöstö',
+      value: `${stats.activeEmployees} / ${stats.totalEmployees}`,
+      detail: `${employees.length} henkilöä`,
+      icon: Users,
+      color: 'text-orange-600',
+      bg: 'bg-orange-50',
+    },
+  ];
+
+  const alerts = [
+    {
+      label: 'Myöhässä olevat projektit',
+      value: delayedProjects.length,
+      icon: AlertTriangle,
+      path: '/projektit',
+      tone: delayedProjects.length > 0 ? 'danger' : 'ok',
+    },
+    {
+      label: 'Kiireelliset työmääräykset',
+      value: highPriorityOrders.length,
+      icon: Wrench,
+      path: '/tyomaaraykset',
+      tone: highPriorityOrders.length > 0 ? 'warning' : 'ok',
+    },
+    {
+      label: 'Hyväksyntää odottavat tunnit',
+      value: `${pendingHours.toFixed(1)} h`,
+      icon: Clock,
+      path: '/tuntikirjaukset',
+      tone: pendingHours > 0 ? 'warning' : 'ok',
+    },
+    {
+      label: 'Avoimet turvallisuusasiat',
+      value: openSafetyItems.length,
+      icon: ShieldCheck,
+      path: '/tyoturvallisuus',
+      tone: openSafetyItems.length > 0 ? 'danger' : 'ok',
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Yleisnäkymä</h1>
-          <p className="text-gray-500 mt-1">Tervetuloa takaisin, {displayName}!</p>
+          <p className="mt-1 text-gray-500">
+            {currentOrg?.name ?? 'Organisaatio'} · Tervetuloa, {profile?.full_name || user?.email || 'käyttäjä'}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge className="bg-red-100 text-red-800 flex items-center gap-1">
-            <Bell className="w-3 h-3" />
-            3 uutta ilmoitusta
-          </Badge>
-          <Badge variant="outline" className="flex items-center gap-1">
-            <Calendar className="w-3 h-3" />
-            Tänään: {new Date().toLocaleDateString('fi-FI')}
-          </Badge>
-        </div>
+        <Badge variant="outline" className="w-fit gap-1.5 bg-white">
+          <Calendar className="h-3.5 w-3.5" />
+          {new Date().toLocaleDateString('fi-FI', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </Badge>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiData.map((kpi, i) => (
-          <motion.div
-            key={kpi.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-          >
-            <Card className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', kpi.bg)}>
-                    <kpi.icon className={cn('w-5 h-5', kpi.color)} />
-                  </div>
-                  <div className={cn('flex items-center gap-1 text-xs font-medium', kpi.trend === 'up' ? 'text-green-600' : 'text-red-600')}>
-                    {kpi.trend === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {kpi.change}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {kpis.map((kpi, index) => (
+          <motion.div key={kpi.label} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>
+            <Card className="h-full border-slate-200 transition-shadow hover:shadow-md">
+              <CardContent className="p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', kpi.bg)}>
+                    <kpi.icon className={cn('h-5 w-5', kpi.color)} />
                   </div>
                 </div>
                 <p className="text-2xl font-bold text-gray-900">{kpi.value}</p>
-                <p className="text-sm text-gray-500">{kpi.label}</p>
+                <p className="text-sm font-medium text-gray-700">{kpi.label}</p>
+                <p className="mt-1 text-xs text-gray-500">{kpi.detail}</p>
               </CardContent>
             </Card>
           </motion.div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Events */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Clock className="w-5 h-5 text-primary" />
-                Viimeisimmät tapahtumat
-              </CardTitle>
-              <Button variant="ghost" size="sm" className="text-primary">
-                Näytä kaikki <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {recentEvents.map(event => (
-                  <motion.div
-                    key={event.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-                  >
-                    <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0', event.bg)}>
-                      <event.icon className={cn('w-4 h-4', event.iconColor)} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">{event.title}</p>
-                      <p className="text-xs text-gray-500 mt-1">{event.date}</p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              Huomiot ja työjono
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            {alerts.map((alert) => (
+              <button
+                key={alert.label}
+                type="button"
+                onClick={() => navigate(alert.path)}
+                className="flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-left transition-colors hover:bg-slate-50"
+              >
+                <div className={cn(
+                  'flex h-10 w-10 items-center justify-center rounded-lg',
+                  alert.tone === 'danger' ? 'bg-red-50 text-red-600' : alert.tone === 'warning' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600',
+                )}>
+                  <alert.icon size={19} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-gray-500">{alert.label}</p>
+                  <p className="text-xl font-bold text-gray-900">{alert.value}</p>
+                </div>
+                <ArrowRight size={16} className="text-gray-400" />
+              </button>
+            ))}
+          </CardContent>
+        </Card>
 
-        {/* Right Column */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-primary" />
-                Pikatoimenpiteet
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <HardHat className="h-5 w-5 text-primary" />
+              Pikatoiminnot
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/projektit')}><Plus size={16} /> Uusi projekti</Button>
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/tyomaaraykset')}><Wrench size={16} /> Uusi työmääräys</Button>
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/tuntikirjaukset')}><Clock size={16} /> Kirjaa tunnit</Button>
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/tyoturvallisuus')}><ShieldCheck size={16} /> Turvallisuushavainto</Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Calendar className="h-5 w-5 text-primary" />
+              Tulevat määräajat
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {deadlines.length > 0 ? (
               <div className="space-y-2">
-                {quickActions.map(action => (
-                  <Button
-                    key={action.label}
-                    variant="outline"
-                    className="w-full justify-start gap-2"
-                    onClick={() => navigate(action.path)}
-                  >
-                    <action.icon className="w-4 h-4" />
-                    {action.label}
-                  </Button>
+                {deadlines.map((deadline) => (
+                  <button key={deadline.id} type="button" onClick={() => navigate(deadline.path)} className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-gray-50">
+                    <div className="flex h-11 min-w-20 items-center justify-center rounded-lg bg-primary-light px-2 text-xs font-semibold text-primary">{dateLabel(deadline.date)}</div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-gray-900">{deadline.title}</p><p className="truncate text-xs text-gray-500">{deadline.context}</p></div>
+                    <ArrowRight size={15} className="text-gray-400" />
+                  </button>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+            ) : (
+              <div className="py-8 text-center text-sm text-gray-500"><CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-500" />Ei tulevia määräaikoja.</div>
+            )}
+          </CardContent>
+        </Card>
 
-          {/* Upcoming Deadlines */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-primary" />
-                Tulevat määräajat
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {upcomingDeadlines.map((item, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-lg bg-primary-light flex flex-col items-center justify-center flex-shrink-0">
-                      <span className="text-[10px] text-primary font-medium uppercase">{item.month}</span>
-                      <span className="text-lg font-bold text-primary leading-tight">{item.date}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{item.title}</p>
-                      <p className="text-xs text-gray-500">{item.project}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg"><Euro className="h-5 w-5 text-primary" />Budjetin käyttö</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-end justify-between"><div><p className="text-sm text-gray-500">Toteutunut</p><p className="text-2xl font-bold text-gray-900">{currency(totalSpent)}</p></div><p className="text-sm font-semibold text-gray-600">{budgetUsage.toFixed(1)} %</p></div>
+            <Progress value={budgetUsage} className="h-3" />
+            <div className="flex justify-between text-sm text-gray-500"><span>Kokonaisbudjetti</span><span className="font-medium text-gray-800">{currency(stats.totalRevenue)}</span></div>
+            <Button variant="ghost" className="w-full justify-between" onClick={() => navigate('/laskenta')}>Avaa kustannuslaskenta <ArrowRight size={16} /></Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
-}
-
-// Helper
-function cn(...classes: (string | false | undefined)[]) {
-  return classes.filter(Boolean).join(' ');
 }
