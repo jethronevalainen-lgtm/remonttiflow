@@ -26,12 +26,8 @@ export interface OperationsData {
 }
 
 const EMPTY_OPERATIONS: OperationsData = {
-  diaryEntries: [],
-  wasteEntries: [],
-  drivingLog: [],
-  travelExpenses: [],
-  announcements: [],
-  messages: [],
+  diaryEntries: [], wasteEntries: [], drivingLog: [], travelExpenses: [],
+  announcements: [], messages: [],
 };
 
 function row(value: unknown): Row {
@@ -42,7 +38,7 @@ function row(value: unknown): Row {
 }
 
 function text(item: Row, key: string): string {
-  return typeof item[key] === 'string' ? (item[key] as string) : '';
+  return typeof item[key] === 'string' ? item[key] as string : '';
 }
 
 function numberValue(item: Row, key: string): number {
@@ -56,7 +52,7 @@ function numberValue(item: Row, key: string): number {
 }
 
 function booleanValue(item: Row, key: string): boolean {
-  return typeof item[key] === 'boolean' ? (item[key] as boolean) : false;
+  return typeof item[key] === 'boolean' ? item[key] as boolean : false;
 }
 
 function enumValue<T extends string>(
@@ -67,7 +63,7 @@ function enumValue<T extends string>(
 ): T {
   const value = item[key];
   return typeof value === 'string' && options.includes(value as T)
-    ? (value as T)
+    ? value as T
     : fallback;
 }
 
@@ -169,6 +165,8 @@ async function loadOperations(organizationId: string): Promise<OperationsData> {
         id: text(item, 'id'),
         sender: text(item, 'sender'),
         recipient: text(item, 'recipient'),
+        senderUserId: text(item, 'sender_user_id') || undefined,
+        recipientUserId: text(item, 'recipient_user_id') || undefined,
         subject: text(item, 'subject') || undefined,
         content: text(item, 'content'),
         timestamp: text(item, 'sent_at'),
