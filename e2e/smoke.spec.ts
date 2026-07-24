@@ -124,6 +124,20 @@ test.describe('smoke: critical paths', () => {
     ).toBeVisible();
   });
 
+  test('authenticated sidebar navigation opens the worksite receipts page', async ({
+    page,
+  }) => {
+    await loginAsDemo(page);
+
+    await clickSidebarItem(page, 'Kuittaukset');
+
+    await expect(page).toHaveURL(/#\/kuittaukset/);
+    await expect(
+      page.getByRole('heading', { name: 'Työmaakuittaukset', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Uusi kuittaus' })).toBeVisible();
+  });
+
   test('unknown route while authenticated renders the 404 NotFound page', async ({
     page,
   }) => {
