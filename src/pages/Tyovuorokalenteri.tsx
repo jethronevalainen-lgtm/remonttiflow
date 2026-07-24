@@ -1,11 +1,20 @@
 import { useMemo, useState } from 'react';
+import { addDays, addWeeks, format, startOfWeek } from 'date-fns';
+import { fi } from 'date-fns/locale';
 import { motion } from 'framer-motion';
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Plus, Trash2, Users } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Pencil,
+  Plus,
+  Trash2,
+  UsersRound,
+} from 'lucide-react';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { useAppDataContext } from '@/contexts/AppDataContext';
-import { useOrganization } from '@/contexts/OrganizationContext';
-import { useSchedulingData, type Shift } from '@/hooks/useSchedulingData';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,14 +23,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import logger from '@/lib/logger';
-import { createShift, deleteShift, updateShift } from '@/lib/supabase/schedulingEntities';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
+import { useSchedulingData, type Shift } from '@/hooks/useSchedulingData';
+import {
+  createShift,
+  deleteShift,
+  updateShift,
+} from '@/lib/supabase/schedulingEntities';
 
 interface ShiftForm {
-  employeeId: string;
+  userId: string;
   employeeName: string;
   projectId: string;
-  project: string;
   date: string;
   startTime: string;
   endTime: string;
@@ -29,103 +45,80 @@ interface ShiftForm {
   notes: string;
 }
 
-const emptyForm: ShiftForm = {
-  employeeId: '',
+const EMPTY_FORM: ShiftForm = {
+  userId: '',
   employeeName: '',
   projectId: '',
-  project: '',
-  date: new Date().toISOString().slice(0, 10),
+  date: '',
   startTime: '07:00',
-  endTime: '15:00',
+  endTime: '15:30',
   shiftType: 'Työvuoro',
   notes: '',
 };
 
-function startOfWeek(value: Date) {
-  const date = new Date(value);
-  const day = date.getDay() || 7;
-  date.setDate(date.getDate() - day + 1);
-  date.setHours(0, 0, 0, 0);
-  return date;
+function isoDate(date: Date) {
+  return format(date, 'yyyy-MM-dd');
 }
 
-function addDays(value: Date, days: number) {
-  const date = new Date(value);
-  date.setDate(date.getDate() + days);
-  return date;
-}
-
-function isoDate(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function calculateHours(start: string, end: string) {
+function hoursBetween(start: string, end: string) {
   const [startHour, startMinute] = start.split(':').map(Number);
   const [endHour, endMinute] = end.split(':').map(Number);
   if (![startHour, startMinute, endHour, endMinute].every(Number.isFinite)) return 0;
-  return Math.max(0, endHour + endMinute / 60 - startHour - startMinute / 60);
+  return Math.max(0, (endHour * 60 + endMinute - startHour * 60 - startMinute) / 60);
 }
 
-function shiftTone(type: string) {
-  const value = type.toLowerCase();
-  if (value.includes('loma')) return 'border-purple-200 bg-purple-50 text-purple-800';
-  if (value.includes('sair')) return 'border-red-200 bg-red-50 text-red-800';
-  if (value.includes('koul')) return 'border-blue-200 bg-blue-50 text-blue-800';
-  return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+function tone(type: string) {
+  const normalized = type.toLocaleLowerCase('fi');
+  if (normalized.includes('loma')) return 'border-purple-200 bg-purple-50 text-purple-800';
+  if (normalized.includes('koulutus')) return 'border-blue-200 bg-blue-50 text-blue-800';
+  if (normalized.includes('sairas')) return 'border-red-200 bg-red-50 text-red-800';
+  return 'border-orange-200 bg-orange-50 text-orange-800';
+}
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || '?';
 }
 
 export default function Tyovuorokalenteri() {
   const { user } = useAuth();
   const { currentOrg } = useOrganization();
-  const { employees, projects } = useAppDataContext();
+  const { projects } = useAppDataContext();
+  const { people } = useRoleWorkspace();
   const { shifts, loading, error, refresh } = useSchedulingData();
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [weekOffset, setWeekOffset] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Shift | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Shift | null>(null);
-  const [form, setForm] = useState<ShiftForm>(emptyForm);
+  const [form, setForm] = useState<ShiftForm>(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const days = useMemo(
-    () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
-    [weekStart],
-  );
-  const weekShifts = useMemo(() => {
-    const weekDates = new Set(days.map(isoDate));
-    return shifts.filter((shift) => weekDates.has(shift.date));
-  }, [days, shifts]);
-  const employeeNames = useMemo(() => {
-    const names = new Set([
-      ...employees
-        .filter((employee) => employee.status !== 'Eroonnut')
-        .map((employee) => employee.name),
-      ...weekShifts.map((shift) => shift.employeeName).filter(Boolean),
-    ]);
-    return [...names].sort((a, b) => a.localeCompare(b, 'fi'));
-  }, [employees, weekShifts]);
-
+  const weekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
+  const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   const weekEnd = days[6];
-  const totalHours = weekShifts.reduce(
-    (sum, shift) => sum + calculateHours(shift.startTime, shift.endTime),
-    0,
-  );
-  const uncoveredDays = days.filter(
-    (day) => !weekShifts.some((shift) => shift.date === isoDate(day)),
-  ).length;
+  const weekShifts = shifts.filter((shift) => shift.date >= isoDate(weekStart) && shift.date <= isoDate(weekEnd));
+  const peopleById = useMemo(() => new Map(people.map((person) => [person.userId, person])), [people]);
+  const rowPeople = useMemo(() => {
+    const map = new Map<string, { userId?: string; name: string }>();
+    people.forEach((person) => map.set(person.userId, { userId: person.userId, name: person.name }));
+    shifts.filter((shift) => !shift.userId).forEach((shift) => {
+      const key = `legacy:${shift.employeeName}`;
+      if (shift.employeeName && !map.has(key)) map.set(key, { name: shift.employeeName });
+    });
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'fi'));
+  }, [people, shifts]);
+  const totalHours = weekShifts.reduce((sum, shift) => sum + hoursBetween(shift.startTime, shift.endTime), 0);
+  const scheduledUsers = new Set(weekShifts.map((shift) => shift.userId || shift.employeeName)).size;
 
-  const openCreate = (date?: string, employeeName?: string) => {
-    const employee = employees.find((item) => item.name === employeeName);
+  const openCreate = (date = isoDate(weekStart), userId = '') => {
+    const person = peopleById.get(userId);
     setEditing(null);
     setForm({
-      ...emptyForm,
-      date: date ?? isoDate(weekStart),
-      employeeId: employee?.id ?? '',
-      employeeName: employeeName ?? '',
+      ...EMPTY_FORM,
+      date,
+      userId,
+      employeeName: person?.name ?? '',
     });
     setFormErrors([]);
     setOperationError(null);
@@ -135,10 +128,9 @@ export default function Tyovuorokalenteri() {
   const openEdit = (shift: Shift) => {
     setEditing(shift);
     setForm({
-      employeeId: shift.employeeId ?? '',
+      userId: shift.userId ?? '',
       employeeName: shift.employeeName,
       projectId: shift.projectId ?? '',
-      project: shift.project,
       date: shift.date,
       startTime: shift.startTime,
       endTime: shift.endTime,
@@ -152,21 +144,21 @@ export default function Tyovuorokalenteri() {
 
   const save = async () => {
     const nextErrors: string[] = [];
-    if (!form.employeeName.trim()) nextErrors.push('Työntekijä on pakollinen.');
-    if (!form.date) nextErrors.push('Päivämäärä on pakollinen.');
-    if (!form.startTime || !form.endTime) nextErrors.push('Alku- ja loppuaika ovat pakollisia.');
-    if (form.startTime && form.endTime && form.endTime <= form.startTime) {
-      nextErrors.push('Loppuajan pitää olla alkuajan jälkeen.');
-    }
+    if (!form.userId) nextErrors.push('Valitse kirjautuva käyttäjä.');
+    if (!form.date) nextErrors.push('Päivä on pakollinen.');
+    if (!form.startTime || !form.endTime) nextErrors.push('Alku- ja päättymisaika ovat pakollisia.');
+    if (form.startTime && form.endTime && form.endTime <= form.startTime) nextErrors.push('Päättymisajan pitää olla alkamisajan jälkeen.');
     if (!form.shiftType.trim()) nextErrors.push('Vuorotyyppi on pakollinen.');
     setFormErrors(nextErrors);
     if (nextErrors.length > 0 || !currentOrg) return;
 
+    const person = peopleById.get(form.userId);
+    const project = projects.find((item) => item.id === form.projectId);
     const payload: Omit<Shift, 'id'> = {
-      employeeId: form.employeeId || undefined,
-      employeeName: form.employeeName.trim(),
+      userId: form.userId,
+      employeeName: person?.name ?? form.employeeName,
       projectId: form.projectId || undefined,
-      project: form.project.trim(),
+      project: project?.name ?? '',
       date: form.date,
       startTime: form.startTime,
       endTime: form.endTime,
@@ -182,15 +174,13 @@ export default function Tyovuorokalenteri() {
       await refresh();
       setDialogOpen(false);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
-      setOperationError(message);
-      logger.error('Työvuoron tallennus epäonnistui', { error: caught });
+      setOperationError(caught instanceof Error ? caught.message : 'Työvuoron tallennus epäonnistui.');
     } finally {
       setSaving(false);
     }
   };
 
-  const removeSelectedShift = async () => {
+  const remove = async () => {
     if (!deleteTarget || !currentOrg) return;
     setSaving(true);
     try {
@@ -198,223 +188,39 @@ export default function Tyovuorokalenteri() {
       await refresh();
       setDeleteTarget(null);
     } catch (caught) {
-      setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+      setOperationError(caught instanceof Error ? caught.message : 'Työvuoron poistaminen epäonnistui.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-hero text-text-primary">Työvuorokalenteri</h1>
-          <p className="mt-1 text-body-sm text-text-secondary">
-            Henkilöstön viikkosuunnittelu ja projektikohdistus
-          </p>
-        </div>
-        <Button onClick={() => openCreate()} className="gap-2">
-          <Plus size={16} /> Lisää vuoro
-        </Button>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto max-w-[1600px] space-y-6">
+      <div className="flex flex-col gap-5 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-800 p-6 text-white shadow-lg sm:flex-row sm:items-center sm:justify-between sm:p-8">
+        <div><div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300"><CalendarDays size={16} /> Resursointi</div><h1 className="text-3xl font-bold tracking-tight">Työvuorokalenteri</h1><p className="mt-2 text-sm text-slate-300">Vuoro sidotaan kirjautuvaan käyttäjään, jolloin se näkyy automaattisesti hänen omassa työtilassaan.</p></div>
+        <Button onClick={() => openCreate()} className="gap-2 bg-orange-500 hover:bg-orange-600"><Plus size={16} /> Lisää työvuoro</Button>
       </div>
 
-      {(error || operationError) && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          <AlertTriangle size={16} /> {operationError ?? error}
-        </div>
-      )}
+      {(error || operationError) && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} />{operationError ?? error}</div>}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card><CardContent className="p-5"><div className="mb-2 flex justify-between text-sm text-text-secondary"><span>Vuoroja viikolla</span><Clock size={18} className="text-primary" /></div><p className="font-mono text-3xl font-bold">{weekShifts.length}</p></CardContent></Card>
-        <Card><CardContent className="p-5"><div className="mb-2 flex justify-between text-sm text-text-secondary"><span>Suunnitellut tunnit</span><Clock size={18} className="text-primary" /></div><p className="font-mono text-3xl font-bold">{totalHours.toFixed(1)} h</p></CardContent></Card>
-        <Card><CardContent className="p-5"><div className="mb-2 flex justify-between text-sm text-text-secondary"><span>Päiviä ilman vuoroja</span><AlertTriangle size={18} className={uncoveredDays > 0 ? 'text-amber-600' : 'text-emerald-600'} /></div><p className="font-mono text-3xl font-bold">{uncoveredDays}</p></CardContent></Card>
-      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
+        { label: 'Vuoroja viikolla', value: weekShifts.length, icon: CalendarDays },
+        { label: 'Tunteja yhteensä', value: `${totalHours.toFixed(1)} h`, icon: Clock3 },
+        { label: 'Käyttäjiä vuorossa', value: scheduledUsers, icon: UsersRound },
+        { label: 'Kirjautuvia käyttäjiä', value: people.length, icon: UsersRound },
+      ].map((item) => <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-xs uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 font-mono text-2xl font-bold">{item.value}</p></div><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-700"><item.icon size={19} /></div></div></CardContent></Card>)}</div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setWeekStart((previous) => addDays(previous, -7))}><ChevronLeft size={16} /></Button>
-          <Button variant="outline" size="sm" onClick={() => setWeekStart(startOfWeek(new Date()))}>Tämä viikko</Button>
-          <Button variant="outline" size="sm" onClick={() => setWeekStart((previous) => addDays(previous, 7))}><ChevronRight size={16} /></Button>
-        </div>
-        <p className="font-semibold text-text-primary">
-          {weekStart.toLocaleDateString('fi-FI')} – {weekEnd.toLocaleDateString('fi-FI')}
-        </p>
-      </div>
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => setWeekOffset((value) => value - 1)}><ChevronLeft size={16} /></Button><Button variant="outline" size="sm" onClick={() => setWeekOffset(0)}>Tämä viikko</Button><Button variant="outline" size="sm" onClick={() => setWeekOffset((value) => value + 1)}><ChevronRight size={16} /></Button></div><p className="font-semibold text-slate-800">{format(weekStart, 'd.M.yyyy', { locale: fi })} – {format(weekEnd, 'd.M.yyyy', { locale: fi })}</p></div>
 
-      <Card className="overflow-x-auto border-slate-200 shadow-card">
-        <CardContent className="min-w-[1100px] p-0">
-          <div className="grid grid-cols-[180px_repeat(7,minmax(125px,1fr))] border-b bg-slate-50">
-            <div className="border-r p-3 text-xs font-semibold uppercase tracking-wider text-text-muted">Henkilö</div>
-            {days.map((day) => (
-              <div key={day.toISOString()} className="border-r p-3 text-center">
-                <p className="text-xs font-semibold uppercase text-text-muted">
-                  {day.toLocaleDateString('fi-FI', { weekday: 'short' })}
-                </p>
-                <p className="font-semibold text-text-primary">
-                  {day.toLocaleDateString('fi-FI', { day: 'numeric', month: 'numeric' })}
-                </p>
-              </div>
-            ))}
-          </div>
-          {employeeNames.map((employeeName) => (
-            <div key={employeeName} className="grid grid-cols-[180px_repeat(7,minmax(125px,1fr))] border-b">
-              <div className="flex items-center gap-2 border-r p-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-light text-xs font-bold text-primary">
-                  {employeeName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}
-                </div>
-                <span className="truncate text-sm font-medium">{employeeName}</span>
-              </div>
-              {days.map((day) => {
-                const date = isoDate(day);
-                const dayShifts = weekShifts.filter(
-                  (shift) => shift.employeeName === employeeName && shift.date === date,
-                );
-                return (
-                  <div key={date} className="min-h-28 space-y-2 border-r p-2">
-                    {dayShifts.map((shift) => (
-                      <button
-                        key={shift.id}
-                        type="button"
-                        onClick={() => openEdit(shift)}
-                        className={`w-full rounded-lg border p-2 text-left text-xs ${shiftTone(shift.shiftType)}`}
-                      >
-                        <div className="flex items-start justify-between gap-1">
-                          <span className="font-semibold">{shift.startTime}–{shift.endTime}</span>
-                          <Badge variant="outline" className="h-5 px-1 text-[10px]">{shift.shiftType}</Badge>
-                        </div>
-                        <p className="mt-1 truncate">{shift.project || 'Ei projektia'}</p>
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => openCreate(date, employeeName)}
-                      className="flex w-full items-center justify-center rounded-md border border-dashed border-slate-200 py-1 text-slate-400 hover:border-primary hover:text-primary"
-                    >
-                      <Plus size={13} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-          {!loading && employeeNames.length === 0 && (
-            <div className="p-12 text-center">
-              <Users size={44} className="mx-auto mb-3 text-text-muted" />
-              <p className="font-semibold">Ei henkilöstöä tai työvuoroja</p>
-              <p className="mt-1 text-sm text-text-secondary">
-                Lisää henkilöstörekisteriin työntekijöitä ja luo ensimmäinen vuoro.
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <Card className="overflow-x-auto border-slate-200 shadow-sm"><CardContent className="min-w-[1120px] p-0"><div className="grid grid-cols-[190px_repeat(7,minmax(130px,1fr))] border-b bg-slate-50"><div className="border-r p-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Käyttäjä</div>{days.map((day) => <div key={day.toISOString()} className="border-r p-3 text-center"><p className="text-xs font-semibold uppercase text-slate-500">{format(day, 'EEE', { locale: fi })}</p><p className="font-semibold text-slate-900">{format(day, 'd.M.')}</p></div>)}</div>{rowPeople.map((person) => <div key={person.userId ?? `legacy:${person.name}`} className="grid grid-cols-[190px_repeat(7,minmax(130px,1fr))] border-b"><div className="flex items-center gap-2 border-r p-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{person.name}</p>{!person.userId && <p className="text-[10px] text-amber-600">Vanha nimipohjainen rivi</p>}</div></div>{days.map((day) => {
+        const date = isoDate(day);
+        const dayShifts = weekShifts.filter((shift) => shift.date === date && (person.userId ? shift.userId === person.userId : !shift.userId && shift.employeeName === person.name));
+        return <div key={date} className="min-h-28 space-y-2 border-r p-2">{dayShifts.map((shift) => <button key={shift.id} type="button" onClick={() => openEdit(shift)} className={`w-full rounded-lg border p-2 text-left text-xs ${tone(shift.shiftType)}`}><div className="flex items-start justify-between gap-1"><span className="font-semibold">{shift.startTime}–{shift.endTime}</span><Pencil size={12} /></div><p className="mt-1 truncate">{shift.project || shift.shiftType}</p></button>)}{person.userId && <button type="button" onClick={() => openCreate(date, person.userId)} className="flex w-full items-center justify-center rounded-md border border-dashed border-slate-200 py-1 text-slate-400 hover:border-orange-400 hover:text-orange-600"><Plus size={13} /></button>}</div>;
+      })}</div>)}{!loading && rowPeople.length === 0 && <div className="p-12 text-center"><UsersRound size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei kirjautuvia käyttäjiä</p><p className="mt-1 text-sm text-slate-500">Kutsu käyttäjät organisaatioon ennen vuorojen kohdistamista.</p></div>}</CardContent></Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader><DialogTitle>{editing ? 'Muokkaa työvuoroa' : 'Lisää työvuoro'}</DialogTitle></DialogHeader>
-          {formErrors.length > 0 && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {formErrors.map((item) => <p key={item}>{item}</p>)}
-            </div>
-          )}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Työntekijä *</Label>
-              {employees.length > 0 ? (
-                <Select
-                  value={form.employeeId}
-                  onValueChange={(employeeId) => {
-                    const employee = employees.find((item) => item.id === employeeId);
-                    setForm((previous) => ({
-                      ...previous,
-                      employeeId,
-                      employeeName: employee?.name ?? previous.employeeName,
-                    }));
-                  }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Valitse työntekijä" /></SelectTrigger>
-                  <SelectContent>
-                    {employees.filter((employee) => employee.status !== 'Eroonnut').map((employee) => (
-                      <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  value={form.employeeName}
-                  onChange={(event) => setForm((previous) => ({ ...previous, employeeName: event.target.value }))}
-                />
-              )}
-            </div>
-            <div className="space-y-2"><Label htmlFor="shift-date">Päivä *</Label><Input id="shift-date" type="date" value={form.date} onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="shift-type">Vuorotyyppi *</Label><Input id="shift-type" value={form.shiftType} onChange={(event) => setForm((previous) => ({ ...previous, shiftType: event.target.value }))} placeholder="Työvuoro, loma, koulutus…" /></div>
-            <div className="space-y-2"><Label htmlFor="shift-start">Alkaa *</Label><Input id="shift-start" type="time" value={form.startTime} onChange={(event) => setForm((previous) => ({ ...previous, startTime: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="shift-end">Päättyy *</Label><Input id="shift-end" type="time" value={form.endTime} onChange={(event) => setForm((previous) => ({ ...previous, endTime: event.target.value }))} /></div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Projekti</Label>
-              {projects.length > 0 ? (
-                <Select
-                  value={form.projectId}
-                  onValueChange={(projectId) => {
-                    const project = projects.find((item) => item.id === projectId);
-                    setForm((previous) => ({
-                      ...previous,
-                      projectId,
-                      project: project?.name ?? previous.project,
-                    }));
-                  }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger>
-                  <SelectContent>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  value={form.project}
-                  onChange={(event) => setForm((previous) => ({ ...previous, project: event.target.value }))}
-                />
-              )}
-            </div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="shift-notes">Huomiot</Label><Textarea id="shift-notes" value={form.notes} onChange={(event) => setForm((previous) => ({ ...previous, notes: event.target.value }))} /></div>
-          </div>
-          <DialogFooter className="sm:justify-between">
-            <div>
-              {editing && (
-                <Button
-                  variant="ghost"
-                  className="text-danger"
-                  onClick={() => {
-                    setDialogOpen(false);
-                    setDeleteTarget(editing);
-                  }}
-                >
-                  <Trash2 size={14} className="mr-1" /> Poista
-                </Button>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button>
-              <Button onClick={() => void save()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{editing ? 'Muokkaa työvuoroa' : 'Lisää työvuoro'}</DialogTitle></DialogHeader>{formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label>Kirjautuva käyttäjä *</Label><Select value={form.userId} onValueChange={(userId) => setForm((previous) => ({ ...previous, userId, employeeName: peopleById.get(userId)?.name ?? '' }))}><SelectTrigger><SelectValue placeholder="Valitse käyttäjä" /></SelectTrigger><SelectContent>{people.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name} · {person.role === 'worker' ? 'Työntekijä' : person.role === 'supervisor' ? 'Työnjohto' : 'Admin'}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="shift-date">Päivä *</Label><Input id="shift-date" type="date" value={form.date} onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="shift-type">Vuorotyyppi *</Label><Input id="shift-type" value={form.shiftType} onChange={(event) => setForm((previous) => ({ ...previous, shiftType: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="shift-start">Alkaa *</Label><Input id="shift-start" type="time" value={form.startTime} onChange={(event) => setForm((previous) => ({ ...previous, startTime: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="shift-end">Päättyy *</Label><Input id="shift-end" type="time" value={form.endTime} onChange={(event) => setForm((previous) => ({ ...previous, endTime: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Projekti</Label><Select value={form.projectId || 'none'} onValueChange={(projectId) => setForm((previous) => ({ ...previous, projectId: projectId === 'none' ? '' : projectId }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Ei projektia</SelectItem>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="shift-notes">Huomio</Label><Textarea id="shift-notes" value={form.notes} onChange={(event) => setForm((previous) => ({ ...previous, notes: event.target.value }))} rows={3} /></div></div><DialogFooter>{editing && <Button variant="ghost" className="mr-auto text-red-600" onClick={() => { setDialogOpen(false); setDeleteTarget(editing); }}><Trash2 size={15} className="mr-1" /> Poista</Button>}<Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void save()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna vuoro'}</Button></DialogFooter></DialogContent></Dialog>
 
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Poista työvuoro</DialogTitle></DialogHeader>
-          <p className="text-sm text-text-secondary">
-            Poistetaanko {deleteTarget?.employeeName} työvuoro päivältä {deleteTarget?.date}?
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Peruuta</Button>
-            <Button variant="destructive" onClick={() => void removeSelectedShift()} disabled={saving}>Poista</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Poista työvuoro</AlertDialogTitle><AlertDialogDescription>Poistetaanko {deleteTarget?.employeeName} työvuoro päivältä {deleteTarget?.date}?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction onClick={() => void remove()} className="bg-red-600 hover:bg-red-700">Poista</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </motion.div>
   );
 }
