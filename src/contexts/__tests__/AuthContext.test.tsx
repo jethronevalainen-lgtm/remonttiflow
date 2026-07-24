@@ -55,7 +55,10 @@ const fakeProfile: ProfileRow = {
   id: 'user-1',
   full_name: 'Matti Meikäläinen',
   email: 'matti@example.com',
+  avatar_url: null,
+  phone: null,
   created_at: '2025-01-01T00:00:00Z',
+  updated_at: '2025-01-01T00:00:00Z',
 };
 
 /** Latest auth-state-change callback registered by the provider. */
