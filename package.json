@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.app.json && vite build",
+    "build": "tsc -p tsconfig.app.json && vite build && node scripts/write-version.mjs",
+    "ship:check": "npm run typecheck && npm run lint && npm run test && npm run build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -52,7 +53,7 @@
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.1.0",
     "framer-motion": "^11.3.0",
-    "input-otp": "^1.2.0",
+    "input-otp": "^1.0.0",
     "lucide-react": "^0.400.0",
     "next-themes": "^0.3.0",
     "react": "^18.3.1",
