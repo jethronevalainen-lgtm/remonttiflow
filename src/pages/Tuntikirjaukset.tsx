@@ -1,1146 +1,292 @@
-import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Plus,
-  ChevronLeft,
-  ChevronRight,
-  Play,
-  Square,
-  Clock,
-  CheckCircle2,
-  XCircle,
   AlertCircle,
+  CheckCircle2,
+  Clock,
   Edit3,
+  Play,
+  Plus,
+  Square,
   Trash2,
-  Send,
-  ThumbsUp,
-  ThumbsDown,
-  BarChart3,
-  User,
-  Users,
-  ClipboardCheck,
-  CheckCheck,
-  Timer,
-  CalendarDays,
-  Briefcase,
+  XCircle,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Progress } from '@/components/ui/progress';
-import { cn } from '@/lib/utils';
+
+import { useAuth } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
-import type { TimeEntry, TimeEntryStatus } from '@/types';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import logger from '@/lib/logger';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  LineChart,
-  Line,
-} from 'recharts';
+  createTimeEntryRecord,
+  deleteTimeEntryRecord,
+  updateTimeEntryRecord,
+} from '@/lib/supabase/workforceEntities';
+import type { TimeEntry, TimeEntryStatus } from '@/types';
 
-/* ─── Types ─── */
-interface ApprovalRequest {
-  id: string;
-  personName: string;
-  personInitials: string;
-  weekRange: string;
-  totalHours: number;
-  submittedDate: string;
-  entries: TimeEntry[];
-}
+const TIMER_START_KEY = 'vakantti-time-timer-start';
+const TIMER_PROJECT_KEY = 'vakantti-time-timer-project';
+const TIMER_DESCRIPTION_KEY = 'vakantti-time-timer-description';
 
-interface EntryFormState {
+interface EntryForm {
   date: string;
-  startTime: string;
-  endTime: string;
+  employee: string;
   project: string;
-  workType: string;
   hours: string;
+  overtime: string;
   description: string;
-  submitForApproval: boolean;
+  status: TimeEntryStatus;
 }
 
-/* ─── Form constants & helpers ─── */
-const PROJECT_OPTIONS = [
-  { value: 'Espoon uudisrakennus', color: '#F97316' },
-  { value: 'Helsingin toimistorakennus', color: '#22C55E' },
-  { value: 'Tampereen korjaustyö', color: '#3B82F6' },
-];
-
-const WORK_TYPE_OPTIONS = ['Rakennus', 'Sähkö', 'LVI', 'Maalaus', 'Eristys', 'Ylityö', 'Matka', 'Palaveri', 'Muu'];
-
-const FINNISH_DAY_NAMES = ['Su', 'Ma', 'Ti', 'Ke', 'To', 'Pe', 'La'];
-
-const emptyEntryForm: EntryFormState = {
-  date: '2025-06-25',
-  startTime: '07:00',
-  endTime: '15:00',
+const emptyForm: EntryForm = {
+  date: new Date().toISOString().slice(0, 10),
+  employee: '',
   project: '',
-  workType: '',
-  hours: '8',
+  hours: '',
+  overtime: '0',
   description: '',
-  submitForApproval: true,
+  status: 'Odottaa',
 };
 
-function isoToFinnishDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${d}.${m}.${y}`;
+function toDisplayDate(value: string) {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return iso ? `${Number(iso[3])}.${Number(iso[2])}.${iso[1]}` : value;
 }
 
-function isoToDayName(iso: string): string {
-  return FINNISH_DAY_NAMES[new Date(`${iso}T00:00:00`).getDay()];
+function formatTimer(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
 }
 
-function hoursBetweenTimes(start: string, end: string): number {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  return (eh + em / 60) - (sh + sm / 60);
+function statusBadge(status: TimeEntryStatus) {
+  const config: Record<TimeEntryStatus, { className: string; icon: typeof Clock }> = {
+    Hyväksytty: { className: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 },
+    Odottaa: { className: 'bg-amber-50 text-amber-700', icon: AlertCircle },
+    Hylätty: { className: 'bg-red-50 text-red-700', icon: XCircle },
+  };
+  const item = config[status];
+  return <Badge className={`gap-1 border-0 ${item.className}`}><item.icon size={12} />{status}</Badge>;
 }
 
-/* ─── Mock Data ─── */
-const MY_TIME_ENTRIES: TimeEntry[] = [
-  { id: 't1', employee: 'Matti Korhonen', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'Seinärakenteiden purkua', status: 'Hyväksytty' },
-  { id: 't2', employee: 'Matti Korhonen', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '16:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 9.0, overtime: 1.0, description: 'Uusien runkopuiden asennus', status: 'Hyväksytty' },
-  { id: 't3', employee: 'Matti Korhonen', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähkökaapelointi kerros 2', status: 'Odottaa' },
-  { id: 't4', employee: 'Matti Korhonen', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'LVI-valmistelu', status: 'Odottaa' },
-  { id: 't5', employee: 'Matti Korhonen', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 7.5, overtime: 0, description: 'Lopputarkistus ja siivous', status: 'Odottaa' },
-  { id: 't6', employee: 'Matti Korhonen', date: '30.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Sisämaalaus toimisto A', status: 'Odottaa' },
-  { id: 't7', employee: 'Matti Korhonen', date: '1.7.2025', dayName: 'Ti', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 9.0, overtime: 1.0, description: 'Sisämaalaus toimisto B', status: 'Odottaa' },
-  { id: 't8', employee: 'Matti Korhonen', date: '2.7.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Pistorasioiden asennus', status: 'Odottaa' },
-  { id: 't9', employee: 'Matti Korhonen', date: '3.7.2025', dayName: 'To', startTime: '07:00', endTime: '15:30', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Sähkö', hours: 8.5, overtime: 0.5, description: 'Valaistuskytkimet', status: 'Odottaa' },
-  { id: 't10', employee: 'Matti Korhonen', date: '4.7.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'Maalaus', hours: 7.0, overtime: 0, description: 'Viimeistely ja tarkistus', status: 'Odottaa' },
-  { id: 't11', employee: 'Matti Korhonen', date: '16.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Purkutyöt aloitettu', status: 'Hyväksytty' },
-  { id: 't12', employee: 'Matti Korhonen', date: '17.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Runkopuiden mittaus', status: 'Hyväksytty' },
-  { id: 't13', employee: 'Matti Korhonen', date: '18.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '16:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 9.5, overtime: 1.5, description: 'Kiireellinen korjaus', status: 'Hyväksytty' },
-  { id: 't14', employee: 'Matti Korhonen', date: '19.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Normaali työpäivä', status: 'Hyväksytty' },
-  { id: 't15', employee: 'Matti Korhonen', date: '20.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Rakennus', hours: 7.0, overtime: 0, description: 'Viikon lopetus', status: 'Hyväksytty' },
-];
-
-const TEAM_ENTRIES: TimeEntry[] = [
-  { id: 'te1', employee: 'Matti Korhonen', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Perustustyöt', status: 'Hyväksytty', personId: 'e1', personName: 'Matti Korhonen', personInitials: 'MK' },
-  { id: 'te2', employee: 'Jukka Lehtonen', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähköasennukset', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
-  { id: 'te3', employee: 'Anna Lahtinen', date: '23.6.2025', dayName: 'Ma', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Putkiasennukset', status: 'Odottaa', personId: 'e3', personName: 'Anna Lahtinen', personInitials: 'AL' },
-  { id: 'te4', employee: 'Matti Korhonen', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:30', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.5, overtime: 0.5, description: 'Runkotyöt', status: 'Hyväksytty', personId: 'e1', personName: 'Matti Korhonen', personInitials: 'MK' },
-  { id: 'te5', employee: 'Jukka Lehtonen', date: '24.6.2025', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kaapelointi', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
-  { id: 'te6', employee: 'Anna Lahtinen', date: '24.6.2025', dayName: 'Ti', startTime: '08:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Vesiputkien testaus', status: 'Odottaa', personId: 'e3', personName: 'Anna Lahtinen', personInitials: 'AL' },
-  { id: 'te7', employee: 'Liisa Rantanen', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus', status: 'Odottaa', personId: 'e5', personName: 'Liisa Rantanen', personInitials: 'LR' },
-  { id: 'te8', employee: 'Sari Kettunen', date: '25.6.2025', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Eristystyöt', status: 'Hyväksytty', personId: 'e6', personName: 'Sari Kettunen', personInitials: 'SK' },
-  { id: 'te9', employee: 'Timo Nieminen', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '16:30', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.5, overtime: 1.5, description: 'Kiireellinen korjaus', status: 'Odottaa', personId: 'e7', personName: 'Timo Nieminen', personInitials: 'TN' },
-  { id: 'te10', employee: 'Pekka Salminen', date: '26.6.2025', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Rakennus', hours: 8.0, overtime: 0, description: 'Tarkastukset', status: 'Hyväksytty', personId: 'e4', personName: 'Pekka Salminen', personInitials: 'PS' },
-  { id: 'te11', employee: 'Jukka Lehtonen', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 7.0, overtime: 0, description: 'Lopputarkistus', status: 'Odottaa', personId: 'e2', personName: 'Jukka Lehtonen', personInitials: 'JL' },
-  { id: 'te12', employee: 'Liisa Rantanen', date: '27.6.2025', dayName: 'Pe', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Sisämaalaus', status: 'Odottaa', personId: 'e5', personName: 'Liisa Rantanen', personInitials: 'LR' },
-];
-
-const APPROVAL_REQUESTS: ApprovalRequest[] = [
-  {
-    id: 'a1',
-    personName: 'Jukka Lehtonen',
-    personInitials: 'JL',
-    weekRange: '23.–29.6.2025',
-    totalHours: 38.5,
-    submittedDate: '27.6.2025',
-    entries: [
-      { id: 'ae1', employee: 'Jukka Lehtonen', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Sähköasennukset', status: 'Odottaa' },
-      { id: 'ae2', employee: 'Jukka Lehtonen', date: '24.6.', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kaapelointi', status: 'Odottaa' },
-      { id: 'ae3', employee: 'Jukka Lehtonen', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 8.0, overtime: 0, description: 'Kytkentä', status: 'Odottaa' },
-      { id: 'ae4', employee: 'Jukka Lehtonen', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '16:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 9.0, overtime: 1.0, description: 'Testaus ja tarkistus', status: 'Odottaa' },
-      { id: 'ae5', employee: 'Jukka Lehtonen', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '14:30', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Sähkö', hours: 7.5, overtime: 0, description: 'Viimeistely', status: 'Odottaa' },
-    ],
-  },
-  {
-    id: 'a2',
-    personName: 'Anna Lahtinen',
-    personInitials: 'AL',
-    weekRange: '23.–29.6.2025',
-    totalHours: 40.0,
-    submittedDate: '27.6.2025',
-    entries: [
-      { id: 'ae6', employee: 'Anna Lahtinen', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Putkiasennukset', status: 'Odottaa' },
-      { id: 'ae7', employee: 'Anna Lahtinen', date: '24.6.', dayName: 'Ti', startTime: '08:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Testaus', status: 'Odottaa' },
-      { id: 'ae8', employee: 'Anna Lahtinen', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Liitokset', status: 'Odottaa' },
-      { id: 'ae9', employee: 'Anna Lahtinen', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '15:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 8.0, overtime: 0, description: 'Tarkistus', status: 'Odottaa' },
-      { id: 'ae10', employee: 'Anna Lahtinen', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '16:00', project: 'Helsingin toimistorakennus', projectColor: '#22C55E', workType: 'LVI', hours: 9.0, overtime: 1.0, description: 'Viimeistely', status: 'Odottaa' },
-    ],
-  },
-  {
-    id: 'a3',
-    personName: 'Liisa Rantanen',
-    personInitials: 'LR',
-    weekRange: '23.–29.6.2025',
-    totalHours: 36.0,
-    submittedDate: '26.6.2025',
-    entries: [
-      { id: 'ae11', employee: 'Liisa Rantanen', date: '23.6.', dayName: 'Ma', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus', status: 'Odottaa' },
-      { id: 'ae12', employee: 'Liisa Rantanen', date: '24.6.', dayName: 'Ti', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Pohjamaalaus jatkuu', status: 'Odottaa' },
-      { id: 'ae13', employee: 'Liisa Rantanen', date: '25.6.', dayName: 'Ke', startTime: '07:00', endTime: '15:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Päällemaalaus', status: 'Odottaa' },
-      { id: 'ae14', employee: 'Liisa Rantanen', date: '26.6.', dayName: 'To', startTime: '07:00', endTime: '14:00', project: 'Tampereen korjaustyö', projectColor: '#3B82F6', workType: 'Maalaus', hours: 7.0, overtime: 0, description: 'Viimeistely', status: 'Odottaa' },
-      { id: 'ae15', employee: 'Liisa Rantanen', date: '27.6.', dayName: 'Pe', startTime: '07:00', endTime: '15:00', project: 'Espoon uudisrakennus', projectColor: '#F97316', workType: 'Maalaus', hours: 8.0, overtime: 0, description: 'Uusi kohde', status: 'Odottaa' },
-    ],
-  },
-];
-
-/* ─── Chart Data ─── */
-const MONTHLY_HOURS = [
-  { month: 'Tammi', tunnit: 168, ylityo: 12 },
-  { month: 'Helmi', tunnit: 160, ylityo: 8 },
-  { month: 'Maalis', tunnit: 176, ylityo: 16 },
-  { month: 'Huhti', tunnit: 152, ylityo: 4 },
-  { month: 'Touko', tunnit: 184, ylityo: 24 },
-  { month: 'Kesä', tunnit: 144, ylityo: 6 },
-];
-
-const PROJECT_BREAKDOWN = [
-  { name: 'Espoon uudisrakennus', value: 45, color: '#F97316' },
-  { name: 'Tampereen korjaustyö', value: 30, color: '#3B82F6' },
-  { name: 'Helsingin toimistorakennus', value: 25, color: '#22C55E' },
-];
-
-const OVERTIME_TREND = [
-  { week: 'Vko 20', ylityo: 4 },
-  { week: 'Vko 21', ylityo: 8 },
-  { week: 'Vko 22', ylityo: 12 },
-  { week: 'Vko 23', ylityo: 6 },
-  { week: 'Vko 24', ylityo: 10 },
-  { week: 'Vko 25', ylityo: 3 },
-  { week: 'Vko 26', ylityo: 5 },
-];
-
-const WORK_TYPE_BREAKDOWN = [
-  { type: 'Rakennus', hours: 85 },
-  { type: 'Sähkö', hours: 42 },
-  { type: 'LVI', hours: 38 },
-  { type: 'Maalaus', hours: 55 },
-  { type: 'Eristys', hours: 20 },
-];
-
-/* ─── Helpers ─── */
-const statusConfig: Record<TimeEntryStatus, { bg: string; text: string; icon: typeof CheckCircle2 }> = {
-  Hyväksytty: { bg: 'bg-success-light', text: 'text-success', icon: CheckCircle2 },
-  Odottaa: { bg: 'bg-warning-light', text: 'text-warning', icon: AlertCircle },
-  Hylätty: { bg: 'bg-danger-light', text: 'text-danger', icon: XCircle },
-};
-
-/* ─── Component ─── */
 export default function Tuntikirjaukset() {
-  const [activeTab, setActiveTab] = useState('omat');
-  const [timerRunning, setTimerRunning] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const { user, profile } = useAuth();
+  const { currentOrg, currentRole } = useOrganization();
+  const { timeEntries, projects, refresh } = useAppDataContext();
+  const [activeTab, setActiveTab] = useState('mine');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedApproval, setSelectedApproval] = useState<ApprovalRequest | null>(null);
-  const [approvalComment, setApprovalComment] = useState('');
-  const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
-  const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<TimeEntry | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TimeEntry | null>(null);
+  const [form, setForm] = useState<EntryForm>(emptyForm);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [timerStart, setTimerStart] = useState<string | null>(() => localStorage.getItem(TIMER_START_KEY));
+  const [timerProject, setTimerProject] = useState(() => localStorage.getItem(TIMER_PROJECT_KEY) ?? '');
+  const [timerDescription, setTimerDescription] = useState(() => localStorage.getItem(TIMER_DESCRIPTION_KEY) ?? '');
+  const [now, setNow] = useState(Date.now());
 
-  // Data layer: persisted time entries (localStorage via AppDataContext)
-  const { timeEntries: savedTimeEntries, addTimeEntry } = useAppDataContext();
+  const canApprove = currentRole === 'admin' || currentRole === 'supervisor';
+  const currentEmployee = profile?.full_name || user?.email || 'Käyttäjä';
 
-  // New-entry form state
-  const [entryForm, setEntryForm] = useState<EntryFormState>(emptyEntryForm);
-  const [entryErrors, setEntryErrors] = useState<string[]>([]);
-  const [entrySavedMessage, setEntrySavedMessage] = useState('');
-
-  // Merge page-local seed entries with persisted entries of the current user
-  // (dedup by id; other employees' seeded entries stay out of "Omat kirjaukset")
-  const seedEntryIds = useMemo(() => new Set(MY_TIME_ENTRIES.map(e => e.id)), []);
-  const allMyEntries = useMemo(
-    () => [
-      ...MY_TIME_ENTRIES,
-      ...savedTimeEntries.filter(e => e.employee === 'Matti Korhonen' && !seedEntryIds.has(e.id)),
-    ],
-    [savedTimeEntries, seedEntryIds]
-  );
-
-  // Auto-derive hours from start/end times (quarter-hour precision)
-  const { startTime: formStartTime, endTime: formEndTime } = entryForm;
   useEffect(() => {
-    if (!formStartTime || !formEndTime || formEndTime <= formStartTime) return;
-    const derived = Math.round(hoursBetweenTimes(formStartTime, formEndTime) * 4) / 4;
-    if (derived <= 0) return;
-    const derivedStr = String(derived);
-    setEntryForm(prev => (prev.hours === derivedStr ? prev : { ...prev, hours: derivedStr }));
-  }, [formStartTime, formEndTime]);
+    if (!timerStart) return undefined;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [timerStart]);
 
-  // Auto-dismiss the save confirmation
   useEffect(() => {
-    if (!entrySavedMessage) return;
-    const t = setTimeout(() => setEntrySavedMessage(''), 4000);
-    return () => clearTimeout(t);
-  }, [entrySavedMessage]);
+    if (timerProject) localStorage.setItem(TIMER_PROJECT_KEY, timerProject);
+    else localStorage.removeItem(TIMER_PROJECT_KEY);
+  }, [timerProject]);
 
-  const handleSaveEntry = () => {
-    const errors: string[] = [];
-    if (!entryForm.project) errors.push('Valitse projekti.');
-    if (!entryForm.date) errors.push('Valitse päivämäärä.');
-    const hours = Number(entryForm.hours);
-    if (!Number.isFinite(hours) || hours <= 0) errors.push('Tuntien on oltava suurempi kuin 0.');
-    if (entryForm.startTime && entryForm.endTime && entryForm.endTime <= entryForm.startTime) {
-      errors.push('Loppuajan on oltava alkuaikaa myöhempi.');
-    }
-    setEntryErrors(errors);
-    if (errors.length > 0) return;
+  useEffect(() => {
+    if (timerDescription) localStorage.setItem(TIMER_DESCRIPTION_KEY, timerDescription);
+    else localStorage.removeItem(TIMER_DESCRIPTION_KEY);
+  }, [timerDescription]);
 
-    const projectOption = PROJECT_OPTIONS.find(p => p.value === entryForm.project);
-    addTimeEntry({
-      date: isoToFinnishDate(entryForm.date),
-      employee: 'Matti Korhonen',
-      project: entryForm.project,
+  const myEntries = useMemo(() => {
+    const aliases = [profile?.full_name, user?.email].filter(Boolean).map((value) => value!.toLowerCase());
+    return timeEntries.filter((entry) => aliases.includes(entry.employee.toLowerCase()));
+  }, [profile?.full_name, timeEntries, user?.email]);
+  const visibleEntries = canApprove && activeTab !== 'mine' ? timeEntries : myEntries;
+  const pendingEntries = timeEntries.filter((entry) => entry.status === 'Odottaa');
+  const approvedHours = visibleEntries.filter((entry) => entry.status === 'Hyväksytty').reduce((sum, entry) => sum + entry.hours, 0);
+  const pendingHours = visibleEntries.filter((entry) => entry.status === 'Odottaa').reduce((sum, entry) => sum + entry.hours, 0);
+  const overtimeHours = visibleEntries.reduce((sum, entry) => sum + entry.overtime, 0);
+  const elapsedMilliseconds = timerStart ? now - new Date(timerStart).getTime() : 0;
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ ...emptyForm, date: new Date().toISOString().slice(0, 10), employee: currentEmployee });
+    setFormErrors([]);
+    setOperationError(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (entry: TimeEntry) => {
+    if (entry.status !== 'Odottaa' && !canApprove) return;
+    setEditing(entry);
+    setForm({
+      date: entry.date,
+      employee: entry.employee,
+      project: entry.project,
+      hours: String(entry.hours),
+      overtime: String(entry.overtime),
+      description: entry.description,
+      status: entry.status,
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setDialogOpen(true);
+  };
+
+  const saveEntry = async () => {
+    const hours = Number(form.hours);
+    const overtime = Number(form.overtime);
+    const nextErrors: string[] = [];
+    if (!form.date) nextErrors.push('Päivämäärä on pakollinen.');
+    if (!form.employee.trim()) nextErrors.push('Työntekijä on pakollinen.');
+    if (!form.project.trim()) nextErrors.push('Projekti on pakollinen.');
+    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) nextErrors.push('Tuntimäärän pitää olla yli 0 ja enintään 24.');
+    if (!Number.isFinite(overtime) || overtime < 0 || overtime > hours) nextErrors.push('Ylityö ei voi olla negatiivinen tai ylittää tuntimäärää.');
+    setFormErrors(nextErrors);
+    if (nextErrors.length > 0 || !currentOrg) return;
+
+    const payload: Omit<TimeEntry, 'id'> = {
+      date: toDisplayDate(form.date),
+      employee: form.employee.trim(),
+      project: form.project.trim(),
       hours,
-      overtime: 0,
-      description: entryForm.description.trim() || 'Tuntikirjaus',
-      status: 'Odottaa',
-      dayName: isoToDayName(entryForm.date),
-      startTime: entryForm.startTime || undefined,
-      endTime: entryForm.endTime || undefined,
-      projectColor: projectOption?.color ?? '#64748B',
-      workType: entryForm.workType || 'Muu',
-    });
-    setDialogOpen(false);
-    setEntryForm(emptyEntryForm);
-    setEntryErrors([]);
-    setEntrySavedMessage('Tuntikirjaus tallennettu — näkyy nyt omissa kirjauksissa.');
+      overtime,
+      description: form.description.trim(),
+      status: canApprove ? form.status : 'Odottaa',
+    };
+
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editing) await updateTimeEntryRecord(currentOrg.id, editing.id, payload);
+      else await createTimeEntryRecord(currentOrg.id, user?.id, payload);
+      await refresh();
+      setDialogOpen(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Tuntikirjauksen tallennus epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // Timer effect
-  useEffect(() => {
-    if (!timerRunning) return;
-    const interval = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
-    return () => clearInterval(interval);
-  }, [timerRunning]);
-
-  const formatTimer = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  const setStatus = async (entry: TimeEntry, status: TimeEntryStatus) => {
+    if (!currentOrg || !canApprove) return;
+    setOperationError(null);
+    try {
+      await updateTimeEntryRecord(currentOrg.id, entry.id, { status });
+      await refresh();
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Tilan päivitys epäonnistui.');
+    }
   };
 
-  // Summary calculations (seed-local + persisted entries)
-  const currentWeekEntries = allMyEntries.filter(e => e.status === 'Hyväksytty');
-  const currentWeekHours = currentWeekEntries.reduce((sum, e) => sum + e.hours, 0);
-  const pendingHours = allMyEntries.filter(e => e.status === 'Odottaa').reduce((sum, e) => sum + e.hours, 0);
-  const approvedHours = currentWeekHours;
-  const totalOvertime = allMyEntries.reduce((sum, e) => sum + e.overtime, 0);
-  const targetHours = 40;
-  const progressPercent = Math.min((approvedHours / targetHours) * 100, 100);
-
-  const handleApprove = (id: string) => {
-    setApprovedIds(prev => new Set(prev).add(id));
-    setRejectedIds(prev => {
-      const n = new Set(prev);
-      n.delete(id);
-      return n;
-    });
+  const removeEntry = async () => {
+    if (!currentOrg || !deleteTarget || !canApprove) return;
+    setSaving(true);
+    try {
+      await deleteTimeEntryRecord(currentOrg.id, deleteTarget.id);
+      await refresh();
+      setDeleteTarget(null);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleReject = (id: string) => {
-    setRejectedIds(prev => new Set(prev).add(id));
-    setApprovedIds(prev => {
-      const n = new Set(prev);
-      n.delete(id);
-      return n;
-    });
+  const startTimer = () => {
+    if (!timerProject) {
+      setOperationError('Valitse projekti ennen ajastimen käynnistämistä.');
+      return;
+    }
+    const startedAt = new Date().toISOString();
+    localStorage.setItem(TIMER_START_KEY, startedAt);
+    setTimerStart(startedAt);
+    setNow(Date.now());
+    setOperationError(null);
   };
 
-  const getEntryStatus = (entry: TimeEntry, reqId: string) => {
-    const key = `${reqId}-${entry.id}`;
-    if (approvedIds.has(key)) return 'Hyväksytty' as TimeEntryStatus;
-    if (rejectedIds.has(key)) return 'Hylätty' as TimeEntryStatus;
-    return entry.status;
+  const stopTimer = async () => {
+    if (!timerStart || !currentOrg) return;
+    const milliseconds = Date.now() - new Date(timerStart).getTime();
+    const hours = Math.max(0.01, Math.round((milliseconds / 3_600_000) * 100) / 100);
+    setSaving(true);
+    try {
+      await createTimeEntryRecord(currentOrg.id, user?.id, {
+        date: new Date().toLocaleDateString('fi-FI'),
+        employee: currentEmployee,
+        project: timerProject,
+        hours,
+        overtime: 0,
+        description: timerDescription.trim(),
+        status: 'Odottaa',
+      });
+      localStorage.removeItem(TIMER_START_KEY);
+      localStorage.removeItem(TIMER_PROJECT_KEY);
+      localStorage.removeItem(TIMER_DESCRIPTION_KEY);
+      setTimerStart(null);
+      setTimerProject('');
+      setTimerDescription('');
+      await refresh();
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Ajastetun työn tallennus epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="space-y-6">
-      {/* ─── Page Header ─── */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-hero text-text-primary">Tuntikirjaukset</h1>
-          <p className="text-body-sm text-text-secondary mt-1">Työaikakirjaus ja seuranta</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <BarChart3 size={16} /> Raportti
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <Send size={16} /> Vie
-          </Button>
-          <Button size="sm" className="gap-1.5 bg-primary hover:bg-primary-hover text-white" onClick={() => setDialogOpen(true)}>
-            <Plus size={16} /> Kirjaa tunnit
-          </Button>
-        </div>
-      </motion.div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><h1 className="text-hero text-text-primary">Tuntikirjaukset</h1><p className="mt-1 text-body-sm text-text-secondary">Työajan kirjaus, ajastin ja työnjohdon hyväksyntä</p></div>
+        <Button onClick={openCreate} className="gap-2"><Plus size={16} /> Kirjaa tunnit</Button>
+      </div>
 
-      {/* ─── Tabs ─── */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="bg-bg-light border border-border p-1">
-          <TabsTrigger value="omat" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white">
-            <User size={14} /> Omat kirjaukset
-          </TabsTrigger>
-          <TabsTrigger value="tiimi" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white">
-            <Users size={14} /> Tiimin kirjaukset
-          </TabsTrigger>
-          <TabsTrigger value="hyvaksynnät" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white">
-            <ClipboardCheck size={14} /> Hyväksynnät
-          </TabsTrigger>
-          <TabsTrigger value="yhteenveto" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white">
-            <BarChart3 size={14} /> Yhteenveto
-          </TabsTrigger>
-        </TabsList>
+      {operationError && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={16} />{operationError}</div>}
 
-        {/* ─── Tab: Omat kirjaukset ─── */}
-        <TabsContent value="omat" className="space-y-6">
-          {/* KPI Cards */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
-          >
-            <Card className="border-border shadow-card">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-caption text-text-secondary font-medium">Viikko 25</span>
-                  <CalendarDays size={18} className="text-primary" />
-                </div>
-                <p className="text-hero text-text-primary">{approvedHours.toFixed(1)}h <span className="text-h3 text-text-secondary">/ {targetHours}h</span></p>
-                <Progress value={progressPercent} className="h-2 mt-3" />
-                <p className={cn('text-caption mt-1.5 font-medium', progressPercent >= 100 ? 'text-success' : 'text-warning')}>
-                  {progressPercent >= 100 ? 'Tavoite saavutettu' : `${(targetHours - approvedHours).toFixed(1)}h jäljellä`}
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border shadow-card">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-caption text-text-secondary font-medium">Kirjatut tunnit</span>
-                  <Clock size={18} className="text-primary" />
-                </div>
-                <p className="text-hero text-text-primary">{(approvedHours + pendingHours).toFixed(1)}h</p>
-                <p className="text-body-sm text-text-secondary mt-1">Tämä viikko</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border shadow-card">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-caption text-text-secondary font-medium">Hyväksytty</span>
-                  <CheckCircle2 size={18} className="text-success" />
-                </div>
-                <p className="text-hero text-success">{approvedHours.toFixed(1)}h</p>
-                <p className="text-body-sm text-text-secondary mt-1">{currentWeekEntries.length} kirjaukset</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border shadow-card">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-caption text-text-secondary font-medium">Odottaa</span>
-                  <AlertCircle size={18} className="text-warning" />
-                </div>
-                <p className="text-hero text-warning">{pendingHours.toFixed(1)}h</p>
-                <p className="text-body-sm text-text-secondary mt-1">{allMyEntries.filter(e => e.status === 'Odottaa').length} kirjaukset</p>
-              </CardContent>
-            </Card>
-          </motion.div>
+      <Card className="border-primary/30 bg-primary-light/40"><CardContent className="grid gap-4 p-5 lg:grid-cols-[1fr_1fr_auto] lg:items-end"><div className="space-y-2"><Label>Ajastettava projekti</Label>{projects.length > 0 ? <Select value={timerProject} onValueChange={setTimerProject} disabled={Boolean(timerStart)}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.name}>{project.name}</SelectItem>)}</SelectContent></Select> : <Input value={timerProject} onChange={(event) => setTimerProject(event.target.value)} disabled={Boolean(timerStart)} />}</div><div className="space-y-2"><Label htmlFor="timer-description">Työn kuvaus</Label><Input id="timer-description" value={timerDescription} onChange={(event) => setTimerDescription(event.target.value)} disabled={Boolean(timerStart)} /></div><div className="flex items-center gap-3"><div className="min-w-28 font-mono text-2xl font-bold">{formatTimer(elapsedMilliseconds)}</div>{timerStart ? <Button variant="destructive" onClick={() => void stopTimer()} disabled={saving}><Square size={15} className="mr-1" /> Lopeta ja tallenna</Button> : <Button onClick={startTimer}><Play size={15} className="mr-1" /> Käynnistä</Button>}</div></CardContent></Card>
 
-          {/* Timer Quick Entry */}
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card className={cn('border-border shadow-card', timerRunning && 'border-primary/30')}>
-              <CardContent className="p-5">
-                <div className="flex flex-col sm:flex-row items-center gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', timerRunning ? 'bg-primary text-white' : 'bg-bg-light text-text-secondary')}>
-                      <Timer size={24} />
-                    </div>
-                    <div>
-                      <h4 className="text-h3 text-text-primary">Pikakirjaus</h4>
-                      <p className="text-body-sm text-text-secondary">
-                        {timerRunning ? 'Ajastin käynnissä' : 'Aloita reaaliaikainen kirjaus'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex-1" />
-                  {timerRunning && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="text-3xl font-mono font-semibold text-text-primary tracking-wider"
-                    >
-                      {formatTimer(elapsedSeconds)}
-                    </motion.div>
-                  )}
-                  <Button
-                    className={cn(
-                      'gap-2 min-w-[140px]',
-                      timerRunning
-                        ? 'bg-danger hover:bg-danger/90 text-white'
-                        : 'bg-primary hover:bg-primary-hover text-white'
-                    )}
-                    onClick={() => setTimerRunning(!timerRunning)}
-                  >
-                    {timerRunning ? <Square size={16} /> : <Play size={16} />}
-                    {timerRunning ? 'Pysäytä' : 'Aloita ajastin'}
-                  </Button>
-                  {!timerRunning && (
-                    <Button variant="outline" className="gap-2" onClick={() => setDialogOpen(true)}>
-                      <Clock size={16} /> Kirjaa manuaalisesti
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
+        { label: 'Hyväksytyt tunnit', value: `${approvedHours.toFixed(1)} h`, icon: CheckCircle2 },
+        { label: 'Odottaa', value: `${pendingHours.toFixed(1)} h`, icon: AlertCircle },
+        { label: 'Ylityö', value: `${overtimeHours.toFixed(1)} h`, icon: Clock },
+        { label: 'Kirjauksia', value: visibleEntries.length, icon: Clock },
+      ].map((item) => <Card key={item.label}><CardContent className="p-5"><div className="mb-2 flex justify-between text-sm text-text-secondary"><span>{item.label}</span><item.icon size={18} className="text-primary" /></div><p className="font-mono text-2xl font-bold">{item.value}</p></CardContent></Card>)}</div>
 
-          {/* Week Navigation */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.15 }}
-            className="flex items-center justify-between"
-          >
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="h-8 w-8"><ChevronLeft size={16} /></Button>
-              <span className="text-h3 text-text-primary">Viikko 25 (23.–29.6.2025)</span>
-              <Button variant="ghost" size="icon" className="h-8 w-8"><ChevronRight size={16} /></Button>
-            </div>
-            <Button variant="ghost" size="sm">Tänään</Button>
-          </motion.div>
-
-          {/* Save confirmation */}
-          {entrySavedMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-light px-4 py-2.5 text-sm text-success font-medium"
-            >
-              <CheckCircle2 size={16} /> {entrySavedMessage}
-            </motion.div>
-          )}
-
-          {/* Time Entries Table */}
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-white rounded-xl border border-border shadow-card overflow-hidden"
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-bg-light border-b border-border">
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Päivämäärä</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Aika</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Projekti</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Työlaji</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Kuvaus</th>
-                    <th className="text-right px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Tunnit</th>
-                    <th className="text-right px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Ylityö</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Status</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold w-24">Toiminnot</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <AnimatePresence>
-                    {allMyEntries.map((entry, idx) => {
-                      const cfg = statusConfig[entry.status];
-                      const StatusIcon = cfg.icon;
-                      return (
-                        <motion.tr
-                          key={entry.id}
-                          initial={{ opacity: 0, y: 4 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: idx * 0.03 }}
-                          className="border-b border-border/50 hover:bg-bg-light transition-colors"
-                        >
-                          <td className="px-4 py-3">
-                            <span className="text-sm font-medium text-text-primary">{entry.dayName ? `${entry.dayName} ` : ''}{entry.date}</span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-text-secondary">
-                            {entry.startTime && entry.endTime ? `${entry.startTime}–${entry.endTime}` : '–'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.projectColor ?? '#94A3B8' }} />
-                              <span className="text-sm text-text-primary">{entry.project}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge variant="outline" className="text-xs">{entry.workType ?? '–'}</Badge>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-text-secondary max-w-[200px] truncate">{entry.description}</td>
-                          <td className="px-4 py-3 text-right">
-                            <span className="text-sm font-mono font-medium text-text-primary">{entry.hours}h</span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {entry.overtime > 0 ? (
-                              <span className="text-sm font-mono font-medium text-danger">+{entry.overtime}h</span>
-                            ) : (
-                              <span className="text-sm text-text-muted">–</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge className={cn(cfg.bg, cfg.text, 'gap-1 font-medium')}>
-                              <StatusIcon size={12} /> {entry.status}
-                            </Badge>
-                            {!seedEntryIds.has(entry.id) && (
-                              <span className="block text-[10px] text-success font-medium mt-1">Tallennettu</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1">
-                              <Button variant="ghost" size="icon" className="h-7 w-7"><Edit3 size={14} /></Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7"><Trash2 size={14} /></Button>
-                            </div>
-                          </td>
-                        </motion.tr>
-                      );
-                    })}
-                  </AnimatePresence>
-                </tbody>
-              </table>
-            </div>
-            <div className="px-4 py-3 border-t border-border bg-bg-light/50 flex items-center justify-between">
-              <p className="text-body-sm text-text-secondary">
-                Yhteensä: <span className="font-semibold text-text-primary">{allMyEntries.reduce((s, e) => s + e.hours, 0).toFixed(1)}h</span>
-                {' · '}Ylityö: <span className="font-semibold text-danger">+{totalOvertime.toFixed(1)}h</span>
-              </p>
-            </div>
-          </motion.div>
-        </TabsContent>
-
-        {/* ─── Tab: Tiimin kirjaukset ─── */}
-        <TabsContent value="tiimi" className="space-y-6">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white rounded-xl border border-border shadow-card overflow-hidden"
-          >
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-              <h3 className="text-h3 text-text-primary">Tiimin tuntikirjaukset — Viikko 25</h3>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="h-8 w-8"><ChevronLeft size={16} /></Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8"><ChevronRight size={16} /></Button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-bg-light border-b border-border">
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Henkilö</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Päivä</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Aika</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Projekti</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Työlaji</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Kuvaus</th>
-                    <th className="text-right px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Tunnit</th>
-                    <th className="text-left px-4 py-3 text-caption uppercase tracking-wider text-text-secondary font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {TEAM_ENTRIES.map((entry, idx) => {
-                    const cfg = statusConfig[entry.status];
-                    const StatusIcon = cfg.icon;
-                    return (
-                      <motion.tr
-                        key={entry.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: idx * 0.03 }}
-                        className="border-b border-border/50 hover:bg-bg-light transition-colors"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-primary-light text-primary text-[10px] font-semibold flex items-center justify-center">
-                              {entry.personInitials}
-                            </div>
-                            <span className="text-sm font-medium text-text-primary">{entry.personName}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-text-primary">{entry.dayName} {entry.date}</td>
-                        <td className="px-4 py-3 text-sm text-text-secondary">{entry.startTime}–{entry.endTime}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.projectColor }} />
-                            <span className="text-sm text-text-primary">{entry.project}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3"><Badge variant="outline" className="text-xs">{entry.workType}</Badge></td>
-                        <td className="px-4 py-3 text-sm text-text-secondary max-w-[160px] truncate">{entry.description}</td>
-                        <td className="px-4 py-3 text-right text-sm font-mono font-medium text-text-primary">{entry.hours}h</td>
-                        <td className="px-4 py-3">
-                          <Badge className={cn(cfg.bg, cfg.text, 'gap-1 font-medium text-xs')}>
-                            <StatusIcon size={11} /> {entry.status}
-                          </Badge>
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </motion.div>
-        </TabsContent>
-
-        {/* ─── Tab: Hyväksynnät ─── */}
-        <TabsContent value="hyvaksynnät" className="space-y-6">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="flex items-center justify-between"
-          >
-            <h3 className="text-h2 text-text-primary">Hyväksyntäjono</h3>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => APPROVAL_REQUESTS.forEach(r => handleApprove(r.id))}>
-                <CheckCheck size={16} /> Hyväksy kaikki
-              </Button>
-            </div>
-          </motion.div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Approval List */}
-            <div className="space-y-3">
-              {APPROVAL_REQUESTS.map((req, idx) => {
-                const allApproved = req.entries.every(e => getEntryStatus(e, req.id) === 'Hyväksytty');
-                return (
-                  <motion.div
-                    key={req.id}
-                    initial={{ opacity: 0, x: -12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.08 }}
-                  >
-                    <Card
-                      className={cn(
-                        'border-border shadow-card cursor-pointer transition-all hover:shadow-card-hover',
-                        selectedApproval?.id === req.id && 'ring-2 ring-primary',
-                        allApproved && 'border-success/30 bg-success-light/20'
-                      )}
-                      onClick={() => setSelectedApproval(req)}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-primary-light text-primary text-sm font-semibold flex items-center justify-center">
-                            {req.personInitials}
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold text-text-primary">{req.personName}</p>
-                            <p className="text-body-sm text-text-secondary">{req.weekRange} · {req.totalHours}h</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-caption text-text-muted">{req.submittedDate}</p>
-                            {allApproved && <Badge className="bg-success-light text-success mt-1">Hyväksytty</Badge>}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            {/* Approval Detail */}
-            <AnimatePresence mode="wait">
-              {selectedApproval && (
-                <motion.div
-                  key={selectedApproval.id}
-                  initial={{ opacity: 0, x: 12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 12 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Card className="border-border shadow-card">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-h3 flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-primary-light text-primary text-xs font-semibold flex items-center justify-center">
-                          {selectedApproval.personInitials}
-                        </div>
-                        {selectedApproval.personName} — {selectedApproval.weekRange}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-2">
-                        {selectedApproval.entries.map(entry => {
-                          const status = getEntryStatus(entry, selectedApproval.id);
-                          const cfg = statusConfig[status];
-                          const StatusIcon = cfg.icon;
-                          return (
-                            <div
-                              key={entry.id}
-                              className={cn(
-                                'flex items-center gap-3 p-3 rounded-lg border transition-colors',
-                                status === 'Hyväksytty' && 'bg-success-light/30 border-success/20',
-                                status === 'Hylätty' && 'bg-danger-light/30 border-danger/20',
-                                status === 'Odottaa' && 'bg-white border-border'
-                              )}
-                            >
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-text-primary">{entry.dayName} {entry.date}</span>
-                                  <span className="text-body-sm text-text-secondary">{entry.startTime}–{entry.endTime}</span>
-                                  <Badge className={cn(cfg.bg, cfg.text, 'text-[10px] gap-0.5')}>
-                                    <StatusIcon size={10} /> {status}
-                                  </Badge>
-                                </div>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.projectColor }} />
-                                  <span className="text-xs text-text-secondary">{entry.project} · {entry.workType} · {entry.hours}h</span>
-                                </div>
-                                <p className="text-xs text-text-muted mt-0.5">{entry.description}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div className="pt-3 border-t border-border">
-                        <p className="text-sm text-text-secondary mb-3">
-                          Yhteensä: <span className="font-semibold text-text-primary">{selectedApproval.totalHours}h</span>
-                        </p>
-                        <Textarea
-                          placeholder="Hyväksyntäkommentti (valinnainen)..."
-                          value={approvalComment}
-                          onChange={e => setApprovalComment(e.target.value)}
-                          className="mb-3 text-sm"
-                          rows={2}
-                        />
-                        <div className="flex gap-2">
-                          <Button
-                            className="flex-1 gap-1.5 bg-success hover:bg-success/90 text-white"
-                            onClick={() => {
-                              selectedApproval.entries.forEach(e => handleApprove(`${selectedApproval.id}-${e.id}`));
-                            }}
-                          >
-                            <ThumbsUp size={16} /> Hyväksy
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="flex-1 gap-1.5 text-danger hover:bg-danger-light"
-                            onClick={() => {
-                              selectedApproval.entries.forEach(e => handleReject(`${selectedApproval.id}-${e.id}`));
-                            }}
-                          >
-                            <ThumbsDown size={16} /> Hylkää
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </TabsContent>
-
-        {/* ─── Tab: Yhteenveto ─── */}
-        <TabsContent value="yhteenveto" className="space-y-6">
-          {/* Summary KPIs */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="grid grid-cols-1 sm:grid-cols-3 gap-4"
-          >
-            <Card className="border-border shadow-card">
-              <CardContent className="p-5">
-                <p className="text-caption text-text-secondary font-medium">Keskim. päivittäinen työaika</p>
-                <p className="text-hero text-text-primary mt-1">7.8h</p>
-                <p className="text-body-sm text-success mt-1">Tavoitteen alapuolella (8h)</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border shadow-card">
-              <CardContent className="p-5">
-                <p className="text-caption text-text-secondary font-medium">Ylityötunnit kesäkuussa</p>
-                <p className="text-hero text-warning mt-1">6.0h</p>
-                <p className="text-body-sm text-text-secondary mt-1">Alle 10h raja</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border shadow-card">
-              <CardContent className="p-5">
-                <p className="text-caption text-text-secondary font-medium">Hyväksyntäaste</p>
-                <p className="text-hero text-success mt-1">92%</p>
-                <p className="text-body-sm text-text-secondary mt-1">Keskiarvo tällä kvartaalilla</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Monthly Hours Bar Chart */}
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <Card className="border-border shadow-card">
-                <CardHeader>
-                  <CardTitle className="text-h3 flex items-center gap-2">
-                    <BarChart3 size={18} className="text-primary" /> Kuukausittaiset tunnit
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={MONTHLY_HOURS}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                      <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#64748B' }} />
-                      <YAxis tick={{ fontSize: 12, fill: '#64748B' }} />
-                      <Tooltip
-                        contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                        formatter={(value, name) => [`${value}h`, name === 'tunnit' ? 'Työtunnit' : 'Ylityö']}
-                      />
-                      <Bar dataKey="tunnit" fill="#F97316" radius={[4, 4, 0, 0]} name="Työtunnit" />
-                      <Bar dataKey="ylityo" fill="#EF4444" radius={[4, 4, 0, 0]} name="Ylityö" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Project Breakdown Pie Chart */}
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-            >
-              <Card className="border-border shadow-card">
-                <CardHeader>
-                  <CardTitle className="text-h3 flex items-center gap-2">
-                    <Briefcase size={18} className="text-primary" /> Projektijakauma
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <PieChart>
-                      <Pie
-                        data={PROJECT_BREAKDOWN}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={100}
-                        paddingAngle={4}
-                        dataKey="value"
-                      >
-                        {PROJECT_BREAKDOWN.map((entry, index) => (
-                          <Cell key={index} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => [`${value}%`, '']} />
-                      <Legend formatter={(value: string) => <span className="text-sm text-text-secondary">{value}</span>} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Work Type Breakdown */}
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
-              <Card className="border-border shadow-card">
-                <CardHeader>
-                  <CardTitle className="text-h3 flex items-center gap-2">
-                    <ClipboardCheck size={18} className="text-primary" /> Työlajijakauma
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {WORK_TYPE_BREAKDOWN.map((wt, i) => {
-                      const maxHours = Math.max(...WORK_TYPE_BREAKDOWN.map(w => w.hours));
-                      const pct = (wt.hours / maxHours) * 100;
-                      const colors = ['#F97316', '#3B82F6', '#22C55E', '#8B5CF6', '#F59E0B'];
-                      return (
-                        <div key={wt.type}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm text-text-primary font-medium">{wt.type}</span>
-                            <span className="text-sm font-mono text-text-secondary">{wt.hours}h</span>
-                          </div>
-                          <div className="h-3 bg-bg-light rounded-full overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${pct}%` }}
-                              transition={{ duration: 0.8, delay: i * 0.1 }}
-                              className="h-full rounded-full"
-                              style={{ backgroundColor: colors[i % colors.length] }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Overtime Trend */}
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25 }}
-            >
-              <Card className="border-border shadow-card">
-                <CardHeader>
-                  <CardTitle className="text-h3 flex items-center gap-2">
-                    <AlertCircle size={18} className="text-primary" /> Ylityötrendi
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={OVERTIME_TREND}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                      <XAxis dataKey="week" tick={{ fontSize: 12, fill: '#64748B' }} />
-                      <YAxis tick={{ fontSize: 12, fill: '#64748B' }} />
-                      <Tooltip
-                        contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                        formatter={(value) => [`${value}h`, 'Ylityötunnit']}
-                      />
-                      <Line type="monotone" dataKey="ylityo" stroke="#EF4444" strokeWidth={2} dot={{ r: 4, fill: '#EF4444' }} activeDot={{ r: 6 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList><TabsTrigger value="mine">Omat kirjaukset</TabsTrigger>{canApprove && <TabsTrigger value="team">Kaikki kirjaukset</TabsTrigger>}{canApprove && <TabsTrigger value="approvals">Hyväksynnät ({pendingEntries.length})</TabsTrigger>}</TabsList>
+        <TabsContent value={activeTab} className="mt-4">
+          <Card className="overflow-hidden"><CardContent className="p-0">
+            <div className="hidden grid-cols-[110px_1fr_1fr_90px_90px_110px_150px] gap-3 border-b bg-slate-50 px-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted lg:grid"><span>Päivä</span><span>Työntekijä</span><span>Projekti / työ</span><span>Tunnit</span><span>Ylityö</span><span>Tila</span><span className="text-right">Toiminnot</span></div>
+            {(activeTab === 'approvals' ? pendingEntries : visibleEntries).map((entry) => <div key={entry.id} className="grid grid-cols-1 items-center gap-3 border-b border-slate-100 px-6 py-4 lg:grid-cols-[110px_1fr_1fr_90px_90px_110px_150px]"><span className="text-sm text-text-secondary">{entry.date}</span><span className="font-medium">{entry.employee}</span><div><p className="text-sm font-medium">{entry.project}</p><p className="text-xs text-text-secondary">{entry.description || 'Ei kuvausta'}</p></div><span className="font-mono text-sm">{entry.hours.toFixed(2)} h</span><span className="font-mono text-sm">{entry.overtime.toFixed(2)} h</span><div>{statusBadge(entry.status)}</div><div className="flex justify-end gap-1">{canApprove && entry.status === 'Odottaa' && <><Button variant="ghost" size="sm" className="text-emerald-700" onClick={() => void setStatus(entry, 'Hyväksytty')}><CheckCircle2 size={15} /></Button><Button variant="ghost" size="sm" className="text-red-700" onClick={() => void setStatus(entry, 'Hylätty')}><XCircle size={15} /></Button></>}<Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(entry)}><Edit3 size={15} /></Button>{canApprove && <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-danger" onClick={() => setDeleteTarget(entry)}><Trash2 size={15} /></Button>}</div></div>)}
+            {(activeTab === 'approvals' ? pendingEntries : visibleEntries).length === 0 && <div className="p-12 text-center"><Clock size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei tuntikirjauksia</p></div>}
+          </CardContent></Card>
         </TabsContent>
       </Tabs>
 
-      {/* ─── New Entry Dialog ─── */}
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={open => {
-          setDialogOpen(open);
-          if (!open) setEntryErrors([]);
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-h2">Kirjaa tunnit</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {entryErrors.length > 0 && (
-              <div className="rounded-lg border border-danger/30 bg-danger-light px-3 py-2 space-y-1">
-                {entryErrors.map(err => (
-                  <p key={err} className="text-sm text-danger">{err}</p>
-                ))}
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>Päivämäärä *</Label>
-              <Input
-                type="date"
-                value={entryForm.date}
-                onChange={e => setEntryForm(prev => ({ ...prev, date: e.target.value }))}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Alkuaika</Label>
-                <Input
-                  type="time"
-                  value={entryForm.startTime}
-                  onChange={e => setEntryForm(prev => ({ ...prev, startTime: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Loppuaika</Label>
-                <Input
-                  type="time"
-                  value={entryForm.endTime}
-                  onChange={e => setEntryForm(prev => ({ ...prev, endTime: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Tunnit *</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.25"
-                value={entryForm.hours}
-                onChange={e => setEntryForm(prev => ({ ...prev, hours: e.target.value }))}
-              />
-              <p className="text-xs text-text-muted">Lasketaan automaattisesti alku- ja loppuajasta, voit muokata.</p>
-            </div>
-            <div className="space-y-2">
-              <Label>Projekti *</Label>
-              <Select
-                value={entryForm.project}
-                onValueChange={v => setEntryForm(prev => ({ ...prev, project: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Valitse projekti" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROJECT_OPTIONS.map(p => (
-                    <SelectItem key={p.value} value={p.value}>{p.value}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Työlaji</Label>
-              <Select
-                value={entryForm.workType}
-                onValueChange={v => setEntryForm(prev => ({ ...prev, workType: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Valitse työlaji" />
-                </SelectTrigger>
-                <SelectContent>
-                  {WORK_TYPE_OPTIONS.map(wt => (
-                    <SelectItem key={wt} value={wt}>{wt}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Kuvaus</Label>
-              <Textarea
-                placeholder="Kuvaile tehty työ..."
-                rows={2}
-                value={entryForm.description}
-                onChange={e => setEntryForm(prev => ({ ...prev, description: e.target.value }))}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="submitApproval"
-                checked={entryForm.submitForApproval}
-                onChange={e => setEntryForm(prev => ({ ...prev, submitForApproval: e.target.checked }))}
-                className="w-4 h-4 rounded border-border text-primary"
-              />
-              <Label htmlFor="submitApproval" className="text-sm text-text-secondary">Lähetä hyväksyttäväksi</Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Peruuta</Button>
-            <Button className="bg-primary hover:bg-primary-hover text-white" onClick={handleSaveEntry}>
-              Tallenna
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{editing ? 'Muokkaa tuntikirjausta' : 'Uusi tuntikirjaus'}</DialogTitle></DialogHeader>{formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="time-date">Päivä *</Label><Input id="time-date" type="date" value={/^\d{4}-/.test(form.date) ? form.date : ''} onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="time-employee">Työntekijä *</Label><Input id="time-employee" value={form.employee} onChange={(event) => setForm((previous) => ({ ...previous, employee: event.target.value }))} disabled={!canApprove} /></div><div className="space-y-2 sm:col-span-2"><Label>Projekti *</Label>{projects.length > 0 ? <Select value={form.project} onValueChange={(project) => setForm((previous) => ({ ...previous, project }))}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.name}>{project.name}</SelectItem>)}</SelectContent></Select> : <Input value={form.project} onChange={(event) => setForm((previous) => ({ ...previous, project: event.target.value }))} />}</div><div className="space-y-2"><Label htmlFor="time-hours">Tunnit *</Label><Input id="time-hours" type="number" min="0" max="24" step="0.25" value={form.hours} onChange={(event) => setForm((previous) => ({ ...previous, hours: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="time-overtime">Ylityö</Label><Input id="time-overtime" type="number" min="0" step="0.25" value={form.overtime} onChange={(event) => setForm((previous) => ({ ...previous, overtime: event.target.value }))} /></div>{canApprove && <div className="space-y-2 sm:col-span-2"><Label>Tila</Label><Select value={form.status} onValueChange={(status: TimeEntryStatus) => setForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Odottaa">Odottaa</SelectItem><SelectItem value="Hyväksytty">Hyväksytty</SelectItem><SelectItem value="Hylätty">Hylätty</SelectItem></SelectContent></Select></div>}<div className="space-y-2 sm:col-span-2"><Label htmlFor="time-description">Työn kuvaus</Label><Textarea id="time-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveEntry()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter></DialogContent></Dialog>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista tuntikirjaus</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko {deleteTarget?.employee} kirjaus päivältä {deleteTarget?.date}?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeEntry()} disabled={saving}>Poista</Button></DialogFooter></DialogContent></Dialog>
+    </motion.div>
   );
 }
