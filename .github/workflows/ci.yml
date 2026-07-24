@@ -74,10 +74,6 @@ jobs:
         if: steps.typecheck.outcome == 'failure' || steps.lint.outcome == 'failure' || steps.build.outcome == 'failure'
         run: exit 1
 
-      - name: Post Setup Node.js
-        if: always()
-        run: true
-
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
