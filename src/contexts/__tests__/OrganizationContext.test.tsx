@@ -21,14 +21,18 @@ import {
 const ORG_A: MyOrganization = {
   id: 'org-a',
   name: 'VaKantti Demo Oy',
+  business_id: null,
   created_at: '2025-01-01T00:00:00Z',
+  updated_at: '2025-01-01T00:00:00Z',
   role: 'admin',
 };
 
 const ORG_B: MyOrganization = {
   id: 'org-b',
   name: 'Rakennus Toinen Oy',
+  business_id: null,
   created_at: '2025-01-02T00:00:00Z',
+  updated_at: '2025-01-02T00:00:00Z',
   role: 'worker',
 };
 

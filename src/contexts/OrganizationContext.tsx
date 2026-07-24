@@ -35,6 +35,8 @@ export interface OrganizationContextValue {
   currentRole: OrganizationRole | null;
   /** Switches the active organization (must be one of `organizations`). */
   setCurrentOrg: (orgId: string) => void;
+  /** Reloads organization names and memberships from Supabase. */
+  refreshOrganizations: () => Promise<void>;
   /** True while auth is resolving or organizations are being fetched. */
   loading: boolean;
   /** Finnish error message from the last failed load, or null. */
@@ -57,6 +59,19 @@ function writeStoredOrgId(orgId: string): void {
   } catch {
     // Storage unavailable (private mode etc.) — selection still works in memory.
   }
+}
+
+function chooseOrganization(
+  organizations: MyOrganization[],
+  preferredId: string | null,
+): MyOrganization | null {
+  return (
+    (preferredId
+      ? organizations.find((organization) => organization.id === preferredId)
+      : undefined) ??
+    organizations[0] ??
+    null
+  );
 }
 
 export function OrganizationProvider({ children }: { children: ReactNode }) {
@@ -87,17 +102,9 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setOrganizations(orgs);
 
-        // Restore the persisted choice when the user is still a member,
-        // otherwise fall back to the first organization.
-        const storedId = readStoredOrgId();
-        const restored = storedId
-          ? orgs.find((org) => org.id === storedId)
-          : undefined;
-        const next = restored ?? orgs[0] ?? null;
+        const next = chooseOrganization(orgs, readStoredOrgId());
         setCurrentOrgState(next);
-        if (next) {
-          writeStoredOrgId(next.id);
-        }
+        if (next) writeStoredOrgId(next.id);
       } catch (err) {
         if (cancelled) return;
         setOrganizations([]);
@@ -108,9 +115,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
             : 'Organisaatioiden lataaminen epäonnistui.',
         );
       } finally {
-        if (!cancelled) {
-          setOrgsLoading(false);
-        }
+        if (!cancelled) setOrgsLoading(false);
       }
     }
 
@@ -119,6 +124,31 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [session]);
+
+  const refreshOrganizations = useCallback(async () => {
+    if (!session) return;
+
+    setOrgsLoading(true);
+    setError(null);
+    try {
+      const orgs = await getMyOrganizations();
+      setOrganizations(orgs);
+
+      const preferredId = currentOrg?.id ?? readStoredOrgId();
+      const next = chooseOrganization(orgs, preferredId);
+      setCurrentOrgState(next);
+      if (next) writeStoredOrgId(next.id);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Organisaatioiden lataaminen epäonnistui.',
+      );
+      throw err;
+    } finally {
+      setOrgsLoading(false);
+    }
+  }, [currentOrg?.id, session]);
 
   const setCurrentOrg = useCallback(
     (orgId: string) => {
@@ -136,10 +166,19 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
       currentOrg,
       currentRole: currentOrg?.role ?? null,
       setCurrentOrg,
+      refreshOrganizations,
       loading: authLoading || orgsLoading,
       error,
     }),
-    [organizations, currentOrg, setCurrentOrg, authLoading, orgsLoading, error],
+    [
+      organizations,
+      currentOrg,
+      setCurrentOrg,
+      refreshOrganizations,
+      authLoading,
+      orgsLoading,
+      error,
+    ],
   );
 
   return (

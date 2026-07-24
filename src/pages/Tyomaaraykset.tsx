@@ -1,658 +1,451 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Wrench,
-  ChevronRight,
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  HardHat,
+  PauseCircle,
+  Pencil,
+  PlayCircle,
   Plus,
   Search,
-  Pencil,
   Trash2,
-  Play,
-  CheckCircle,
-  Clock,
-  AlertTriangle,
+  UserRound,
+  UsersRound,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from '@/components/ui/alert-dialog';
-import { EmptyState } from '@/components/states';
-import { cn } from '@/lib/utils';
 import { useAppDataContext } from '@/contexts/AppDataContext';
-import type { WorkOrder, WorkOrderStatus, WorkOrderPriority } from '@/types';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
+import {
+  saveManagedWorkOrder,
+  transitionMyWorkOrder,
+  type ManagedWorkOrder,
+} from '@/lib/supabase/workManagement';
+import { cn } from '@/lib/utils';
+import type {
+  WorkAssignmentScope,
+  WorkOrderPriority,
+  WorkOrderStatus,
+} from '@/types';
 
-/* ─── Vakiot ─── */
 const STATUSES: WorkOrderStatus[] = ['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'];
 const PRIORITIES: WorkOrderPriority[] = ['Korkea', 'Normaali', 'Matala'];
-
 const ALL = 'Kaikki';
 
-const formatDate = (iso: string) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('fi-FI');
-};
-
-/* ─── Merkit ─── */
-const getStatusBadge = (status: WorkOrderStatus) => {
-  switch (status) {
-    case 'Avoin':
-      return <Badge className="bg-info-light text-info border-0 font-medium">Avoin</Badge>;
-    case 'Käynnissä':
-      return (
-        <Badge className="bg-primary-light text-primary border-0 font-medium">Käynnissä</Badge>
-      );
-    case 'Odottaa':
-      return (
-        <Badge className="bg-warning-light text-warning border-0 font-medium">Odottaa</Badge>
-      );
-    case 'Valmis':
-      return <Badge className="bg-success-light text-success border-0 font-medium">Valmis</Badge>;
-    case 'Peruttu':
-      return (
-        <Badge className="bg-bg-light text-text-secondary border border-[#E2E8F0] font-medium">
-          Peruttu
-        </Badge>
-      );
-    default:
-      return <Badge variant="secondary">{status}</Badge>;
-  }
-};
-
-const getPriorityBadge = (priority: WorkOrderPriority) => {
-  switch (priority) {
-    case 'Korkea':
-      return <Badge className="bg-danger-light text-danger border-0 font-medium">Korkea</Badge>;
-    case 'Normaali':
-      return <Badge className="bg-info-light text-info border-0 font-medium">Normaali</Badge>;
-    case 'Matala':
-      return (
-        <Badge className="bg-bg-light text-text-secondary border border-[#E2E8F0] font-medium">
-          Matala
-        </Badge>
-      );
-    default:
-      return <Badge variant="secondary">{priority}</Badge>;
-  }
-};
-
-/* ─── Lomake ─── */
 interface WorkOrderForm {
   title: string;
-  project: string;
-  assignee: string;
+  projectId: string;
   dueDate: string;
   priority: WorkOrderPriority;
   status: WorkOrderStatus;
+  type: string;
   description: string;
+  assignmentScope: WorkAssignmentScope;
+  assigneeUserIds: string[];
 }
 
-type FormErrors = Partial<Record<keyof WorkOrderForm, string>>;
-
-const emptyForm: WorkOrderForm = {
+const EMPTY_FORM: WorkOrderForm = {
   title: '',
-  project: '',
-  assignee: '',
+  projectId: '',
   dueDate: '',
   priority: 'Normaali',
   status: 'Avoin',
+  type: '',
   description: '',
+  assignmentScope: 'people',
+  assigneeUserIds: [],
 };
 
-/* ─── Komponentti ─── */
+function formatDate(value: string) {
+  if (!value) return 'Ei määräaikaa';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('fi-FI');
+}
+
+function statusBadge(status: WorkOrderStatus) {
+  const styles: Record<WorkOrderStatus, string> = {
+    Avoin: 'border-blue-200 bg-blue-50 text-blue-700',
+    Käynnissä: 'border-orange-200 bg-orange-50 text-orange-700',
+    Odottaa: 'border-amber-200 bg-amber-50 text-amber-700',
+    Valmis: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    Peruttu: 'border-slate-200 bg-slate-50 text-slate-600',
+  };
+  return <Badge variant="outline" className={styles[status]}>{status}</Badge>;
+}
+
+function priorityBadge(priority: WorkOrderPriority) {
+  const styles: Record<WorkOrderPriority, string> = {
+    Korkea: 'border-red-200 bg-red-50 text-red-700',
+    Normaali: 'border-slate-200 bg-slate-50 text-slate-700',
+    Matala: 'border-blue-100 bg-blue-50 text-blue-600',
+  };
+  return <Badge variant="outline" className={styles[priority]}>{priority}</Badge>;
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return parts.length === 1
+    ? parts[0].slice(0, 2).toUpperCase()
+    : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function assignmentLabel(order: ManagedWorkOrder) {
+  if (order.assignmentScope === 'project_team') return 'Koko projektitiimi';
+  if (order.assigneeNames.length > 0) return order.assigneeNames.join(', ');
+  return 'Vastuuhenkilö puuttuu';
+}
+
 export default function Tyomaaraykset() {
-  const { workOrders, projects, addWorkOrder, updateWorkOrder, deleteWorkOrder } =
-    useAppDataContext();
+  const { currentOrg, currentRole } = useOrganization();
+  const { projects, deleteWorkOrder, refresh: refreshDomain } = useAppDataContext();
+  const {
+    people,
+    projectMemberships,
+    workOrders,
+    canManage,
+    loading,
+    error,
+    refresh,
+  } = useRoleWorkspace();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
-  const [priorityFilter, setPriorityFilter] = useState<string>(ALL);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState<WorkOrder | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<WorkOrder | null>(null);
-  const [form, setForm] = useState<WorkOrderForm>(emptyForm);
-  const [errors, setErrors] = useState<FormErrors>({});
-
-  const projectNames = useMemo(() => projects.map(p => p.name), [projects]);
+  const [editing, setEditing] = useState<ManagedWorkOrder | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ManagedWorkOrder | null>(null);
+  const [transitionTarget, setTransitionTarget] = useState<ManagedWorkOrder | null>(null);
+  const [transitionStatus, setTransitionStatus] = useState<'Odottaa' | 'Valmis'>('Valmis');
+  const [workerNote, setWorkerNote] = useState('');
+  const [form, setForm] = useState<WorkOrderForm>(EMPTY_FORM);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const filteredOrders = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return workOrders.filter(wo => {
-      const matchesSearch =
-        !q ||
-        wo.title.toLowerCase().includes(q) ||
-        wo.project.toLowerCase().includes(q) ||
-        wo.assignee.toLowerCase().includes(q);
-      const matchesStatus = statusFilter === ALL || wo.status === statusFilter;
-      const matchesPriority = priorityFilter === ALL || wo.priority === priorityFilter;
-      return matchesSearch && matchesStatus && matchesPriority;
+    const query = search.trim().toLocaleLowerCase('fi');
+    return workOrders.filter((order) => {
+      const matchesSearch = !query || [
+        order.title,
+        order.project,
+        order.description,
+        assignmentLabel(order),
+      ].some((value) => value.toLocaleLowerCase('fi').includes(query));
+      const matchesStatus = statusFilter === ALL || order.status === statusFilter;
+      return matchesSearch && matchesStatus;
     });
-  }, [workOrders, search, statusFilter, priorityFilter]);
+  }, [search, statusFilter, workOrders]);
 
-  const openCount = workOrders.filter(wo => wo.status === 'Avoin').length;
-  const inProgressCount = workOrders.filter(wo => wo.status === 'Käynnissä').length;
-  const doneCount = workOrders.filter(wo => wo.status === 'Valmis').length;
-  const highPriorityOpen = workOrders.filter(
-    wo => wo.priority === 'Korkea' && wo.status !== 'Valmis' && wo.status !== 'Peruttu',
-  ).length;
+  const activeOrders = workOrders.filter((order) => order.status === 'Käynnissä');
+  const openOrders = workOrders.filter((order) => order.status === 'Avoin');
+  const waitingOrders = workOrders.filter((order) => order.status === 'Odottaa');
+  const doneOrders = workOrders.filter((order) => order.status === 'Valmis');
+  const selectedProjectMemberIds = new Set(
+    projectMemberships
+      .filter((membership) => membership.projectId === form.projectId)
+      .map((membership) => membership.userId),
+  );
 
-  const openCreateDialog = () => {
-    setEditingOrder(null);
-    setForm(emptyForm);
-    setErrors({});
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setFormErrors([]);
+    setOperationError(null);
     setDialogOpen(true);
   };
 
-  const openEditDialog = (order: WorkOrder) => {
-    setEditingOrder(order);
+  const openEdit = (order: ManagedWorkOrder) => {
+    setEditing(order);
     setForm({
       title: order.title,
-      project: order.project,
-      assignee: order.assignee,
+      projectId: order.projectId,
       dueDate: order.dueDate,
       priority: order.priority,
       status: order.status,
-      description: order.description ?? '',
+      type: order.type,
+      description: order.description,
+      assignmentScope: order.assignmentScope,
+      assigneeUserIds: order.assigneeUserIds,
     });
-    setErrors({});
+    setFormErrors([]);
+    setOperationError(null);
     setDialogOpen(true);
   };
 
-  const setField = <K extends keyof WorkOrderForm>(field: K, value: WorkOrderForm[K]) => {
-    setForm(prev => ({ ...prev, [field]: value }));
-    setErrors(prev => ({ ...prev, [field]: undefined }));
+  const toggleAssignee = (userId: string, checked: boolean) => {
+    setForm((previous) => ({
+      ...previous,
+      assigneeUserIds: checked
+        ? [...new Set([...previous.assigneeUserIds, userId])]
+        : previous.assigneeUserIds.filter((id) => id !== userId),
+    }));
   };
 
-  const validate = (): boolean => {
-    const next: FormErrors = {};
-    if (!form.title.trim()) next.title = 'Otsikko on pakollinen';
-    if (!form.project) next.project = 'Valitse projekti';
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const handleSave = () => {
-    if (!validate()) return;
-    const payload = {
-      title: form.title.trim(),
-      project: form.project,
-      assignee: form.assignee.trim(),
-      dueDate: form.dueDate,
-      priority: form.priority,
-      status: form.status,
-      description: form.description.trim() || undefined,
-    };
-    if (editingOrder) {
-      updateWorkOrder(editingOrder.id, payload);
-    } else {
-      addWorkOrder(payload);
+  const save = async () => {
+    const nextErrors: string[] = [];
+    if (!form.title.trim()) nextErrors.push('Työmääräyksen otsikko on pakollinen.');
+    if (!form.projectId) nextErrors.push('Valitse projekti.');
+    if (form.assignmentScope === 'people' && form.assigneeUserIds.length === 0) {
+      nextErrors.push('Valitse vähintään yksi vastuuhenkilö.');
     }
-    setDialogOpen(false);
-  };
+    if (form.assignmentScope === 'project_team' && selectedProjectMemberIds.size === 0) {
+      nextErrors.push('Valitulla projektilla ei ole projektitiimiä. Lisää tiimi ensin Projektit-näkymässä.');
+    }
+    setFormErrors(nextErrors);
+    if (nextErrors.length > 0 || !currentOrg || !canManage) return;
 
-  const handleDelete = () => {
-    if (deleteTarget) {
-      deleteWorkOrder(deleteTarget.id);
-      setDeleteTarget(null);
+    setSaving(true);
+    setOperationError(null);
+    try {
+      await saveManagedWorkOrder({
+        organizationId: currentOrg.id,
+        workOrderId: editing?.id,
+        projectId: form.projectId,
+        title: form.title.trim(),
+        dueDate: form.dueDate,
+        priority: form.priority,
+        status: form.status,
+        description: form.description.trim(),
+        type: form.type.trim(),
+        assignmentScope: form.assignmentScope,
+        assigneeUserIds: form.assignmentScope === 'people' ? form.assigneeUserIds : [],
+      });
+      await Promise.all([refresh(), refreshDomain()]);
+      setDialogOpen(false);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Tallennus epäonnistui.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const statusFilters = [
-    { key: ALL, count: workOrders.length, icon: Wrench },
-    { key: 'Avoin', count: openCount, icon: Clock },
-    { key: 'Käynnissä', count: inProgressCount, icon: Play },
-    { key: 'Valmis', count: doneCount, icon: CheckCircle },
-  ];
+  const remove = async () => {
+    if (!deleteTarget || !canManage) return;
+    deleteWorkOrder(deleteTarget.id);
+    setDeleteTarget(null);
+    await refresh();
+  };
+
+  const runTransition = async (
+    order: ManagedWorkOrder,
+    nextStatus: 'Käynnissä' | 'Odottaa' | 'Valmis',
+    note = '',
+  ) => {
+    setSaving(true);
+    setOperationError(null);
+    try {
+      await transitionMyWorkOrder({
+        workOrderId: order.id,
+        status: nextStatus,
+        workerNote: note,
+      });
+      await Promise.all([refresh(), refreshDomain()]);
+      setTransitionTarget(null);
+      setWorkerNote('');
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Tilan päivitys epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openTransition = (order: ManagedWorkOrder, nextStatus: 'Odottaa' | 'Valmis') => {
+    setTransitionTarget(order);
+    setTransitionStatus(nextStatus);
+    setWorkerNote(order.workerNote);
+    setOperationError(null);
+  };
+
+  const pageTitle = canManage ? 'Työmääräysten ohjaus' : 'Minun työni';
+  const pageDescription = canManage
+    ? 'Kohdista tehtävät projekteille, tiimeille ja vastuuhenkilöille'
+    : 'Näet vain sinulle määrätyt tai projektitiimillesi kuuluvat tehtävät';
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className="space-y-6"
-    >
-      {/* ── Sivun otsikko ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-body-sm text-text-secondary mb-1">
-            <span>Dashboard</span>
-            <ChevronRight size={14} />
-            <span className="text-text-primary font-medium">Työmääräykset</span>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto max-w-[1500px] space-y-6">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-white shadow-lg sm:p-8">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300">
+              {canManage ? <HardHat size={16} /> : <ClipboardList size={16} />}
+              {canManage ? 'Työnjohto' : 'Työntekijän työtila'}
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight">{pageTitle}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{pageDescription}</p>
           </div>
-          <h1 className="text-hero text-text-primary">Työmääräykset</h1>
-          <p className="text-body-sm text-text-secondary mt-1">
-            Työmääräysten hallinta ja seuranta
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            className="bg-primary hover:bg-primary-hover text-white gap-2"
-            onClick={openCreateDialog}
-          >
-            <Plus size={16} /> Uusi työmääräys
-          </Button>
+          {canManage && (
+            <Button onClick={openCreate} className="gap-2 bg-orange-500 text-white hover:bg-orange-600">
+              <Plus size={17} /> Uusi työmääräys
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* ── Tilastot ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {(error || operationError) && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <AlertTriangle size={17} /> {operationError ?? error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          {
-            label: 'Avoimet',
-            value: openCount,
-            icon: Clock,
-            color: 'text-info',
-            bg: 'bg-info-light',
-          },
-          {
-            label: 'Käynnissä',
-            value: inProgressCount,
-            icon: Play,
-            color: 'text-primary',
-            bg: 'bg-primary-light',
-          },
-          {
-            label: 'Valmiit',
-            value: doneCount,
-            icon: CheckCircle,
-            color: 'text-success',
-            bg: 'bg-success-light',
-          },
-          {
-            label: 'Korkea prioriteetti',
-            value: highPriorityOpen,
-            icon: AlertTriangle,
-            color: 'text-danger',
-            bg: 'bg-danger-light',
-          },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.06, duration: 0.2 }}
-          >
-            <Card className="border border-[#E2E8F0] shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <span className="text-caption text-text-secondary uppercase tracking-wider">
-                    {stat.label}
-                  </span>
-                  <div
-                    className={cn(
-                      'w-10 h-10 rounded-lg flex items-center justify-center',
-                      stat.bg,
-                    )}
-                  >
-                    <stat.icon size={20} className={stat.color} />
-                  </div>
-                </div>
-                <p className="text-[28px] font-bold text-text-primary font-mono leading-none">
-                  {stat.value}
-                </p>
-              </CardContent>
-            </Card>
-          </motion.div>
+          { label: 'Avoimet', value: openOrders.length, icon: ClipboardList, tone: 'bg-blue-50 text-blue-700' },
+          { label: 'Käynnissä', value: activeOrders.length, icon: PlayCircle, tone: 'bg-orange-50 text-orange-700' },
+          { label: 'Odottaa', value: waitingOrders.length, icon: PauseCircle, tone: 'bg-amber-50 text-amber-700' },
+          { label: 'Valmiit', value: doneOrders.length, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-700' },
+        ].map((item) => (
+          <Card key={item.label} className="border-slate-200 shadow-sm">
+            <CardContent className="p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 font-mono text-3xl font-bold text-slate-950">{item.value}</p></div>
+                <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl', item.tone)}><item.icon size={21} /></div>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
-      {/* ── Suodattimet ── */}
-      <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {statusFilters.map(filter => (
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:flex-row lg:items-center">
+        <div className="flex flex-wrap gap-2">
+          {[ALL, 'Avoin', 'Käynnissä', 'Odottaa', 'Valmis'].map((item) => (
             <button
-              key={filter.key}
-              onClick={() => setStatusFilter(filter.key)}
+              key={item}
+              type="button"
+              onClick={() => setStatusFilter(item)}
               className={cn(
-                'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all',
-                statusFilter === filter.key
-                  ? 'bg-primary-light border-primary text-primary'
-                  : 'bg-white border-[#E2E8F0] text-text-secondary hover:border-[#CBD5E1]',
+                'rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
+                statusFilter === item
+                  ? 'border-orange-300 bg-orange-50 text-orange-700'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
               )}
             >
-              <filter.icon size={14} />
-              {filter.key}
-              <span className="font-mono text-xs">{filter.count}</span>
+              {item}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-3 lg:ml-auto">
-          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className="w-[160px] h-10 border-[#E2E8F0]">
-              <SelectValue placeholder="Prioriteetti" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>Kaikki prioriteetit</SelectItem>
-              {PRIORITIES.map(p => (
-                <SelectItem key={p} value={p}>
-                  {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="relative flex-1 lg:w-64">
-            <Search
-              size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-            />
-            <Input
-              placeholder="Hae työmääräyksiä..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-9 h-10 border-[#E2E8F0] focus:border-primary focus:ring-primary"
-            />
-          </div>
+        <div className="relative lg:ml-auto lg:w-80">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae tehtävää tai projektia…" className="pl-9" />
         </div>
       </div>
 
-      {/* ── Työmääräyslista ── */}
-      {workOrders.length === 0 ? (
-        <EmptyState
-          icon={<Wrench size={40} />}
-          title="Ei työmääräyksiä"
-          description="Työmääräyksiä ei ole vielä luotu. Lisää ensimmäinen työmääräys aloittaaksesi."
-          action={
-            <Button
-              className="bg-primary hover:bg-primary-hover text-white gap-2"
-              onClick={openCreateDialog}
-            >
-              <Plus size={16} /> Uusi työmääräys
-            </Button>
-          }
-        />
-      ) : (
-        <Card className="border border-[#E2E8F0] shadow-card overflow-hidden">
-          <CardContent className="p-0">
-            {/* Taulukon otsikko */}
-            <div className="hidden lg:grid lg:grid-cols-[1fr_150px_120px_110px_110px_130px_100px] gap-4 px-6 py-3 bg-bg-light border-b border-[#E2E8F0]">
-              <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                Otsikko
-              </span>
-              <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                Projekti
-              </span>
-              <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                Vastaava
-              </span>
-              <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                Eräpäivä
-              </span>
-              <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                Prioriteetti
-              </span>
-              <span className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                Tila
-              </span>
-              <span className="text-caption text-text-muted uppercase tracking-wider font-semibold text-right">
-                Toiminnot
-              </span>
-            </div>
-
-            {/* Rivit */}
-            {filteredOrders.map(order => (
-              <div
-                key={order.id}
-                className={cn(
-                  'grid grid-cols-1 lg:grid-cols-[1fr_150px_120px_110px_110px_130px_100px] gap-2 lg:gap-4 px-6 py-4 border-b border-[#F1F5F9] hover:bg-bg-light transition-colors items-center',
-                  order.priority === 'Korkea' &&
-                    order.status !== 'Valmis' &&
-                    order.status !== 'Peruttu' &&
-                    'border-l-[3px] border-l-danger',
-                )}
-              >
-                <div>
-                  <p className="text-sm font-semibold text-text-primary">{order.title}</p>
-                  {order.description && (
-                    <p className="text-body-sm text-text-secondary mt-0.5 line-clamp-1">
-                      {order.description}
-                    </p>
-                  )}
-                  <div className="flex lg:hidden flex-wrap items-center gap-2 mt-2">
-                    {getPriorityBadge(order.priority)}
-                    {getStatusBadge(order.status)}
+      <div className="grid gap-4 xl:grid-cols-2">
+        {filteredOrders.map((order) => (
+          <Card key={order.id} className={cn('overflow-hidden border-slate-200 shadow-sm transition-shadow hover:shadow-md', order.priority === 'Korkea' && !['Valmis', 'Peruttu'].includes(order.status) && 'border-l-4 border-l-red-500')}>
+            <CardContent className="p-0">
+              <div className="space-y-4 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap gap-2">{statusBadge(order.status)}{priorityBadge(order.priority)}</div>
+                    <h2 className="text-lg font-semibold text-slate-950">{order.title}</h2>
+                    <p className="mt-1 text-sm text-slate-500">{order.project}</p>
                   </div>
+                  {canManage && (
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(order)} aria-label={`Muokkaa ${order.title}`}><Pencil size={16} /></Button>
+                      <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteTarget(order)} aria-label={`Poista ${order.title}`}><Trash2 size={16} /></Button>
+                    </div>
+                  )}
                 </div>
-                <span className="text-body-sm text-text-secondary hidden lg:block truncate">
-                  {order.project}
-                </span>
-                <span className="text-body-sm text-text-secondary hidden lg:block">
-                  {order.assignee || '—'}
-                </span>
-                <span className="text-body-sm text-text-secondary hidden lg:block">
-                  {formatDate(order.dueDate)}
-                </span>
-                <div className="hidden lg:block">{getPriorityBadge(order.priority)}</div>
-                <div className="hidden lg:block">
-                  <Select
-                    value={order.status}
-                    onValueChange={v =>
-                      updateWorkOrder(order.id, { status: v as WorkOrderStatus })
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-[120px] border-[#E2E8F0] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {STATUSES.map(s => (
-                        <SelectItem key={s} value={s}>
-                          {s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center justify-end gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-text-secondary hover:text-primary"
-                    onClick={() => openEditDialog(order)}
-                    aria-label={`Muokkaa työmääräystä ${order.title}`}
-                  >
-                    <Pencil size={16} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-text-secondary hover:text-danger"
-                    onClick={() => setDeleteTarget(order)}
-                    aria-label={`Poista työmääräys ${order.title}`}
-                  >
-                    <Trash2 size={16} />
-                  </Button>
-                </div>
-              </div>
-            ))}
 
-            {filteredOrders.length === 0 && (
-              <div className="p-12 text-center">
-                <Wrench size={48} className="mx-auto text-text-muted mb-4" />
-                <p className="text-h3 text-text-primary mb-1">Ei hakutuloksia</p>
-                <p className="text-body-sm text-text-secondary">
-                  Suodattimilla ei löytynyt työmääräyksiä
-                </p>
-              </div>
-            )}
+                {order.description && <p className="text-sm leading-6 text-slate-600">{order.description}</p>}
 
-            <div className="flex items-center justify-between px-6 py-3 border-t border-[#E2E8F0] bg-bg-light">
-              <span className="text-body-sm text-text-secondary">
-                Näytetään {filteredOrders.length} / {workOrders.length}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+                <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
+                  <div className="flex items-start gap-2"><CalendarDays size={16} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Määräaika</p><p className="text-sm font-medium text-slate-700">{formatDate(order.dueDate)}</p></div></div>
+                  <div className="flex items-start gap-2">{order.assignmentScope === 'project_team' ? <UsersRound size={16} className="mt-0.5 text-slate-400" /> : <UserRound size={16} className="mt-0.5 text-slate-400" />}<div><p className="text-xs uppercase tracking-wide text-slate-400">Vastuu</p><p className="text-sm font-medium text-slate-700">{assignmentLabel(order)}</p></div></div>
+                </div>
+
+                {order.workerNote && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    <strong>Työhuomio:</strong> {order.workerNote}
+                  </div>
+                )}
+
+                {!canManage && !['Valmis', 'Peruttu'].includes(order.status) && (
+                  <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                    {order.status === 'Avoin' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Aloita työ</Button>}
+                    {order.status === 'Odottaa' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Jatka työtä</Button>}
+                    {order.status === 'Käynnissä' && <Button variant="outline" onClick={() => openTransition(order, 'Odottaa')} disabled={saving} className="gap-2"><PauseCircle size={16} /> Keskeytä</Button>}
+                    {['Käynnissä', 'Odottaa'].includes(order.status) && <Button onClick={() => openTransition(order, 'Valmis')} disabled={saving} className="gap-2 bg-emerald-600 hover:bg-emerald-700"><CheckCircle2 size={16} /> Merkitse valmiiksi</Button>}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {!loading && filteredOrders.length === 0 && (
+        <Card className="border-dashed border-slate-300"><CardContent className="p-12 text-center"><ClipboardList size={46} className="mx-auto mb-3 text-slate-300" /><h2 className="font-semibold text-slate-800">{canManage ? 'Työmääräyksiä ei löytynyt' : 'Sinulle ei ole määrätty töitä'}</h2><p className="mt-1 text-sm text-slate-500">{canManage ? 'Muuta hakua tai luo uusi työmääräys.' : 'Uudet tehtävät näkyvät tässä, kun työnjohto kohdistaa ne sinulle tai projektitiimillesi.'}</p></CardContent></Card>
       )}
 
-      {/* ── Luonti-/muokkausdialogi ── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-h2">
-              {editingOrder ? 'Muokkaa työmääräystä' : 'Uusi työmääräys'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="wo-title">Otsikko *</Label>
-              <Input
-                id="wo-title"
-                value={form.title}
-                onChange={e => setField('title', e.target.value)}
-                placeholder="esim. LVI-asennus kerrostalo"
-                aria-invalid={!!errors.title}
-              />
-              {errors.title && <p className="text-sm text-danger">{errors.title}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label>Projekti *</Label>
-              <Select value={form.project} onValueChange={v => setField('project', v)}>
-                <SelectTrigger aria-invalid={!!errors.project}>
-                  <SelectValue placeholder="Valitse projekti" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projectNames.map(name => (
-                    <SelectItem key={name} value={name}>
-                      {name}
-                    </SelectItem>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader><DialogTitle>{editing ? 'Muokkaa työmääräystä' : 'Uusi työmääräys'}</DialogTitle></DialogHeader>
+          {formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="work-title">Tehtävä *</Label><Input id="work-title" value={form.title} onChange={(event) => setForm((previous) => ({ ...previous, title: event.target.value }))} /></div>
+            <div className="space-y-2 sm:col-span-2"><Label>Projekti *</Label><Select value={form.projectId} onValueChange={(projectId) => setForm((previous) => ({ ...previous, projectId }))}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor="work-due">Määräaika</Label><Input id="work-due" type="date" value={form.dueDate} onChange={(event) => setForm((previous) => ({ ...previous, dueDate: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="work-type">Työlaji</Label><Input id="work-type" value={form.type} onChange={(event) => setForm((previous) => ({ ...previous, type: event.target.value }))} placeholder="Esim. kirvesmiestyö" /></div>
+            <div className="space-y-2"><Label>Prioriteetti</Label><Select value={form.priority} onValueChange={(priority: WorkOrderPriority) => setForm((previous) => ({ ...previous, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Tila</Label><Select value={form.status} onValueChange={(status: WorkOrderStatus) => setForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2 sm:col-span-2"><Label>Kohdistus</Label><Select value={form.assignmentScope} onValueChange={(assignmentScope: WorkAssignmentScope) => setForm((previous) => ({ ...previous, assignmentScope }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="people">Nimetyt henkilöt</SelectItem><SelectItem value="project_team">Koko projektitiimi</SelectItem></SelectContent></Select></div>
+            {form.assignmentScope === 'people' && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Vastuuhenkilöt *</Label>
+                <div className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-2">
+                  {people.map((person) => (
+                    <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-slate-50">
+                      <Checkbox checked={form.assigneeUserIds.includes(person.userId)} onCheckedChange={(checked) => toggleAssignee(person.userId, checked === true)} />
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</span>
+                      <span className="min-w-0"><span className="block truncate text-sm font-medium">{person.name}</span><span className="block truncate text-xs text-slate-500">{person.email || person.role}</span></span>
+                    </label>
                   ))}
-                  {form.project && !projectNames.includes(form.project) && (
-                    <SelectItem value={form.project}>{form.project}</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-              {errors.project && <p className="text-sm text-danger">{errors.project}</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="wo-assignee">Vastaava</Label>
-                <Input
-                  id="wo-assignee"
-                  value={form.assignee}
-                  onChange={e => setField('assignee', e.target.value)}
-                  placeholder="esim. Jukka L."
-                />
+                  {people.length === 0 && <p className="text-sm text-slate-500 sm:col-span-2">Organisaatioon ei ole vielä kutsuttu käyttäjiä.</p>}
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="wo-due">Eräpäivä</Label>
-                <Input
-                  id="wo-due"
-                  type="date"
-                  value={form.dueDate}
-                  onChange={e => setField('dueDate', e.target.value)}
-                />
+            )}
+            {form.assignmentScope === 'project_team' && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 sm:col-span-2">
+                Tehtävä näkyy kaikille valitun projektin tiimijäsenille. Projektissa on nyt <strong>{selectedProjectMemberIds.size}</strong> jäsentä.
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Prioriteetti</Label>
-                <Select
-                  value={form.priority}
-                  onValueChange={v => setField('priority', v as WorkOrderPriority)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Valitse prioriteetti" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map(p => (
-                      <SelectItem key={p} value={p}>
-                        {p}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Tila</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={v => setField('status', v as WorkOrderStatus)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Valitse tila" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUSES.map(s => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="wo-description">Kuvaus</Label>
-              <Textarea
-                id="wo-description"
-                value={form.description}
-                onChange={e => setField('description', e.target.value)}
-                placeholder="Työn tarkempi kuvaus..."
-                rows={3}
-              />
-            </div>
+            )}
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="work-description">Työohje</Label><Textarea id="work-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} rows={5} placeholder="Kerro tehtävän rajaus, laatuvaatimukset ja tarvittavat tarkistukset." /></div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Peruuta
-            </Button>
-            <Button
-              className="bg-primary hover:bg-primary-hover text-white"
-              onClick={handleSave}
-            >
-              {editingOrder ? 'Tallenna muutokset' : 'Lisää työmääräys'}
-            </Button>
-          </DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void save()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna työmääräys'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ── Poiston vahvistus ── */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Poista työmääräys</AlertDialogTitle>
-            <AlertDialogDescription>
-              Haluatko varmasti poistaa työmääräyksen{' '}
-              <span className="font-semibold">{deleteTarget?.title}</span>? Toimintoa ei voi
-              peruuttaa.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Peruuta</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-danger hover:bg-danger/90 text-white"
-              onClick={handleDelete}
-            >
-              Poista
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+      <Dialog open={Boolean(transitionTarget)} onOpenChange={(open) => !open && setTransitionTarget(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{transitionStatus === 'Valmis' ? 'Merkitse työ valmiiksi' : 'Keskeytä työ'}</DialogTitle></DialogHeader>
+          <div className="space-y-3"><p className="text-sm text-slate-600">{transitionTarget?.title}</p><div className="space-y-2"><Label htmlFor="worker-note">Työhuomio</Label><Textarea id="worker-note" value={workerNote} onChange={(event) => setWorkerNote(event.target.value)} placeholder={transitionStatus === 'Valmis' ? 'Mitä tehtiin ja mitä työnjohdon pitää tietää?' : 'Miksi työ odottaa ja mitä tarvitaan jatkamiseen?'} rows={4} /></div></div>
+          <DialogFooter><Button variant="outline" onClick={() => setTransitionTarget(null)} disabled={saving}>Peruuta</Button><Button onClick={() => transitionTarget && void runTransition(transitionTarget, transitionStatus, workerNote)} disabled={saving} className={transitionStatus === 'Valmis' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}>{saving ? 'Tallennetaan…' : transitionStatus === 'Valmis' ? 'Merkitse valmiiksi' : 'Keskeytä työ'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Poista työmääräys</AlertDialogTitle><AlertDialogDescription>Poistetaanko <strong>{deleteTarget?.title}</strong>? Toimintoa ei voi perua.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction onClick={() => void remove()} className="bg-red-600 hover:bg-red-700">Poista</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
       </AlertDialog>
+
+      {!canManage && currentRole === 'worker' && (
+        <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><Clock3 size={16} /> Työnjohto näkee tilapäivityksesi ja työhuomiosi välittömästi.</div>
+      )}
     </motion.div>
   );
 }

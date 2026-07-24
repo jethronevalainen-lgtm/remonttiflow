@@ -1,266 +1,314 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { AlertTriangle, Download, Edit3, Plus, Ruler, Trash2 } from 'lucide-react';
+
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import {
-  Ruler,
-  ChevronRight,
-  ChevronDown,
-  Download,
-  Plus,
-  Calculator,
-  FileSpreadsheet,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+  useFinanceFormsData,
+  type QuantityTakeoff,
+  type QuantityTakeoffLine,
+  type TakeoffStatus,
+} from '@/hooks/useFinanceFormsData';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import logger from '@/lib/logger';
+import {
+  createTakeoff,
+  createTakeoffLine,
+  deleteTakeoff,
+  deleteTakeoffLine,
+  updateTakeoff,
+  updateTakeoffLine,
+} from '@/lib/supabase/financeFormsEntities';
 
-/* ─── Mock Data ─── */
-const quantityGroups = [
-  {
-    name: 'Perustukset',
-    items: [
-      { id: 1, work: 'Kaivutyöt', quantity: 145, unit: 'm³', unitPrice: 25, total: 3625 },
-      { id: 2, work: 'Betonivalu C30', quantity: 85, unit: 'm³', unitPrice: 125, total: 10625 },
-      { id: 3, work: 'Terästyöt', quantity: 4.5, unit: 'tn', unitPrice: 1850, total: 8325 },
-      { id: 4, work: 'Eristys sokkeli', quantity: 180, unit: 'm²', unitPrice: 22, total: 3960 },
-      { id: 5, work: 'Sokkelilaatta', quantity: 220, unit: 'm²', unitPrice: 45, total: 9900 },
-    ],
-  },
-  {
-    name: 'Väliseinät ja runko',
-    items: [
-      { id: 6, work: 'Harkkoseinät 100mm', quantity: 420, unit: 'm²', unitPrice: 65, total: 27300 },
-      { id: 7, work: 'Harkkoseinät 200mm', quantity: 580, unit: 'm²', unitPrice: 78, total: 45240 },
-      { id: 8, work: 'Palkit ja pilariet', quantity: 12, unit: 'kpl', unitPrice: 850, total: 10200 },
-      { id: 9, work: 'Välipohjat', quantity: 320, unit: 'm²', unitPrice: 120, total: 38400 },
-      { id: 10, work: 'Portaat (betoni)', quantity: 3, unit: 'kpl', unitPrice: 4500, total: 13500 },
-    ],
-  },
-  {
-    name: 'Pinnat',
-    items: [
-      { id: 11, work: 'Lattiavalut', quantity: 580, unit: 'm²', unitPrice: 35, total: 20300 },
-      { id: 12, work: 'Seinämaalaukset', quantity: 1250, unit: 'm²', unitPrice: 18, total: 22500 },
-      { id: 13, work: 'Laatoitukset', quantity: 320, unit: 'm²', unitPrice: 55, total: 17600 },
-      { id: 14, work: 'Lattiamateriaalit', quantity: 480, unit: 'm²', unitPrice: 42, total: 20160 },
-      { id: 15, work: 'Listoitukset', quantity: 890, unit: 'm', unitPrice: 8, total: 7120 },
-    ],
-  },
-  {
-    name: 'LVI-työt',
-    items: [
-      { id: 16, work: 'Vesijohtoasennukset', quantity: 450, unit: 'm', unitPrice: 35, total: 15750 },
-      { id: 17, work: 'Viemäriputket', quantity: 380, unit: 'm', unitPrice: 42, total: 15960 },
-      { id: 18, work: 'Lämmityspatterit', quantity: 24, unit: 'kpl', unitPrice: 380, total: 9120 },
-      { id: 19, work: 'Ilmanvaihto', quantity: 1, unit: 'erä', unitPrice: 18500, total: 18500 },
-      { id: 20, work: 'Vesikiertolämmitys', quantity: 480, unit: 'm²', unitPrice: 28, total: 13440 },
-    ],
-  },
-  {
-    name: 'Sähkötyöt',
-    items: [
-      { id: 21, work: 'Sähkökaapelit', quantity: 1200, unit: 'm', unitPrice: 8, total: 9600 },
-      { id: 22, work: 'Pistorasiat', quantity: 85, unit: 'kpl', unitPrice: 45, total: 3825 },
-      { id: 23, work: 'Valaisimet', quantity: 65, unit: 'kpl', unitPrice: 120, total: 7800 },
-      { id: 24, work: 'Sähkökeskus', quantity: 2, unit: 'kpl', unitPrice: 2200, total: 4400 },
-      { id: 25, work: 'Tietoverkot', quantity: 85, unit: 'kpl', unitPrice: 65, total: 5525 },
-    ],
-  },
-];
+const TAKEOFF_STATUSES: TakeoffStatus[] = ['Luonnos', 'Valmis', 'Arkistoitu'];
 
-/* ─── Animation ─── */
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { staggerChildren: 0.04 } },
+interface TakeoffForm {
+  name: string;
+  projectId: string;
+  projectName: string;
+  status: TakeoffStatus;
+  notes: string;
+}
+
+interface LineForm {
+  workPhase: string;
+  description: string;
+  quantity: string;
+  unit: string;
+  wastePercent: string;
+  notes: string;
+}
+
+const emptyTakeoff: TakeoffForm = {
+  name: '',
+  projectId: '',
+  projectName: '',
+  status: 'Luonnos',
+  notes: '',
 };
 
-const rowVariants = {
-  hidden: { opacity: 0, y: 8 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.15, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] } },
+const emptyLine: LineForm = {
+  workPhase: '',
+  description: '',
+  quantity: '',
+  unit: 'm²',
+  wastePercent: '0',
+  notes: '',
 };
 
-/* ─── Component ─── */
+function statusBadge(status: TakeoffStatus) {
+  const classes: Record<TakeoffStatus, string> = {
+    Luonnos: 'bg-amber-50 text-amber-700',
+    Valmis: 'bg-emerald-50 text-emerald-700',
+    Arkistoitu: 'bg-slate-100 text-slate-700',
+  };
+  return <Badge className={`border-0 ${classes[status]}`}>{status}</Badge>;
+}
+
+function effectiveQuantity(line: QuantityTakeoffLine) {
+  return line.quantity * (1 + line.wastePercent / 100);
+}
+
+function csvCell(value: string | number) {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
 export default function Maaralaskenta() {
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
-    Object.fromEntries(quantityGroups.map(g => [g.name, true]))
-  );
+  const { user } = useAuth();
+  const { currentOrg } = useOrganization();
+  const { projects } = useAppDataContext();
+  const { takeoffs, takeoffLines, loading, error, refresh } = useFinanceFormsData();
+  const [selectedId, setSelectedId] = useState('');
+  const [takeoffDialogOpen, setTakeoffDialogOpen] = useState(false);
+  const [lineDialogOpen, setLineDialogOpen] = useState(false);
+  const [editingTakeoff, setEditingTakeoff] = useState<QuantityTakeoff | null>(null);
+  const [editingLine, setEditingLine] = useState<QuantityTakeoffLine | null>(null);
+  const [deleteTakeoffTarget, setDeleteTakeoffTarget] = useState<QuantityTakeoff | null>(null);
+  const [deleteLineTarget, setDeleteLineTarget] = useState<QuantityTakeoffLine | null>(null);
+  const [takeoffForm, setTakeoffForm] = useState<TakeoffForm>(emptyTakeoff);
+  const [lineForm, setLineForm] = useState<LineForm>(emptyLine);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const toggleGroup = (name: string) => {
-    setExpandedGroups(prev => ({ ...prev, [name]: !prev[name] }));
+  const selectedTakeoff = takeoffs.find((item) => item.id === selectedId) ?? takeoffs[0] ?? null;
+  const selectedLines = useMemo(
+    () => selectedTakeoff
+      ? takeoffLines.filter((line) => line.takeoffId === selectedTakeoff.id)
+      : [],
+    [selectedTakeoff, takeoffLines],
+  );
+  const phaseGroups = useMemo(() => {
+    const groups = new Map<string, QuantityTakeoffLine[]>();
+    selectedLines.forEach((line) => {
+      groups.set(line.workPhase, [...(groups.get(line.workPhase) ?? []), line]);
+    });
+    return [...groups.entries()];
+  }, [selectedLines]);
+
+  const openTakeoffCreate = () => {
+    setEditingTakeoff(null);
+    setTakeoffForm(emptyTakeoff);
+    setFormErrors([]);
+    setOperationError(null);
+    setTakeoffDialogOpen(true);
   };
 
-  const groupTotals = quantityGroups.map(g => ({
-    name: g.name,
-    total: g.items.reduce((sum, item) => sum + item.total, 0),
-    itemCount: g.items.length,
-  }));
+  const openTakeoffEdit = (takeoff: QuantityTakeoff) => {
+    setEditingTakeoff(takeoff);
+    setTakeoffForm({
+      name: takeoff.name,
+      projectId: takeoff.projectId ?? '',
+      projectName: takeoff.projectName,
+      status: takeoff.status,
+      notes: takeoff.notes,
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setTakeoffDialogOpen(true);
+  };
 
-  const grandTotal = groupTotals.reduce((sum, g) => sum + g.total, 0);
+  const saveTakeoff = async () => {
+    const nextErrors: string[] = [];
+    if (!takeoffForm.name.trim()) nextErrors.push('Määrälaskelman nimi on pakollinen.');
+    setFormErrors(nextErrors);
+    if (nextErrors.length > 0 || !currentOrg) return;
+
+    const payload: Omit<QuantityTakeoff, 'id'> = {
+      name: takeoffForm.name.trim(),
+      projectId: takeoffForm.projectId || undefined,
+      projectName: takeoffForm.projectName.trim(),
+      status: takeoffForm.status,
+      notes: takeoffForm.notes.trim(),
+    };
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editingTakeoff) await updateTakeoff(currentOrg.id, editingTakeoff.id, payload);
+      else await createTakeoff(currentOrg.id, user?.id, payload);
+      await refresh();
+      setTakeoffDialogOpen(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Määrälaskelman tallennus epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openLineCreate = () => {
+    if (!selectedTakeoff) return;
+    setEditingLine(null);
+    setLineForm(emptyLine);
+    setFormErrors([]);
+    setOperationError(null);
+    setLineDialogOpen(true);
+  };
+
+  const openLineEdit = (line: QuantityTakeoffLine) => {
+    setEditingLine(line);
+    setLineForm({
+      workPhase: line.workPhase,
+      description: line.description,
+      quantity: String(line.quantity),
+      unit: line.unit,
+      wastePercent: String(line.wastePercent),
+      notes: line.notes,
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setLineDialogOpen(true);
+  };
+
+  const saveLine = async () => {
+    const quantity = Number(lineForm.quantity);
+    const wastePercent = Number(lineForm.wastePercent);
+    const nextErrors: string[] = [];
+    if (!selectedTakeoff) nextErrors.push('Valitse määrälaskelma.');
+    if (!lineForm.workPhase.trim()) nextErrors.push('Työvaihe on pakollinen.');
+    if (!lineForm.description.trim()) nextErrors.push('Kuvaus on pakollinen.');
+    if (!Number.isFinite(quantity) || quantity < 0) nextErrors.push('Määrä ei voi olla negatiivinen.');
+    if (!lineForm.unit.trim()) nextErrors.push('Yksikkö on pakollinen.');
+    if (!Number.isFinite(wastePercent) || wastePercent < 0 || wastePercent > 100) {
+      nextErrors.push('Hukan pitää olla 0–100 %.');
+    }
+    setFormErrors(nextErrors);
+    if (nextErrors.length > 0 || !currentOrg || !selectedTakeoff) return;
+
+    const payload: Omit<QuantityTakeoffLine, 'id'> = {
+      takeoffId: selectedTakeoff.id,
+      workPhase: lineForm.workPhase.trim(),
+      description: lineForm.description.trim(),
+      quantity,
+      unit: lineForm.unit.trim(),
+      wastePercent,
+      notes: lineForm.notes.trim(),
+    };
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editingLine) await updateTakeoffLine(currentOrg.id, editingLine.id, payload);
+      else await createTakeoffLine(currentOrg.id, user?.id, payload);
+      await refresh();
+      setLineDialogOpen(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Määrärivin tallennus epäonnistui', { error: caught });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeTakeoff = async () => {
+    if (!currentOrg || !deleteTakeoffTarget) return;
+    setSaving(true);
+    try {
+      await deleteTakeoff(currentOrg.id, deleteTakeoffTarget.id);
+      if (selectedId === deleteTakeoffTarget.id) setSelectedId('');
+      await refresh();
+      setDeleteTakeoffTarget(null);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeLine = async () => {
+    if (!currentOrg || !deleteLineTarget) return;
+    setSaving(true);
+    try {
+      await deleteTakeoffLine(currentOrg.id, deleteLineTarget.id);
+      await refresh();
+      setDeleteLineTarget(null);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportCsv = () => {
+    if (!selectedTakeoff) return;
+    const rows = selectedLines.map((line) => [
+      line.workPhase,
+      line.description,
+      line.quantity,
+      line.unit,
+      line.wastePercent,
+      effectiveQuantity(line).toFixed(3),
+      line.notes,
+    ]);
+    const csv = [
+      ['Työvaihe', 'Kuvaus', 'Määrä', 'Yksikkö', 'Hukka %', 'Hukallinen määrä', 'Huomiot'],
+      ...rows,
+    ].map((row) => row.map(csvCell).join(';')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${selectedTakeoff.name.replaceAll(' ', '-')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] }}
-      className="space-y-6"
-    >
-      {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-body-sm text-text-secondary mb-1">
-            <span>Dashboard</span>
-            <ChevronRight size={14} />
-            <span>Projektit</span>
-            <ChevronRight size={14} />
-            <span className="text-text-primary font-medium">Määrälaskenta</span>
-          </div>
-          <h1 className="text-hero text-text-primary">Määrälaskenta</h1>
-          <p className="text-body-sm text-text-secondary mt-1">Työmäärät ja kustannusarviot rakennusosittain</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="gap-2">
-            <Download size={16} /> Vie Excel
-          </Button>
-          <Button variant="outline" className="gap-2">
-            <FileSpreadsheet size={16} /> Vie PDF
-          </Button>
-          <Button className="bg-primary hover:bg-primary-hover text-white gap-2">
-            <Plus size={16} /> Lisää rivi
-          </Button>
-        </div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><h1 className="text-hero text-text-primary">Määrälaskenta</h1><p className="mt-1 text-body-sm text-text-secondary">Työvaihekohtaiset määrät, yksiköt ja hukkaprosentit</p></div>
+        <Button onClick={openTakeoffCreate} className="gap-2"><Plus size={16} /> Uusi määrälaskelma</Button>
       </div>
 
-      {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: 'Rakennusosia', value: quantityGroups.length, icon: Ruler, color: 'text-primary', bg: 'bg-primary-light' },
-          { label: 'Rivejä yhteensä', value: quantityGroups.reduce((sum, g) => sum + g.items.length, 0), icon: Calculator, color: 'text-success', bg: 'bg-success-light' },
-          { label: 'Kokonaissumma', value: `€${(grandTotal / 1000).toFixed(0)}k`, icon: Calculator, color: 'text-info', bg: 'bg-info-light' },
-          { label: 'Keskiarvo/rivi', value: `€${(grandTotal / quantityGroups.reduce((sum, g) => sum + g.items.length, 0)).toFixed(0)}`, icon: Calculator, color: 'text-warning', bg: 'bg-warning-light' },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.06, duration: 0.2 }}
-          >
-            <Card className="border border-[#E2E8F0] shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <span className="text-caption text-text-secondary uppercase tracking-wider">{stat.label}</span>
-                  <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center', stat.bg)}>
-                    <stat.icon size={20} className={stat.color} />
-                  </div>
-                </div>
-                <p className="text-[24px] font-bold text-text-primary font-mono leading-none">{stat.value}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
+      {(error || operationError) && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} />{operationError ?? error}</div>}
+
+      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
+        <Card className="h-fit"><CardContent className="space-y-2 p-3">{takeoffs.map((takeoff) => { const lines = takeoffLines.filter((line) => line.takeoffId === takeoff.id); return <button key={takeoff.id} type="button" onClick={() => setSelectedId(takeoff.id)} className={`w-full rounded-lg border p-3 text-left ${selectedTakeoff?.id === takeoff.id ? 'border-primary bg-primary-light' : 'border-slate-200 hover:bg-slate-50'}`}><div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{takeoff.name}</p><p className="text-xs text-text-secondary">{takeoff.projectName || 'Ei projektia'}</p></div>{statusBadge(takeoff.status)}</div><p className="mt-2 text-xs text-text-secondary">{lines.length} määräriviä</p></button>; })}{!loading && takeoffs.length === 0 && <div className="p-8 text-center"><Ruler size={38} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei määrälaskelmia</p></div>}</CardContent></Card>
+
+        {selectedTakeoff ? <div className="space-y-4"><Card><CardContent className="p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2"><h2 className="text-xl font-bold">{selectedTakeoff.name}</h2>{statusBadge(selectedTakeoff.status)}</div><p className="mt-1 text-sm text-text-secondary">{selectedTakeoff.projectName || 'Ei projektia'} · {selectedTakeoff.notes || 'Ei lisätietoja'}</p></div><div className="flex gap-2"><Button variant="outline" onClick={() => openTakeoffEdit(selectedTakeoff)}><Edit3 size={15} className="mr-1" /> Muokkaa</Button><Button variant="outline" onClick={exportCsv}><Download size={15} className="mr-1" /> CSV</Button><Button variant="ghost" className="text-danger" onClick={() => setDeleteTakeoffTarget(selectedTakeoff)}><Trash2 size={15} /></Button></div></div></CardContent></Card>
+
+          <div className="flex justify-end"><Button onClick={openLineCreate} className="gap-2"><Plus size={15} /> Lisää määrärivi</Button></div>
+          {phaseGroups.map(([phase, lines]) => <Card key={phase} className="overflow-hidden"><CardContent className="p-0"><div className="border-b bg-slate-50 px-5 py-3"><h3 className="font-semibold">{phase}</h3><p className="text-xs text-text-secondary">{lines.length} riviä</p></div><div className="hidden grid-cols-[1.4fr_100px_80px_100px_130px_1fr_80px] gap-3 border-b px-5 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted lg:grid"><span>Kuvaus</span><span>Määrä</span><span>Yks.</span><span>Hukka</span><span>Hukallinen määrä</span><span>Huomiot</span><span /></div>{lines.map((line) => <div key={line.id} className="grid grid-cols-1 items-center gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-[1.4fr_100px_80px_100px_130px_1fr_80px]"><span className="text-sm font-medium">{line.description}</span><span className="font-mono text-sm">{line.quantity.toLocaleString('fi-FI')}</span><span className="text-sm text-text-secondary">{line.unit}</span><span className="font-mono text-sm">{line.wastePercent}%</span><span className="font-mono text-sm font-semibold">{effectiveQuantity(line).toLocaleString('fi-FI', { maximumFractionDigits: 3 })} {line.unit}</span><span className="truncate text-sm text-text-secondary">{line.notes || '—'}</span><div className="flex justify-end gap-1"><Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openLineEdit(line)}><Edit3 size={14} /></Button><Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-danger" onClick={() => setDeleteLineTarget(line)}><Trash2 size={14} /></Button></div></div>)}</CardContent></Card>)}
+          {selectedLines.length === 0 && <Card><CardContent className="p-10 text-center text-sm text-text-secondary">Ei määrärivejä.</CardContent></Card>}
+        </div> : <Card><CardContent className="p-12 text-center"><Ruler size={42} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Valitse tai luo määrälaskelma</p></CardContent></Card>}
       </div>
 
-      {/* ── Quantity Table ── */}
-      <Card className="border border-[#E2E8F0] shadow-card overflow-hidden">
-        <CardHeader>
-          <CardTitle className="text-h2 text-text-primary flex items-center gap-2">
-            <Ruler size={20} className="text-primary" />
-            Määräluettelo
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-          >
-            {/* Table Header */}
-            <div className="grid grid-cols-[1fr_180px_80px_60px_100px_100px_60px] gap-2 px-6 py-3 bg-bg-light border-b border-[#E2E8F0] text-caption text-text-muted uppercase tracking-wider font-semibold">
-              <span>Rakennusosa</span>
-              <span>Työ</span>
-              <span className="text-right">Määrä</span>
-              <span className="text-right">Yks.</span>
-              <span className="text-right">Yks. hinta</span>
-              <span className="text-right">Yhteensä</span>
-              <span></span>
-            </div>
+      <Dialog open={takeoffDialogOpen} onOpenChange={setTakeoffDialogOpen}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{editingTakeoff ? 'Muokkaa määrälaskelmaa' : 'Uusi määrälaskelma'}</DialogTitle></DialogHeader>{formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label htmlFor="takeoff-name">Nimi *</Label><Input id="takeoff-name" value={takeoffForm.name} onChange={(event) => setTakeoffForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Projekti</Label>{projects.length > 0 ? <Select value={takeoffForm.projectId} onValueChange={(projectId) => { const project = projects.find((item) => item.id === projectId); setTakeoffForm((previous) => ({ ...previous, projectId, projectName: project?.name ?? previous.projectName })); }}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select> : <Input value={takeoffForm.projectName} onChange={(event) => setTakeoffForm((previous) => ({ ...previous, projectName: event.target.value }))} />}</div><div className="space-y-2"><Label>Tila</Label><Select value={takeoffForm.status} onValueChange={(status: TakeoffStatus) => setTakeoffForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{TAKEOFF_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="takeoff-notes">Huomiot</Label><Textarea id="takeoff-notes" value={takeoffForm.notes} onChange={(event) => setTakeoffForm((previous) => ({ ...previous, notes: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setTakeoffDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveTakeoff()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter></DialogContent></Dialog>
 
-            {quantityGroups.map((group, gi) => {
-              const groupTotal = group.items.reduce((sum, item) => sum + item.total, 0);
-              const isOpen = expandedGroups[group.name];
-              return (
-                <div key={group.name}>
-                  {/* Group Header */}
-                  <button
-                    onClick={() => toggleGroup(group.name)}
-                    className="w-full grid grid-cols-[1fr_180px_80px_60px_100px_100px_60px] gap-2 px-6 py-3 border-b border-[#E2E8F0] hover:bg-bg-light transition-colors items-center"
-                    style={{ backgroundColor: gi % 2 === 0 ? '#FAFBFC' : '#F8FAFC' }}
-                  >
-                    <span className="text-sm font-bold text-text-primary text-left flex items-center gap-2">
-                      {isOpen ? <ChevronDown size={16} className="text-text-muted" /> : <ChevronRight size={16} className="text-text-muted" />}
-                      {group.name}
-                    </span>
-                    <span className="text-body-sm text-text-muted">{group.items.length} työtä</span>
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                    <span className="text-right text-mono text-sm font-bold text-primary">€{groupTotal.toLocaleString('fi-FI')}</span>
-                    <span></span>
-                  </button>
+      <Dialog open={lineDialogOpen} onOpenChange={setLineDialogOpen}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{editingLine ? 'Muokkaa määräriviä' : 'Uusi määrärivi'}</DialogTitle></DialogHeader>{formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="takeoff-phase">Työvaihe *</Label><Input id="takeoff-phase" value={lineForm.workPhase} onChange={(event) => setLineForm((previous) => ({ ...previous, workPhase: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="takeoff-description">Kuvaus *</Label><Input id="takeoff-description" value={lineForm.description} onChange={(event) => setLineForm((previous) => ({ ...previous, description: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="takeoff-quantity">Määrä</Label><Input id="takeoff-quantity" type="number" min="0" step="0.001" value={lineForm.quantity} onChange={(event) => setLineForm((previous) => ({ ...previous, quantity: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="takeoff-unit">Yksikkö *</Label><Input id="takeoff-unit" value={lineForm.unit} onChange={(event) => setLineForm((previous) => ({ ...previous, unit: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="takeoff-waste">Hukka %</Label><Input id="takeoff-waste" type="number" min="0" max="100" step="0.1" value={lineForm.wastePercent} onChange={(event) => setLineForm((previous) => ({ ...previous, wastePercent: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="takeoff-line-notes">Huomiot</Label><Textarea id="takeoff-line-notes" value={lineForm.notes} onChange={(event) => setLineForm((previous) => ({ ...previous, notes: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setLineDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveLine()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter></DialogContent></Dialog>
 
-                  {/* Group Items */}
-                  {isOpen && group.items.map(item => (
-                    <motion.div
-                      key={item.id}
-                      variants={rowVariants}
-                      className="grid grid-cols-[1fr_180px_80px_60px_100px_100px_60px] gap-2 px-6 py-2.5 border-b border-[#F1F5F9] hover:bg-bg-light transition-colors items-center"
-                    >
-                      <span></span>
-                      <span className="text-sm text-text-primary">{item.work}</span>
-                      <span className="text-right text-mono text-body-sm text-text-primary">{item.quantity}</span>
-                      <span className="text-right text-body-sm text-text-secondary">{item.unit}</span>
-                      <span className="text-right text-mono text-body-sm text-text-primary">€{item.unitPrice.toLocaleString('fi-FI')}</span>
-                      <span className="text-right text-mono text-sm font-medium text-text-primary">€{item.total.toLocaleString('fi-FI')}</span>
-                      <div className="flex justify-end">
-                        <Checkbox className="data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              );
-            })}
-
-            {/* Grand Total */}
-            <div className="grid grid-cols-[1fr_180px_80px_60px_100px_100px_60px] gap-2 px-6 py-4 bg-primary-light border-t border-primary">
-              <span className="text-sm font-bold text-primary col-span-2">YHTEENSÄ KAIKKI RAKENNUSOSAT</span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span className="text-right text-mono text-base font-bold text-primary">€{grandTotal.toLocaleString('fi-FI')}</span>
-              <span></span>
-            </div>
-          </motion.div>
-        </CardContent>
-      </Card>
-
-      {/* ── Group Summary Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-        {groupTotals.map((group, i) => (
-          <motion.div
-            key={group.name}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.06, duration: 0.2 }}
-          >
-            <Card className="border border-[#E2E8F0] shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all">
-              <CardContent className="p-4">
-                <p className="text-caption text-text-muted uppercase tracking-wider mb-1">{group.name}</p>
-                <p className="text-lg font-bold text-text-primary font-mono">€{group.total.toLocaleString('fi-FI')}</p>
-                <p className="text-body-sm text-text-secondary">{group.itemCount} työtä</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
+      <Dialog open={Boolean(deleteTakeoffTarget)} onOpenChange={(open) => !open && setDeleteTakeoffTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista määrälaskelma</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko <strong>{deleteTakeoffTarget?.name}</strong> ja kaikki sen rivit?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteTakeoffTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeTakeoff()} disabled={saving}>Poista</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={Boolean(deleteLineTarget)} onOpenChange={(open) => !open && setDeleteLineTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista määrärivi</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko <strong>{deleteLineTarget?.description}</strong>?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteLineTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeLine()} disabled={saving}>Poista</Button></DialogFooter></DialogContent></Dialog>
     </motion.div>
   );
 }

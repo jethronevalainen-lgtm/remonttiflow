@@ -1,327 +1,289 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Wrench,
-  Truck,
-  Plus,
-  Search,
+  AlertTriangle,
   Calendar,
   CheckCircle2,
-  MapPin,
-  Gauge,
-  Settings,
-  PenLine,
-  Trash2,
+  Download,
   Edit3,
-  HardHat,
+  MapPin,
+  Plus,
+  Search,
   Tag,
-  type LucideIcon,
+  Trash2,
+  Wrench,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
+import logger from '@/lib/logger';
+import {
+  createEquipmentRecord,
+  deleteEquipmentRecord,
+  updateEquipmentRecord,
+} from '@/lib/supabase/organizationEntities';
 import type { Equipment, EquipmentStatus } from '@/types';
 
-/* ─── Mock Data ─── */
-const initialEquipment: Equipment[] = [
-  { id: '1', name: 'Bobcat kaivuri', type: 'Kaivuri', serial: 'KAI-2022-001', model: 'E26', year: 2022, location: 'Rivitalo Helsinki', status: 'Vapaa', lastMaintenance: '1.12.2025', lastService: '1.12.2025', nextService: '1.3.2026', hours: 1240, maxHours: 2000 },
-  { id: '2', name: 'Hilti poravasara', type: 'Työkalu', serial: 'TYO-2024-014', model: 'TE 70-AVR', year: 2024, location: 'Kerrostalo Espoo', status: 'Käytössä', lastMaintenance: '15.11.2025', lastService: '15.11.2025', nextService: '15.2.2026', hours: 340, maxHours: 1500 },
-  { id: '3', name: 'Työmaakontti', type: 'Kontti', serial: 'KON-2023-020', model: '20ft varastokontti', year: 2023, location: 'Rivitalo Helsinki', status: 'Vapaa', lastMaintenance: '-', lastService: '-', nextService: '-', hours: 0, maxHours: 0 },
-  { id: '4', name: 'Honda generaattori', type: 'Sähkö', serial: 'GEN-2024-070', model: 'EU70is', year: 2024, location: 'Rivitalo D', status: 'Käytössä', lastMaintenance: '20.12.2025', lastService: '20.12.2025', nextService: '20.3.2026', hours: 180, maxHours: 1000 },
-  { id: '5', name: 'Zarges tikkaat 12m', type: 'Teline', serial: 'TEL-2023-012', model: ' professionaalimalli', year: 2023, location: 'Kerrostalo Espoo', status: 'Huollossa', lastMaintenance: '5.1.2026', lastService: '5.1.2026', nextService: '5.7.2026', hours: 0, maxHours: 500 },
-  { id: '6', name: 'Putkileikkuri', type: 'Työkalu', serial: 'TYO-2024-045', model: 'Rothenberger', year: 2024, location: 'LVI-varasto', status: 'Vapaa', lastMaintenance: '10.12.2025', lastService: '10.12.2025', nextService: '10.6.2026', hours: 45, maxHours: 800 },
-  { id: '7', name: 'Betoniauto', type: 'Kuljetus', serial: 'KUL-2021-007', model: 'Volvo FM', year: 2021, location: 'Parkkipaikka', status: 'Vuokralla', lastMaintenance: '1.1.2026', lastService: '1.1.2026', nextService: '1.4.2026', hours: 8500, maxHours: 15000 },
-];
+const ALL = 'Kaikki';
+const EQUIPMENT_STATUSES: EquipmentStatus[] = ['Vapaa', 'Käytössä', 'Huollossa', 'Vuokralla'];
 
-const kpiData = [
-  { label: 'Kalusto yhteensä', value: '18', icon: Wrench, color: 'text-blue-500', bg: 'bg-blue-50' },
-  { label: 'Vapaa', value: '7', icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-  { label: 'Käytössä', value: '8', icon: Gauge, color: 'text-indigo-500', bg: 'bg-indigo-50' },
-  { label: 'Huollossa', value: '3', icon: Settings, color: 'text-amber-500', bg: 'bg-amber-50' },
-];
+interface EquipmentForm {
+  name: string;
+  type: string;
+  serial: string;
+  location: string;
+  status: EquipmentStatus;
+  lastMaintenance: string;
+}
 
-const typeConfig: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
-  Kaivuri: { icon: Truck, color: 'text-orange-600', bg: 'bg-orange-50' },
-  Työkalu: { icon: Wrench, color: 'text-blue-600', bg: 'bg-blue-50' },
-  Kontti: { icon: Tag, color: 'text-slate-600', bg: 'bg-slate-50' },
-  Sähkö: { icon: Gauge, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-  Teline: { icon: HardHat, color: 'text-purple-600', bg: 'bg-purple-50' },
-  Kuljetus: { icon: Truck, color: 'text-green-600', bg: 'bg-green-50' },
+const emptyForm: EquipmentForm = {
+  name: '',
+  type: '',
+  serial: '',
+  location: '',
+  status: 'Vapaa',
+  lastMaintenance: '',
 };
 
-/* ─── Component ─── */
+function statusBadge(status: EquipmentStatus) {
+  const classes: Record<EquipmentStatus, string> = {
+    Vapaa: 'bg-emerald-50 text-emerald-700',
+    Käytössä: 'bg-blue-50 text-blue-700',
+    Huollossa: 'bg-amber-50 text-amber-700',
+    Vuokralla: 'bg-purple-50 text-purple-700',
+  };
+  return <Badge className={`border-0 ${classes[status]}`}>{status}</Badge>;
+}
+
+function csvCell(value: string | number) {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
 export default function Kalusto() {
-  const [equipment, setEquipment] = useState<Equipment[]>(initialEquipment);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('Kaikki');
-  const [editingItem, setEditingItem] = useState<Equipment | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', type: 'Työkalu', model: '', location: '', status: 'Vapaa' as EquipmentStatus });
+  const { user } = useAuth();
+  const { currentOrg } = useOrganization();
+  const { equipment, refresh } = useAppDataContext();
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState(ALL);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Equipment | null>(null);
+  const [form, setForm] = useState<EquipmentForm>(emptyForm);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
 
-  const handleAddItem = () => {
-    if (!newItem.name.trim()) return;
-    const item: Equipment = {
-      id: Date.now().toString(),
-      name: newItem.name,
-      type: newItem.type,
-      serial: '-',
-      model: newItem.model,
-      year: new Date().getFullYear(),
-      location: newItem.location,
-      status: newItem.status,
-      lastMaintenance: '-',
-      lastService: '-',
-      nextService: '-',
-      hours: 0,
-      maxHours: 1000,
+  const filteredEquipment = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return equipment.filter((item) => {
+      const matchesSearch =
+        !query ||
+        item.name.toLowerCase().includes(query) ||
+        item.type.toLowerCase().includes(query) ||
+        item.serial.toLowerCase().includes(query) ||
+        item.location.toLowerCase().includes(query);
+      const matchesStatus = statusFilter === ALL || item.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [equipment, search, statusFilter]);
+
+  const typeCount = new Set(equipment.map((item) => item.type).filter(Boolean)).size;
+
+  const openCreate = () => {
+    setEditingEquipment(null);
+    setForm(emptyForm);
+    setErrors([]);
+    setOperationError(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (item: Equipment) => {
+    setEditingEquipment(item);
+    setForm({
+      name: item.name,
+      type: item.type,
+      serial: item.serial,
+      location: item.location,
+      status: item.status,
+      lastMaintenance: item.lastMaintenance,
+    });
+    setErrors([]);
+    setOperationError(null);
+    setDialogOpen(true);
+  };
+
+  const saveEquipment = async () => {
+    const nextErrors: string[] = [];
+    if (!form.name.trim()) nextErrors.push('Kaluston nimi on pakollinen.');
+    if (!form.type.trim()) nextErrors.push('Kalustotyyppi on pakollinen.');
+    setErrors(nextErrors);
+    if (nextErrors.length > 0 || !currentOrg) return;
+
+    const payload: Omit<Equipment, 'id'> = {
+      name: form.name.trim(),
+      type: form.type.trim(),
+      serial: form.serial.trim(),
+      location: form.location.trim(),
+      status: form.status,
+      lastMaintenance: form.lastMaintenance,
     };
-    setEquipment(prev => [...prev, item]);
-    setNewItem({ name: '', type: 'Työkalu', model: '', location: '', status: 'Vapaa' });
-    setAddDialogOpen(false);
-  };
 
-  const handleEditItem = (item: Equipment) => {
-    setEquipment(prev => prev.map(e => (e.id === item.id ? item : e)));
-    setEditingItem(null);
-  };
-
-  const handleDeleteItem = (id: string) => {
-    setEquipment(prev => prev.filter(e => e.id !== id));
-    setDeleteConfirm(null);
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'Vapaa': return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]"><CheckCircle2 size={10} className="mr-0.5" />Vapaa</Badge>;
-      case 'Käytössä': return <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]"><Gauge size={10} className="mr-0.5" />Käytössä</Badge>;
-      case 'Huollossa': return <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"><Settings size={10} className="mr-0.5" />Huolto</Badge>;
-      case 'Vuokralla': return <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px]"><Calendar size={10} className="mr-0.5" />Varattu</Badge>;
-      default: return <Badge variant="outline">{status}</Badge>;
+    setSaving(true);
+    setOperationError(null);
+    try {
+      if (editingEquipment) {
+        await updateEquipmentRecord(currentOrg.id, editingEquipment.id, payload);
+      } else {
+        await createEquipmentRecord(currentOrg.id, user?.id, payload);
+      }
+      await refresh();
+      setDialogOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Kalustotietojen tallennus epäonnistui', { error });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const filteredEquipment = equipment.filter(e => {
-    const matchesSearch = e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      e.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (e.model ?? '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'Kaikki' || e.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  const statuses = ['Kaikki', 'Vapaa', 'Käytössä', 'Huollossa', 'Vuokralla'];
-  const statusLabels: Record<string, string> = { Kaikki: 'Kaikki', Vapaa: 'Vapaa', Käytössä: 'Käytössä', Huollossa: 'Huolto', Vuokralla: 'Varattu' };
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
+  const removeEquipment = async () => {
+    if (!deleteTarget || !currentOrg) return;
+    setSaving(true);
+    setOperationError(null);
+    try {
+      await deleteEquipmentRecord(currentOrg.id, deleteTarget.id);
+      await refresh();
+      setDeleteTarget(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Poistaminen epäonnistui.';
+      setOperationError(message);
+      logger.error('Kaluston poistaminen epäonnistui', { error });
+    } finally {
+      setSaving(false);
+    }
   };
-  const itemVariants = {
-    hidden: { opacity: 0, y: 12 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.4, 0, 0.2, 1] as [number, number, number, number] } },
+
+  const exportCsv = () => {
+    const rows = equipment.map((item) => [
+      item.name,
+      item.type,
+      item.serial,
+      item.location,
+      item.status,
+      item.lastMaintenance,
+    ]);
+    const csv = [
+      ['Nimi', 'Tyyppi', 'Sarjanumero', 'Sijainti', 'Tila', 'Viimeisin huolto'],
+      ...rows,
+    ].map((row) => row.map(csvCell).join(';')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `kalusto-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-      className="space-y-6"
-    >
-      {/* ─── Header ─── */}
-      <div className="flex items-center justify-between">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#1E293B] flex items-center gap-2">
-            <Wrench className="text-orange-500" size={28} />
-            Kalusto
-          </h1>
-          <p className="text-sm text-[#64748B] mt-1">Koneet, laitteet ja työkalut</p>
+          <h1 className="text-hero text-text-primary">Kalusto</h1>
+          <p className="mt-1 text-body-sm text-text-secondary">Työkalujen, koneiden ja laitteiden hallinta</p>
         </div>
-        <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-[#1E293B] hover:bg-[#334155] text-white">
-              <Plus size={18} className="mr-2" />
-              Lisää kalusto
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader><DialogTitle className="text-lg font-semibold text-[#1E293B]">Lisää uusi kalusto</DialogTitle></DialogHeader>
-            <div className="space-y-3 pt-4">
-              <Input value={newItem.name} onChange={e => setNewItem(p => ({ ...p, name: e.target.value }))} placeholder="Kaluston nimi" className="border-[#E2E8F0]" />
-              <div className="grid grid-cols-2 gap-3">
-                <Input value={newItem.model} onChange={e => setNewItem(p => ({ ...p, model: e.target.value }))} placeholder="Malli" className="border-[#E2E8F0]" />
-                <Input value={newItem.location} onChange={e => setNewItem(p => ({ ...p, location: e.target.value }))} placeholder="Sijainti" className="border-[#E2E8F0]" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Select value={newItem.type} onValueChange={v => setNewItem(p => ({ ...p, type: v }))}>
-                  <SelectTrigger className="border-[#E2E8F0]"><SelectValue placeholder="Tyyppi" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Kaivuri">Kaivuri</SelectItem>
-                    <SelectItem value="Työkalu">Työkalu</SelectItem>
-                    <SelectItem value="Kontti">Kontti</SelectItem>
-                    <SelectItem value="Sähkö">Sähkö</SelectItem>
-                    <SelectItem value="Teline">Teline</SelectItem>
-                    <SelectItem value="Kuljetus">Kuljetus</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={newItem.status} onValueChange={v => setNewItem(p => ({ ...p, status: v as EquipmentStatus }))}>
-                  <SelectTrigger className="border-[#E2E8F0]"><SelectValue placeholder="Tila" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Vapaa">Vapaa</SelectItem>
-                    <SelectItem value="Käytössä">Käytössä</SelectItem>
-                    <SelectItem value="Huollossa">Huolto</SelectItem>
-                    <SelectItem value="Vuokralla">Varattu</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Peruuta</Button>
-                <Button onClick={handleAddItem} className="bg-orange-500 hover:bg-orange-600 text-white">Tallenna</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <div className="flex gap-2">
+          <Button onClick={openCreate} className="gap-2"><Plus size={16} /> Lisää kalusto</Button>
+          <Button variant="outline" onClick={exportCsv} disabled={equipment.length === 0} className="gap-2"><Download size={16} /> Vie CSV</Button>
+        </div>
       </div>
 
-      {/* ─── KPI Cards ─── */}
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiData.map((kpi, i) => (
-          <motion.div key={i} variants={itemVariants}>
-            <Card className="border border-[#E2E8F0] shadow-sm hover:shadow-md transition-shadow">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className={cn('w-11 h-11 rounded-xl flex items-center justify-center', kpi.bg)}>
-                  <kpi.icon size={20} className={kpi.color} />
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-[#1E293B]">{kpi.value}</div>
-                  <div className="text-xs text-[#64748B]">{kpi.label}</div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+      {operationError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <AlertTriangle size={16} /> {operationError}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: 'Kalustoa yhteensä', value: equipment.length, icon: Wrench },
+          { label: 'Vapaana', value: equipment.filter((item) => item.status === 'Vapaa').length, icon: CheckCircle2 },
+          { label: 'Huollossa', value: equipment.filter((item) => item.status === 'Huollossa').length, icon: Calendar },
+          { label: 'Kalustotyyppejä', value: typeCount, icon: Tag },
+        ].map((item) => (
+          <Card key={item.label} className="border-slate-200 shadow-card">
+            <CardContent className="p-5">
+              <div className="mb-3 flex items-center justify-between"><span className="text-xs uppercase tracking-wider text-text-secondary">{item.label}</span><item.icon size={19} className="text-primary" /></div>
+              <p className="font-mono text-3xl font-bold text-text-primary">{item.value}</p>
+            </CardContent>
+          </Card>
         ))}
-      </motion.div>
-
-      {/* ─── Filters ─── */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-          <Input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Hae kalustosta..." className="pl-8 border-[#E2E8F0]" />
-        </div>
-        <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-          <TabsList className="bg-[#F1F5F9]">
-            {statuses.map(s => <TabsTrigger key={s} value={s} className="text-[10px] data-[state=active]:bg-white px-2.5">{statusLabels[s]}</TabsTrigger>)}
-          </TabsList>
-        </Tabs>
       </div>
 
-      {/* ─── Equipment Cards ─── */}
-      <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <AnimatePresence>
-          {filteredEquipment.map(item => {
-            const t = typeConfig[item.type] || { icon: Wrench, color: 'text-slate-600', bg: 'bg-slate-50' };
-            const TypeIcon = t.icon;
-            const usageHours = item.hours ?? 0;
-            const usageMaxHours = item.maxHours ?? 0;
-            const usagePct = usageMaxHours > 0 ? Math.round((usageHours / usageMaxHours) * 100) : 0;
-            return (
-              <motion.div key={item.id} variants={itemVariants} layout>
-                <Card className="border border-[#E2E8F0] shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 group relative overflow-hidden">
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-3 mb-3">
-                      <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0', t.bg)}>
-                        <TypeIcon size={24} className={t.color} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm text-[#1E293B]">{item.name}</h3>
-                        <p className="text-xs text-[#64748B]">{item.model} ({item.year})</p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <Badge className={cn('text-[9px] border', t.bg, t.color)}>{item.type}</Badge>
-                          {getStatusBadge(item.status)}
-                        </div>
-                      </div>
-                    </div>
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="relative flex-1 sm:max-w-md">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae nimellä, tyypillä tai sarjanumerolla…" className="pl-9" />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-full sm:w-48"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value={ALL}>Kaikki tilat</SelectItem>{EQUIPMENT_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
 
-                    <div className="grid grid-cols-3 gap-3 mb-3 text-center">
-                      <div className="bg-[#F8FAFC] rounded-lg p-2">
-                        <div className="text-lg font-bold text-[#1E293B]">{usageHours}</div>
-                        <div className="text-[9px] text-[#64748B]">Käyttötunnit</div>
-                      </div>
-                      <div className="bg-[#F8FAFC] rounded-lg p-2">
-                        <div className="text-lg font-bold text-[#1E293B]">{usagePct}%</div>
-                        <div className="text-[9px] text-[#64748B]">Käyttöaste</div>
-                      </div>
-                      <div className="bg-[#F8FAFC] rounded-lg p-2">
-                        <div className="text-xs font-semibold text-[#1E293B] mt-1.5">{item.nextService}</div>
-                        <div className="text-[9px] text-[#64748B]">Seur. huolto</div>
-                      </div>
-                    </div>
-
-                    {usageMaxHours > 0 && (
-                      <div className="mb-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] text-[#64748B]">Käyttöaste</span>
-                          <span className={cn('text-[10px] font-semibold', usagePct > 80 ? 'text-red-600' : usagePct > 50 ? 'text-amber-600' : 'text-emerald-600')}>{usagePct}%</span>
-                        </div>
-                        <Progress value={usagePct} className={cn('h-2', usagePct > 80 ? '[&>div]:bg-red-500' : usagePct > 50 ? '[&>div]:bg-amber-500' : '[&>div]:bg-emerald-500')} />
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2 text-[10px] text-[#94A3B8] mb-2">
-                      <span className="flex items-center gap-1"><MapPin size={10} />{item.location}</span>
-                      <span>•</span>
-                      <span>Viim. huolto: {item.lastService}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-2 border-t border-[#F1F5F9]">
-                      <Button size="sm" variant="outline" className="h-7 text-xs flex-1">
-                        <PenLine size={10} className="mr-1" /> Käytä
-                      </Button>
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                        <button onClick={() => setEditingItem(item)} className="p-1.5 rounded hover:bg-[#F1F5F9] text-[#64748B]"><Edit3 size={12} /></button>
-                        <button onClick={() => setDeleteConfirm(item.id)} className="p-1.5 rounded hover:bg-red-50 text-[#64748B] hover:text-red-500"><Trash2 size={12} /></button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* ─── Edit Dialog ─── */}
-      <Dialog open={!!editingItem} onOpenChange={() => setEditingItem(null)}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader><DialogTitle className="text-lg font-semibold text-[#1E293B]">Muokkaa kalustoa</DialogTitle></DialogHeader>
-          {editingItem && (
-            <div className="space-y-3 pt-4">
-              <Input value={editingItem.name} onChange={e => setEditingItem(p => p ? { ...p, name: e.target.value } : null)} placeholder="Nimi" className="border-[#E2E8F0]" />
-              <Input value={editingItem.model} onChange={e => setEditingItem(p => p ? { ...p, model: e.target.value } : null)} placeholder="Malli" className="border-[#E2E8F0]" />
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setEditingItem(null)}>Peruuta</Button>
-                <Button onClick={() => editingItem && handleEditItem(editingItem)} className="bg-orange-500 hover:bg-orange-600 text-white">Tallenna</Button>
+      <Card className="overflow-hidden border-slate-200 shadow-card">
+        <CardContent className="p-0">
+          <div className="hidden grid-cols-[1.3fr_1fr_1fr_1fr_120px_100px_90px] gap-4 border-b bg-slate-50 px-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted lg:grid">
+            <span>Kalusto</span><span>Tyyppi</span><span>Sarjanumero</span><span>Sijainti</span><span>Huollettu</span><span>Tila</span><span className="text-right">Toiminnot</span>
+          </div>
+          {filteredEquipment.map((item) => (
+            <div key={item.id} className="grid grid-cols-1 items-center gap-3 border-b border-slate-100 px-6 py-4 lg:grid-cols-[1.3fr_1fr_1fr_1fr_120px_100px_90px] lg:gap-4">
+              <div><p className="font-semibold text-text-primary">{item.name}</p><p className="mt-1 flex items-center gap-1 text-xs text-text-secondary"><MapPin size={12} />{item.location || 'Ei sijaintia'}</p></div>
+              <span className="text-sm text-text-primary">{item.type}</span>
+              <span className="font-mono text-xs text-text-secondary">{item.serial || '—'}</span>
+              <span className="text-sm text-text-secondary">{item.location || '—'}</span>
+              <span className="text-sm text-text-secondary">{item.lastMaintenance || '—'}</span>
+              <div>{statusBadge(item.status)}</div>
+              <div className="flex justify-end gap-1">
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(item)} aria-label={`Muokkaa ${item.name}`}><Edit3 size={15} /></Button>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-danger" onClick={() => setDeleteTarget(item)} aria-label={`Poista ${item.name}`}><Trash2 size={15} /></Button>
               </div>
             </div>
-          )}
+          ))}
+          {filteredEquipment.length === 0 && <div className="p-12 text-center"><Wrench size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei kalustoa</p><p className="mt-1 text-sm text-text-secondary">Lisää ensimmäinen kone tai muuta hakuehtoja.</p></div>}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader><DialogTitle>{editingEquipment ? 'Muokkaa kalustoa' : 'Lisää kalusto'}</DialogTitle></DialogHeader>
+          {errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="equipment-name">Nimi *</Label><Input id="equipment-name" value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="equipment-type">Tyyppi *</Label><Input id="equipment-type" value={form.type} onChange={(event) => setForm((previous) => ({ ...previous, type: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="equipment-serial">Sarjanumero</Label><Input id="equipment-serial" value={form.serial} onChange={(event) => setForm((previous) => ({ ...previous, serial: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="equipment-location">Sijainti</Label><Input id="equipment-location" value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="equipment-maintenance">Viimeisin huolto</Label><Input id="equipment-maintenance" type="date" value={form.lastMaintenance} onChange={(event) => setForm((previous) => ({ ...previous, lastMaintenance: event.target.value }))} /></div>
+            <div className="space-y-2 sm:col-span-2"><Label>Tila</Label><Select value={form.status} onValueChange={(value: EquipmentStatus) => setForm((previous) => ({ ...previous, status: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{EQUIPMENT_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveEquipment()} disabled={saving}>{saving ? 'Tallennetaan…' : editingEquipment ? 'Tallenna muutokset' : 'Lisää kalusto'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── Delete Confirm ─── */}
-      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader><DialogTitle className="text-lg font-semibold text-[#1E293B]">Vahvista poisto</DialogTitle></DialogHeader>
-          <p className="text-sm text-[#64748B] pt-2">Haluatko varmasti poistaa tämän kaluston? Toimintoa ei voi peruuttaa.</p>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Peruuta</Button>
-            <Button variant="destructive" onClick={() => deleteConfirm && handleDeleteItem(deleteConfirm)}>Poista</Button>
-          </div>
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Poista kalusto</DialogTitle></DialogHeader>
+          <p className="text-sm text-text-secondary">Poistetaanko <strong>{deleteTarget?.name}</strong> kalustorekisteristä?</p>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={saving}>Peruuta</Button><Button variant="destructive" onClick={() => void removeEquipment()} disabled={saving}>{saving ? 'Poistetaan…' : 'Poista'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </motion.div>
