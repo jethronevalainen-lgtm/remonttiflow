@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # Supabase publishable configuration is intended for browser bundles.
+  # Authorization is enforced by Row Level Security, not by hiding this key.
+  VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+  VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
+
 jobs:
   build:
     name: Typecheck, lint, unit tests & build
@@ -16,14 +22,24 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Typecheck
-        run: npm run typecheck
+        id: typecheck
+        continue-on-error: true
+        run: npm run typecheck 2>&1 | tee typecheck.log
+
+      - name: Upload typecheck diagnostics
+        if: steps.typecheck.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
+          retention-days: 7
 
       - name: Lint
         run: npm run lint
@@ -32,7 +48,21 @@ jobs:
         run: npm run test
 
       - name: Build
-        run: npm run build
+        id: build
+        continue-on-error: true
+        run: npm run build 2>&1 | tee build.log
+
+      - name: Upload build diagnostics
+        if: steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: build.log
+          retention-days: 7
+
+      - name: Enforce quality-gate results
+        if: steps.typecheck.outcome == 'failure' || steps.build.outcome == 'failure'
+        run: exit 1
 
   e2e:
     name: E2E (Playwright)
@@ -44,7 +74,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -54,11 +84,6 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        # Publishable Supabase key — julkiseen selaimeen tarkoitettu, ei salaisuus.
-        # Vite poimii VITE_*-muuttujat suoraan prosessiympäristöstä (.env:ää ei ole CI:ssä).
-        env:
-          VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
-          VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
         run: npm run test:e2e
 
       - name: Upload Playwright report

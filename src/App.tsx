@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AuthProvider, useAuth, type UserRole } from './contexts/AuthContext';
+import { useAuth, type UserRole } from './contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
@@ -85,10 +85,8 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppDataProvider>
-        <AppRoutes />
-      </AppDataProvider>
-    </AuthProvider>
+    <AppDataProvider>
+      <AppRoutes />
+    </AppDataProvider>
   );
 }

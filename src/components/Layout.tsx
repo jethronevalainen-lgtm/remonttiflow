@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Navbar from './Navbar';
 import Header from './Header';
 import { useState } from 'react';
-import { Home, Wrench, Clock, MessageSquare, User } from 'lucide-react';
+import { AlertTriangle, Home, Loader2, Wrench, Clock, MessageSquare, User } from 'lucide-react';
+import { useAppDataContext } from '@/contexts/AppDataContext';
 
 const bottomNavItems = [
   { path: '/dashboard', label: 'Etusivu', icon: Home },
@@ -17,6 +18,8 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const { loading, refreshing, error, operationError, refresh } = useAppDataContext();
+  const visibleError = operationError ?? error;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
@@ -35,6 +38,27 @@ export default function Layout() {
 
       <div className="flex flex-col flex-1 min-w-0">
         <Header onMenuClick={() => setMobileOpen(true)} />
+
+        {(loading || refreshing) && (
+          <div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+            <Loader2 size={16} className="animate-spin" />
+            {loading ? 'Ladataan organisaation tietoja…' : 'Päivitetään tietoja…'}
+          </div>
+        )}
+
+        {visibleError && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+            <AlertTriangle size={16} />
+            <span className="flex-1">{visibleError}</span>
+            <button
+              type="button"
+              className="rounded-md border border-red-300 px-2 py-1 font-medium hover:bg-red-100"
+              onClick={() => void refresh()}
+            >
+              Yritä uudelleen
+            </button>
+          </div>
+        )}
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 md:pb-6">
           <AnimatePresence mode="wait">
