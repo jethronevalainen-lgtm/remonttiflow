@@ -48,10 +48,20 @@ jobs:
         run: npm run test
 
       - name: Build
-        run: npm run build
+        id: build
+        continue-on-error: true
+        run: npm run build 2>&1 | tee build.log
 
-      - name: Enforce typecheck result
-        if: steps.typecheck.outcome == 'failure'
+      - name: Upload build diagnostics
+        if: steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: build.log
+          retention-days: 7
+
+      - name: Enforce quality-gate results
+        if: steps.typecheck.outcome == 'failure' || steps.build.outcome == 'failure'
         run: exit 1
 
   e2e:
