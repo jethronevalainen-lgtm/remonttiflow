@@ -37,8 +37,8 @@ comment on column public.work_site_check_ins.accuracy_m is
 
 create index if not exists work_site_check_ins_org_checked_in_idx
   on public.work_site_check_ins (organization_id, checked_in_at desc);
-create index if not exists work_site_check_ins_user_active_idx
-  on public.work_site_check_ins (user_id, checked_out_at)
+create unique index if not exists work_site_check_ins_one_active_per_user_idx
+  on public.work_site_check_ins (organization_id, user_id)
   where checked_out_at is null;
 create index if not exists work_site_check_ins_time_entry_idx
   on public.work_site_check_ins (time_entry_id)
@@ -79,7 +79,7 @@ begin
      where project.id = new.project_id;
 
     if not found or resolved_project_organization is distinct from new.organization_id then
-      raise exception 'Valittu projekti ei kuulu aktiiviseen organisaatioon.';
+      raise exception 'Valittu projekti ei kuulu aktiiviseen organisaatioon.' using errcode = '23503';
     end if;
     new.project_name := resolved_project_name;
   end if;
@@ -94,7 +94,7 @@ begin
 end;
 $$;
 
-revoke all on function private.prepare_work_site_check_in() from public;
+revoke all on function private.prepare_work_site_check_in() from public, anon, authenticated;
 
 drop trigger if exists prepare_work_site_check_in on public.work_site_check_ins;
 create trigger prepare_work_site_check_in
@@ -107,8 +107,9 @@ alter table public.work_site_check_ins enable row level security;
 -- organization history needed for time-entry review.
 drop policy if exists work_site_check_ins_select on public.work_site_check_ins;
 create policy work_site_check_ins_select on public.work_site_check_ins
-  for select using (
-    user_id = auth.uid()
+  for select to authenticated
+  using (
+    user_id = (select auth.uid())
     or public.has_org_role(organization_id, array['admin', 'supervisor'])
   );
 
@@ -116,8 +117,9 @@ create policy work_site_check_ins_select on public.work_site_check_ins
 -- organizations. If a project UUID is supplied, it must belong to that org.
 drop policy if exists work_site_check_ins_insert on public.work_site_check_ins;
 create policy work_site_check_ins_insert on public.work_site_check_ins
-  for insert with check (
-    user_id = auth.uid()
+  for insert to authenticated
+  with check (
+    user_id = (select auth.uid())
     and public.is_org_member(organization_id)
     and (
       work_site_check_ins.project_id is null
@@ -130,18 +132,15 @@ create policy work_site_check_ins_insert on public.work_site_check_ins
     )
   );
 
--- Rows are completed only through complete_work_site_check_in(), which verifies
--- ownership and writes the time entry and checkout timestamp atomically.
-drop policy if exists work_site_check_ins_delete on public.work_site_check_ins;
-create policy work_site_check_ins_delete on public.work_site_check_ins
-  for delete using (
-    public.has_org_role(organization_id, array['admin', 'supervisor'])
-  );
-
-grant select, insert, delete on table public.work_site_check_ins to authenticated;
+-- Check-in evidence is immutable from the Data API. Completion happens only
+-- through the narrowly scoped database function below.
+revoke all on table public.work_site_check_ins from anon, authenticated;
+grant select, insert on table public.work_site_check_ins to authenticated;
 grant all on table public.work_site_check_ins to service_role;
 
-create or replace function public.complete_work_site_check_in(p_check_in_id uuid)
+-- Keep elevated logic outside the exposed public schema. The public function
+-- is only a security-invoker RPC wrapper for this single private operation.
+create or replace function private.complete_work_site_check_in_impl(p_check_in_id uuid)
 returns uuid
 language plpgsql
 security definer
@@ -154,7 +153,7 @@ declare
   linked_employee_id uuid;
 begin
   if auth.uid() is null then
-    raise exception 'Kirjautuminen vaaditaan.';
+    raise exception 'Kirjautuminen vaaditaan.' using errcode = '42501';
   end if;
 
   select *
@@ -166,11 +165,11 @@ begin
    for update;
 
   if not found then
-    raise exception 'Aktiivista työmaalle kirjautumista ei löytynyt.';
+    raise exception 'Aktiivista työmaalle kirjautumista ei löytynyt.' using errcode = 'P0002';
   end if;
 
   if not public.is_org_member(check_in_row.organization_id) then
-    raise exception 'Käyttäjä ei kuulu kirjauksen organisaatioon.';
+    raise exception 'Käyttäjä ei kuulu kirjauksen organisaatioon.' using errcode = '42501';
   end if;
 
   worked_hours := greatest(
@@ -221,5 +220,17 @@ begin
 end;
 $$;
 
-revoke all on function public.complete_work_site_check_in(uuid) from public;
+revoke all on function private.complete_work_site_check_in_impl(uuid) from public, anon;
+grant execute on function private.complete_work_site_check_in_impl(uuid) to authenticated;
+
+create or replace function public.complete_work_site_check_in(p_check_in_id uuid)
+returns uuid
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.complete_work_site_check_in_impl(p_check_in_id);
+$$;
+
+revoke all on function public.complete_work_site_check_in(uuid) from public, anon;
 grant execute on function public.complete_work_site_check_in(uuid) to authenticated;
