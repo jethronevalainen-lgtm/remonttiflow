@@ -140,6 +140,9 @@ export async function createWorkSiteCheckIn(input: {
     .single();
 
   if (error) {
+    if (error.code === '23505') {
+      throw new Error('Sinulla on jo aktiivinen työmaalle kirjautuminen. Lopeta nykyinen työ ennen uuden aloittamista.');
+    }
     throw new Error(`Työmaalle kirjautuminen epäonnistui: ${error.message}`);
   }
 
