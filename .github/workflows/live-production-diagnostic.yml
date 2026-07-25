@@ -8,16 +8,43 @@ on:
 permissions:
   contents: read
 
+env:
+  VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+  VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
+  CF_PAGES: "1"
+  CF_PAGES_BRANCH: main
+  CF_PAGES_URL: https://vakantti.pages.dev
+  CF_PAGES_COMMIT_SHA: ${{ github.event.pull_request.base.sha }}
+
 jobs:
   inspect:
-    name: Read live production metadata
+    name: Compare live and current production bundles
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Inspect VaKantti production
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build current main-equivalent bundle
+        run: npm run build
+
+      - name: Compare VaKantti production
         run: |
           node <<'NODE'
+          import fs from 'node:fs';
+
           const suffix = `${Date.now()}-${Math.random()}`;
+          const localIndex = fs.readFileSync('dist/index.html', 'utf8');
+          const localVersion = fs.readFileSync('dist/version.json', 'utf8');
           const versionResponse = await fetch(
             `https://vakantti.pages.dev/version.json?diagnostic=${suffix}`,
             { cache: 'no-store' },
@@ -27,10 +54,20 @@ jobs:
             `https://vakantti.pages.dev/?diagnostic=${suffix}`,
             { cache: 'no-store' },
           );
+          const liveIndex = await rootResponse.text();
 
+          const assets = (html) => [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]);
+          const localAssets = assets(localIndex);
+          const liveAssets = assets(liveIndex);
+
+          console.log(`LOCAL_VERSION=${localVersion}`);
+          console.log(`LOCAL_ASSETS=${JSON.stringify(localAssets)}`);
           console.log(`VERSION_STATUS=${versionResponse.status}`);
-          console.log(`VERSION_BODY=${versionBody}`);
+          console.log(`VERSION_CONTENT_TYPE=${versionResponse.headers.get('content-type') || 'missing'}`);
+          console.log(`VERSION_BODY_PREFIX=${JSON.stringify(versionBody.slice(0, 240))}`);
           console.log(`ROOT_STATUS=${rootResponse.status}`);
+          console.log(`LIVE_ASSETS=${JSON.stringify(liveAssets)}`);
+          console.log(`ASSETS_MATCH=${JSON.stringify(localAssets) === JSON.stringify(liveAssets)}`);
           console.log(`PERMISSIONS_POLICY=${rootResponse.headers.get('permissions-policy') || 'missing'}`);
           console.log(`CF_RAY=${rootResponse.headers.get('cf-ray') || 'missing'}`);
           NODE
