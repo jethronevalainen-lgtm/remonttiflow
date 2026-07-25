@@ -92,6 +92,17 @@ describe('captureCurrentWorkSiteLocation', () => {
       'Laite palautti virheellisen sijaintitiedon.',
     );
   });
+
+  it('rejects browsers without geolocation support', async () => {
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: undefined,
+    });
+
+    await expect(captureCurrentWorkSiteLocation()).rejects.toThrow(
+      'Tämä selain tai laite ei tue sijainnin määritystä.',
+    );
+  });
 });
 
 describe('workSiteMapUrl', () => {
