@@ -27,11 +27,9 @@ describe('captureCurrentWorkSiteLocation', () => {
           altitudeAccuracy: null,
           heading: null,
           speed: null,
-          toJSON: () => ({}),
         },
         timestamp: Date.UTC(2026, 6, 25, 6, 30, 0),
-        toJSON: () => ({}),
-      });
+      } as GeolocationPosition);
     });
 
     Object.defineProperty(navigator, 'geolocation', {
@@ -84,11 +82,9 @@ describe('captureCurrentWorkSiteLocation', () => {
             altitudeAccuracy: null,
             heading: null,
             speed: null,
-            toJSON: () => ({}),
           },
           timestamp: Date.now(),
-          toJSON: () => ({}),
-        }),
+        } as GeolocationPosition),
       },
     });
 
