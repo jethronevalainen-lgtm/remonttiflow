@@ -44,6 +44,63 @@ create index if not exists work_site_check_ins_time_entry_idx
   on public.work_site_check_ins (time_entry_id)
   where time_entry_id is not null;
 
+-- Force provenance fields to server-controlled values. Project and employee
+-- labels are resolved from database records whenever those records exist.
+create or replace function private.prepare_work_site_check_in()
+returns trigger
+language plpgsql
+security invoker
+set search_path = pg_catalog, public, auth
+as $$
+declare
+  authenticated_user uuid;
+  resolved_employee_name text;
+  resolved_project_name text;
+  resolved_project_organization uuid;
+begin
+  authenticated_user := auth.uid();
+  if authenticated_user is not null then
+    new.user_id := authenticated_user;
+  end if;
+
+  select coalesce(nullif(btrim(profile.full_name), ''), nullif(btrim(profile.email), ''))
+    into resolved_employee_name
+    from public.profiles profile
+   where profile.id = new.user_id;
+
+  if resolved_employee_name is not null then
+    new.employee_name := resolved_employee_name;
+  end if;
+
+  if new.project_id is not null then
+    select project.name, project.organization_id
+      into resolved_project_name, resolved_project_organization
+      from public.projects project
+     where project.id = new.project_id;
+
+    if not found or resolved_project_organization is distinct from new.organization_id then
+      raise exception 'Valittu projekti ei kuulu aktiiviseen organisaatioon.';
+    end if;
+    new.project_name := resolved_project_name;
+  end if;
+
+  new.checked_in_at := statement_timestamp();
+  new.checked_out_at := null;
+  new.time_entry_id := null;
+  new.location_source := 'browser_geolocation';
+  new.created_at := statement_timestamp();
+  new.updated_at := statement_timestamp();
+  return new;
+end;
+$$;
+
+revoke all on function private.prepare_work_site_check_in() from public;
+
+drop trigger if exists prepare_work_site_check_in on public.work_site_check_ins;
+create trigger prepare_work_site_check_in
+before insert on public.work_site_check_ins
+for each row execute function private.prepare_work_site_check_in();
+
 alter table public.work_site_check_ins enable row level security;
 
 -- Workers see only their own events. Supervisors and admins see the full
@@ -63,12 +120,12 @@ create policy work_site_check_ins_insert on public.work_site_check_ins
     user_id = auth.uid()
     and public.is_org_member(organization_id)
     and (
-      project_id is null
+      work_site_check_ins.project_id is null
       or exists (
         select 1
         from public.projects project
-        where project.id = project_id
-          and project.organization_id = organization_id
+        where project.id = work_site_check_ins.project_id
+          and project.organization_id = work_site_check_ins.organization_id
       )
     )
   );
@@ -118,7 +175,7 @@ begin
 
   worked_hours := greatest(
     0.01,
-    round((extract(epoch from (now() - check_in_row.checked_in_at)) / 3600)::numeric, 2)
+    round((extract(epoch from (statement_timestamp() - check_in_row.checked_in_at)) / 3600)::numeric, 2)
   );
 
   select employee.id
@@ -155,9 +212,9 @@ begin
   ) returning id into new_time_entry_id;
 
   update public.work_site_check_ins
-     set checked_out_at = now(),
+     set checked_out_at = statement_timestamp(),
          time_entry_id = new_time_entry_id,
-         updated_at = now()
+         updated_at = statement_timestamp()
    where id = check_in_row.id;
 
   return new_time_entry_id;
