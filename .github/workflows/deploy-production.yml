@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: vakantnti-production
+  group: vakantti-production
   cancel-in-progress: false
 
 env:
@@ -58,7 +58,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           npx --yes wrangler@4 pages deploy dist \
-            --project-name vakantnti \
+            --project-name vakantti \
             --branch main \
             --commit-hash "$GITHUB_SHA" \
             --commit-message "${{ github.event.head_commit.message || 'Manual production deployment' }}"
