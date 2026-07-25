@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   AlertCircle,
   CheckCircle2,
   Clock,
   Edit3,
-  Play,
+  ExternalLink,
+  Loader2,
+  LocateFixed,
+  MapPin,
   Plus,
   Square,
   Trash2,
@@ -30,11 +33,20 @@ import {
   deleteTimeEntryRecord,
   updateTimeEntryRecord,
 } from '@/lib/supabase/workforceEntities';
+import {
+  captureCurrentWorkSiteLocation,
+  completeWorkSiteCheckIn,
+  createWorkSiteCheckIn,
+  listWorkSiteCheckIns,
+  workSiteMapUrl,
+  type WorkSiteCheckIn,
+} from '@/lib/supabase/workSiteCheckIns';
 import type { TimeEntry, TimeEntryStatus } from '@/types';
 
 const TIMER_START_KEY = 'vakantti-time-timer-start';
 const TIMER_PROJECT_KEY = 'vakantti-time-timer-project';
 const TIMER_DESCRIPTION_KEY = 'vakantti-time-timer-description';
+const TIMER_CHECK_IN_KEY = 'vakantti-time-work-site-check-in';
 
 interface EntryForm {
   date: string;
@@ -69,6 +81,17 @@ function formatTimer(milliseconds: number) {
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
 }
 
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('fi-FI', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+function formatAccuracy(value: number) {
+  return value < 1000 ? `±${Math.round(value)} m` : `±${(value / 1000).toFixed(1)} km`;
+}
+
 function statusBadge(status: TimeEntryStatus) {
   const config: Record<TimeEntryStatus, { className: string; icon: typeof Clock }> = {
     Hyväksytty: { className: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2 },
@@ -91,13 +114,39 @@ export default function Tuntikirjaukset() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [timerStart, setTimerStart] = useState<string | null>(() => localStorage.getItem(TIMER_START_KEY));
   const [timerProject, setTimerProject] = useState(() => localStorage.getItem(TIMER_PROJECT_KEY) ?? '');
   const [timerDescription, setTimerDescription] = useState(() => localStorage.getItem(TIMER_DESCRIPTION_KEY) ?? '');
+  const [activeCheckInId, setActiveCheckInId] = useState<string | null>(() => localStorage.getItem(TIMER_CHECK_IN_KEY));
+  const [checkIns, setCheckIns] = useState<WorkSiteCheckIn[]>([]);
+  const [checkInsLoading, setCheckInsLoading] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   const canApprove = currentRole === 'admin' || currentRole === 'supervisor';
   const currentEmployee = profile?.full_name || user?.email || 'Käyttäjä';
+
+  const loadCheckIns = useCallback(async () => {
+    if (!currentOrg) {
+      setCheckIns([]);
+      return;
+    }
+
+    setCheckInsLoading(true);
+    try {
+      setCheckIns(await listWorkSiteCheckIns(currentOrg.id));
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Työmaalle kirjautumisten haku epäonnistui.';
+      setOperationError(message);
+      logger.error('Työmaalle kirjautumisten haku epäonnistui', { error: caught });
+    } finally {
+      setCheckInsLoading(false);
+    }
+  }, [currentOrg]);
+
+  useEffect(() => {
+    void loadCheckIns();
+  }, [loadCheckIns]);
 
   useEffect(() => {
     if (!timerStart) return undefined;
@@ -125,6 +174,7 @@ export default function Tuntikirjaukset() {
   const pendingHours = visibleEntries.filter((entry) => entry.status === 'Odottaa').reduce((sum, entry) => sum + entry.hours, 0);
   const overtimeHours = visibleEntries.reduce((sum, entry) => sum + entry.overtime, 0);
   const elapsedMilliseconds = timerStart ? now - new Date(timerStart).getTime() : 0;
+  const activeCheckIn = activeCheckInId ? checkIns.find((item) => item.id === activeCheckInId) : undefined;
 
   const openCreate = () => {
     setEditing(null);
@@ -214,42 +264,85 @@ export default function Tuntikirjaukset() {
     }
   };
 
-  const startTimer = () => {
+  const startTimer = async () => {
     if (!timerProject) {
-      setOperationError('Valitse projekti ennen ajastimen käynnistämistä.');
+      setOperationError('Valitse projekti ennen työmaalle kirjautumista.');
       return;
     }
-    const startedAt = new Date().toISOString();
-    localStorage.setItem(TIMER_START_KEY, startedAt);
-    setTimerStart(startedAt);
-    setNow(Date.now());
+    if (!currentOrg || !user) {
+      setOperationError('Työmaalle kirjautuminen vaatii aktiivisen käyttäjän ja organisaation.');
+      return;
+    }
+
+    setLocating(true);
     setOperationError(null);
+    try {
+      const location = await captureCurrentWorkSiteLocation();
+      const project = projects.find((item) => item.name === timerProject);
+      const checkIn = await createWorkSiteCheckIn({
+        organizationId: currentOrg.id,
+        userId: user.id,
+        projectId: project?.id,
+        projectName: timerProject,
+        employeeName: currentEmployee,
+        description: timerDescription,
+        location,
+      });
+
+      localStorage.setItem(TIMER_START_KEY, checkIn.checkedInAt);
+      localStorage.setItem(TIMER_CHECK_IN_KEY, checkIn.id);
+      setTimerStart(checkIn.checkedInAt);
+      setActiveCheckInId(checkIn.id);
+      setNow(Date.now());
+      await loadCheckIns();
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Työmaalle kirjautuminen epäonnistui.';
+      setOperationError(message);
+      logger.error('Työmaalle kirjautuminen epäonnistui', { error: caught });
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const clearTimer = () => {
+    localStorage.removeItem(TIMER_START_KEY);
+    localStorage.removeItem(TIMER_PROJECT_KEY);
+    localStorage.removeItem(TIMER_DESCRIPTION_KEY);
+    localStorage.removeItem(TIMER_CHECK_IN_KEY);
+    setTimerStart(null);
+    setTimerProject('');
+    setTimerDescription('');
+    setActiveCheckInId(null);
   };
 
   const stopTimer = async () => {
     if (!timerStart || !currentOrg) return;
-    const milliseconds = Date.now() - new Date(timerStart).getTime();
-    const hours = Math.max(0.01, Math.round((milliseconds / 3_600_000) * 100) / 100);
     setSaving(true);
+    setOperationError(null);
     try {
-      await createTimeEntryRecord(currentOrg.id, user?.id, {
-        date: new Date().toLocaleDateString('fi-FI'),
-        employee: currentEmployee,
-        project: timerProject,
-        hours,
-        overtime: 0,
-        description: timerDescription.trim(),
-        status: 'Odottaa',
-      });
-      localStorage.removeItem(TIMER_START_KEY);
-      localStorage.removeItem(TIMER_PROJECT_KEY);
-      localStorage.removeItem(TIMER_DESCRIPTION_KEY);
-      setTimerStart(null);
-      setTimerProject('');
-      setTimerDescription('');
+      if (activeCheckInId) {
+        await completeWorkSiteCheckIn(activeCheckInId);
+      } else {
+        const milliseconds = Date.now() - new Date(timerStart).getTime();
+        const hours = Math.max(0.01, Math.round((milliseconds / 3_600_000) * 100) / 100);
+        await createTimeEntryRecord(currentOrg.id, user?.id, {
+          date: new Date().toLocaleDateString('fi-FI'),
+          employee: currentEmployee,
+          project: timerProject,
+          hours,
+          overtime: 0,
+          description: timerDescription.trim(),
+          status: 'Odottaa',
+        });
+      }
+
+      clearTimer();
       await refresh();
+      await loadCheckIns();
     } catch (caught) {
-      setOperationError(caught instanceof Error ? caught.message : 'Ajastetun työn tallennus epäonnistui.');
+      const message = caught instanceof Error ? caught.message : 'Ajastetun työn tallennus epäonnistui.';
+      setOperationError(message);
+      logger.error('Työmaalta uloskirjautuminen epäonnistui', { error: caught });
     } finally {
       setSaving(false);
     }
@@ -258,35 +351,188 @@ export default function Tuntikirjaukset() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><h1 className="text-hero text-text-primary">Tuntikirjaukset</h1><p className="mt-1 text-body-sm text-text-secondary">Työajan kirjaus, ajastin ja työnjohdon hyväksyntä</p></div>
+        <div>
+          <h1 className="text-hero text-text-primary">Tuntikirjaukset</h1>
+          <p className="mt-1 text-body-sm text-text-secondary">Työmaalle kirjautuminen, työaika ja työnjohdon hyväksyntä</p>
+        </div>
         <Button onClick={openCreate} className="gap-2"><Plus size={16} /> Kirjaa tunnit</Button>
       </div>
 
-      {operationError && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={16} />{operationError}</div>}
+      {operationError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <AlertCircle size={16} />{operationError}
+        </div>
+      )}
 
-      <Card className="border-primary/30 bg-primary-light/40"><CardContent className="grid gap-4 p-5 lg:grid-cols-[1fr_1fr_auto] lg:items-end"><div className="space-y-2"><Label>Ajastettava projekti</Label>{projects.length > 0 ? <Select value={timerProject} onValueChange={setTimerProject} disabled={Boolean(timerStart)}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.name}>{project.name}</SelectItem>)}</SelectContent></Select> : <Input value={timerProject} onChange={(event) => setTimerProject(event.target.value)} disabled={Boolean(timerStart)} />}</div><div className="space-y-2"><Label htmlFor="timer-description">Työn kuvaus</Label><Input id="timer-description" value={timerDescription} onChange={(event) => setTimerDescription(event.target.value)} disabled={Boolean(timerStart)} /></div><div className="flex items-center gap-3"><div className="min-w-28 font-mono text-2xl font-bold">{formatTimer(elapsedMilliseconds)}</div>{timerStart ? <Button variant="destructive" onClick={() => void stopTimer()} disabled={saving}><Square size={15} className="mr-1" /> Lopeta ja tallenna</Button> : <Button onClick={startTimer}><Play size={15} className="mr-1" /> Käynnistä</Button>}</div></CardContent></Card>
+      <Card className="border-primary/30 bg-primary-light/40">
+        <CardContent className="space-y-4 p-5">
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+            <div>
+              <h2 className="flex items-center gap-2 font-semibold text-text-primary"><LocateFixed size={18} className="text-primary" />Työmaalle kirjautuminen</h2>
+              <p className="mt-1 max-w-3xl text-xs text-text-secondary">Sijainti pyydetään vain kirjautumispainikkeesta. Sovellus tallentaa yhden sijaintinäytteen ja sen tarkkuuden, eikä seuraa liikkumista taustalla.</p>
+            </div>
+            {timerStart && (
+              <Badge className="w-fit gap-1 border-0 bg-emerald-50 text-emerald-700"><CheckCircle2 size={12} />Kirjautuneena työmaalle</Badge>
+            )}
+          </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
-        { label: 'Hyväksytyt tunnit', value: `${approvedHours.toFixed(1)} h`, icon: CheckCircle2 },
-        { label: 'Odottaa', value: `${pendingHours.toFixed(1)} h`, icon: AlertCircle },
-        { label: 'Ylityö', value: `${overtimeHours.toFixed(1)} h`, icon: Clock },
-        { label: 'Kirjauksia', value: visibleEntries.length, icon: Clock },
-      ].map((item) => <Card key={item.label}><CardContent className="p-5"><div className="mb-2 flex justify-between text-sm text-text-secondary"><span>{item.label}</span><item.icon size={18} className="text-primary" /></div><p className="font-mono text-2xl font-bold">{item.value}</p></CardContent></Card>)}</div>
+          <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+            <div className="space-y-2">
+              <Label>Työmaa / projekti</Label>
+              {projects.length > 0 ? (
+                <Select value={timerProject} onValueChange={setTimerProject} disabled={Boolean(timerStart)}>
+                  <SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger>
+                  <SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.name}>{project.name}</SelectItem>)}</SelectContent>
+                </Select>
+              ) : (
+                <Input value={timerProject} onChange={(event) => setTimerProject(event.target.value)} disabled={Boolean(timerStart)} />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="timer-description">Työn kuvaus</Label>
+              <Input id="timer-description" value={timerDescription} onChange={(event) => setTimerDescription(event.target.value)} disabled={Boolean(timerStart)} />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-28 font-mono text-2xl font-bold">{formatTimer(elapsedMilliseconds)}</div>
+              {timerStart ? (
+                <Button variant="destructive" onClick={() => void stopTimer()} disabled={saving}>
+                  {saving ? <Loader2 size={15} className="mr-1 animate-spin" /> : <Square size={15} className="mr-1" />}
+                  Lopeta ja tallenna
+                </Button>
+              ) : (
+                <Button onClick={() => void startTimer()} disabled={locating || saving}>
+                  {locating ? <Loader2 size={15} className="mr-1 animate-spin" /> : <MapPin size={15} className="mr-1" />}
+                  {locating ? 'Haetaan sijaintia…' : 'Kirjaudu työmaalle'}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {timerStart && (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-emerald-200 bg-white/70 px-4 py-3 text-sm">
+              <span><strong>Aloitettu:</strong> {formatDateTime(timerStart)}</span>
+              {activeCheckIn ? (
+                <>
+                  <span><strong>Tarkkuus:</strong> {formatAccuracy(activeCheckIn.accuracyM)}</span>
+                  <a href={workSiteMapUrl(activeCheckIn)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+                    Avaa kirjautumispaikka kartalla <ExternalLink size={13} />
+                  </a>
+                </>
+              ) : activeCheckInId ? (
+                <span className="text-text-secondary">Sijainti on tallennettu palvelimelle.</span>
+              ) : (
+                <span className="text-amber-700">Vanha käynnissä oleva ajastin: sijaintia ei ole tallennettu.</span>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="flex items-center justify-between border-b px-5 py-4">
+            <div>
+              <h2 className="flex items-center gap-2 font-semibold"><MapPin size={17} className="text-primary" />Työmaalle kirjautumiset</h2>
+              <p className="mt-1 text-xs text-text-secondary">{canApprove ? 'Työnjohdolle näkyvät organisaation kirjautumiset.' : 'Näet vain omat kirjautumisesi.'} Sijainti on laitteen ilmoittama, ei väärentämätön todiste.</p>
+            </div>
+            {checkInsLoading && <Loader2 size={18} className="animate-spin text-text-secondary" />}
+          </div>
+          <div className="hidden grid-cols-[140px_1fr_1fr_1fr_100px_100px] gap-3 border-b bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted lg:grid">
+            <span>Aika</span><span>Työntekijä</span><span>Työmaa</span><span>Sijainti</span><span>Tarkkuus</span><span>Tila</span>
+          </div>
+          {checkIns.slice(0, 20).map((checkIn) => (
+            <div key={checkIn.id} className="grid grid-cols-1 gap-2 border-b border-slate-100 px-5 py-4 text-sm lg:grid-cols-[140px_1fr_1fr_1fr_100px_100px] lg:items-center lg:gap-3">
+              <span className="text-text-secondary">{formatDateTime(checkIn.checkedInAt)}</span>
+              <span className="font-medium">{checkIn.employeeName}</span>
+              <div><p className="font-medium">{checkIn.projectName}</p><p className="text-xs text-text-secondary">{checkIn.description || 'Ei kuvausta'}</p></div>
+              <a href={workSiteMapUrl(checkIn)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                {checkIn.latitude.toFixed(5)}, {checkIn.longitude.toFixed(5)} <ExternalLink size={12} />
+              </a>
+              <span>{formatAccuracy(checkIn.accuracyM)}</span>
+              {checkIn.checkedOutAt ? (
+                <Badge className="w-fit border-0 bg-slate-100 text-slate-700">Päättynyt</Badge>
+              ) : (
+                <Badge className="w-fit border-0 bg-emerald-50 text-emerald-700">Aktiivinen</Badge>
+              )}
+            </div>
+          ))}
+          {!checkInsLoading && checkIns.length === 0 && (
+            <div className="p-10 text-center"><MapPin size={38} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei työmaalle kirjautumisia</p></div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: 'Hyväksytyt tunnit', value: `${approvedHours.toFixed(1)} h`, icon: CheckCircle2 },
+          { label: 'Odottaa', value: `${pendingHours.toFixed(1)} h`, icon: AlertCircle },
+          { label: 'Ylityö', value: `${overtimeHours.toFixed(1)} h`, icon: Clock },
+          { label: 'Kirjauksia', value: visibleEntries.length, icon: Clock },
+        ].map((item) => (
+          <Card key={item.label}><CardContent className="p-5"><div className="mb-2 flex justify-between text-sm text-text-secondary"><span>{item.label}</span><item.icon size={18} className="text-primary" /></div><p className="font-mono text-2xl font-bold">{item.value}</p></CardContent></Card>
+        ))}
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList><TabsTrigger value="mine">Omat kirjaukset</TabsTrigger>{canApprove && <TabsTrigger value="team">Kaikki kirjaukset</TabsTrigger>}{canApprove && <TabsTrigger value="approvals">Hyväksynnät ({pendingEntries.length})</TabsTrigger>}</TabsList>
+        <TabsList>
+          <TabsTrigger value="mine">Omat kirjaukset</TabsTrigger>
+          {canApprove && <TabsTrigger value="team">Kaikki kirjaukset</TabsTrigger>}
+          {canApprove && <TabsTrigger value="approvals">Hyväksynnät ({pendingEntries.length})</TabsTrigger>}
+        </TabsList>
         <TabsContent value={activeTab} className="mt-4">
           <Card className="overflow-hidden"><CardContent className="p-0">
             <div className="hidden grid-cols-[110px_1fr_1fr_90px_90px_110px_150px] gap-3 border-b bg-slate-50 px-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted lg:grid"><span>Päivä</span><span>Työntekijä</span><span>Projekti / työ</span><span>Tunnit</span><span>Ylityö</span><span>Tila</span><span className="text-right">Toiminnot</span></div>
-            {(activeTab === 'approvals' ? pendingEntries : visibleEntries).map((entry) => <div key={entry.id} className="grid grid-cols-1 items-center gap-3 border-b border-slate-100 px-6 py-4 lg:grid-cols-[110px_1fr_1fr_90px_90px_110px_150px]"><span className="text-sm text-text-secondary">{entry.date}</span><span className="font-medium">{entry.employee}</span><div><p className="text-sm font-medium">{entry.project}</p><p className="text-xs text-text-secondary">{entry.description || 'Ei kuvausta'}</p></div><span className="font-mono text-sm">{entry.hours.toFixed(2)} h</span><span className="font-mono text-sm">{entry.overtime.toFixed(2)} h</span><div>{statusBadge(entry.status)}</div><div className="flex justify-end gap-1">{canApprove && entry.status === 'Odottaa' && <><Button variant="ghost" size="sm" className="text-emerald-700" onClick={() => void setStatus(entry, 'Hyväksytty')}><CheckCircle2 size={15} /></Button><Button variant="ghost" size="sm" className="text-red-700" onClick={() => void setStatus(entry, 'Hylätty')}><XCircle size={15} /></Button></>}<Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(entry)}><Edit3 size={15} /></Button>{canApprove && <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-danger" onClick={() => setDeleteTarget(entry)}><Trash2 size={15} /></Button>}</div></div>)}
-            {(activeTab === 'approvals' ? pendingEntries : visibleEntries).length === 0 && <div className="p-12 text-center"><Clock size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei tuntikirjauksia</p></div>}
+            {(activeTab === 'approvals' ? pendingEntries : visibleEntries).map((entry) => (
+              <div key={entry.id} className="grid grid-cols-1 items-center gap-3 border-b border-slate-100 px-6 py-4 lg:grid-cols-[110px_1fr_1fr_90px_90px_110px_150px]">
+                <span className="text-sm text-text-secondary">{entry.date}</span>
+                <span className="font-medium">{entry.employee}</span>
+                <div><p className="text-sm font-medium">{entry.project}</p><p className="text-xs text-text-secondary">{entry.description || 'Ei kuvausta'}</p></div>
+                <span className="font-mono text-sm">{entry.hours.toFixed(2)} h</span>
+                <span className="font-mono text-sm">{entry.overtime.toFixed(2)} h</span>
+                <div>{statusBadge(entry.status)}</div>
+                <div className="flex justify-end gap-1">
+                  {canApprove && entry.status === 'Odottaa' && (
+                    <>
+                      <Button variant="ghost" size="sm" className="text-emerald-700" onClick={() => void setStatus(entry, 'Hyväksytty')}><CheckCircle2 size={15} /></Button>
+                      <Button variant="ghost" size="sm" className="text-red-700" onClick={() => void setStatus(entry, 'Hylätty')}><XCircle size={15} /></Button>
+                    </>
+                  )}
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(entry)}><Edit3 size={15} /></Button>
+                  {canApprove && <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-danger" onClick={() => setDeleteTarget(entry)}><Trash2 size={15} /></Button>}
+                </div>
+              </div>
+            ))}
+            {(activeTab === 'approvals' ? pendingEntries : visibleEntries).length === 0 && (
+              <div className="p-12 text-center"><Clock size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei tuntikirjauksia</p></div>
+            )}
           </CardContent></Card>
         </TabsContent>
       </Tabs>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{editing ? 'Muokkaa tuntikirjausta' : 'Uusi tuntikirjaus'}</DialogTitle></DialogHeader>{formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="time-date">Päivä *</Label><Input id="time-date" type="date" value={/^\d{4}-/.test(form.date) ? form.date : ''} onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="time-employee">Työntekijä *</Label><Input id="time-employee" value={form.employee} onChange={(event) => setForm((previous) => ({ ...previous, employee: event.target.value }))} disabled={!canApprove} /></div><div className="space-y-2 sm:col-span-2"><Label>Projekti *</Label>{projects.length > 0 ? <Select value={form.project} onValueChange={(project) => setForm((previous) => ({ ...previous, project }))}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.name}>{project.name}</SelectItem>)}</SelectContent></Select> : <Input value={form.project} onChange={(event) => setForm((previous) => ({ ...previous, project: event.target.value }))} />}</div><div className="space-y-2"><Label htmlFor="time-hours">Tunnit *</Label><Input id="time-hours" type="number" min="0" max="24" step="0.25" value={form.hours} onChange={(event) => setForm((previous) => ({ ...previous, hours: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="time-overtime">Ylityö</Label><Input id="time-overtime" type="number" min="0" step="0.25" value={form.overtime} onChange={(event) => setForm((previous) => ({ ...previous, overtime: event.target.value }))} /></div>{canApprove && <div className="space-y-2 sm:col-span-2"><Label>Tila</Label><Select value={form.status} onValueChange={(status: TimeEntryStatus) => setForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Odottaa">Odottaa</SelectItem><SelectItem value="Hyväksytty">Hyväksytty</SelectItem><SelectItem value="Hylätty">Hylätty</SelectItem></SelectContent></Select></div>}<div className="space-y-2 sm:col-span-2"><Label htmlFor="time-description">Työn kuvaus</Label><Textarea id="time-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveEntry()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader><DialogTitle>{editing ? 'Muokkaa tuntikirjausta' : 'Uusi tuntikirjaus'}</DialogTitle></DialogHeader>
+          {formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2"><Label htmlFor="time-date">Päivä *</Label><Input id="time-date" type="date" value={/^\d{4}-/.test(form.date) ? form.date : ''} onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="time-employee">Työntekijä *</Label><Input id="time-employee" value={form.employee} onChange={(event) => setForm((previous) => ({ ...previous, employee: event.target.value }))} disabled={!canApprove} /></div>
+            <div className="space-y-2 sm:col-span-2"><Label>Projekti *</Label>{projects.length > 0 ? <Select value={form.project} onValueChange={(project) => setForm((previous) => ({ ...previous, project }))}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.name}>{project.name}</SelectItem>)}</SelectContent></Select> : <Input value={form.project} onChange={(event) => setForm((previous) => ({ ...previous, project: event.target.value }))} />}</div>
+            <div className="space-y-2"><Label htmlFor="time-hours">Tunnit *</Label><Input id="time-hours" type="number" min="0" max="24" step="0.25" value={form.hours} onChange={(event) => setForm((previous) => ({ ...previous, hours: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="time-overtime">Ylityö</Label><Input id="time-overtime" type="number" min="0" step="0.25" value={form.overtime} onChange={(event) => setForm((previous) => ({ ...previous, overtime: event.target.value }))} /></div>
+            {canApprove && <div className="space-y-2 sm:col-span-2"><Label>Tila</Label><Select value={form.status} onValueChange={(status: TimeEntryStatus) => setForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Odottaa">Odottaa</SelectItem><SelectItem value="Hyväksytty">Hyväksytty</SelectItem><SelectItem value="Hylätty">Hylätty</SelectItem></SelectContent></Select></div>}
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="time-description">Työn kuvaus</Label><Textarea id="time-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveEntry()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><DialogContent><DialogHeader><DialogTitle>Poista tuntikirjaus</DialogTitle></DialogHeader><p className="text-sm text-text-secondary">Poistetaanko {deleteTarget?.employee} kirjaus päivältä {deleteTarget?.date}?</p><DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeEntry()} disabled={saving}>Poista</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Poista tuntikirjaus</DialogTitle></DialogHeader>
+          <p className="text-sm text-text-secondary">Poistetaanko {deleteTarget?.employee} kirjaus päivältä {deleteTarget?.date}?</p>
+          <DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)}>Peruuta</Button><Button variant="destructive" onClick={() => void removeEntry()} disabled={saving}>Poista</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }
