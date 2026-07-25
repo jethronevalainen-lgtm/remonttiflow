@@ -62,6 +62,30 @@ select relname, relrowsecurity from pg_class
 select tgname, tgrelid::regclass from pg_trigger where not tgisinternal;
 ```
 
+### Verifying RLS helper grants
+
+RLS policies call SECURITY DEFINER helpers in the `private` schema
+(`can_access_project`, `can_access_work_order`, `has_org_role`,
+`is_org_member`). The `authenticated` role must have EXECUTE on them —
+revoking it makes every policy-guarded query fail with 42501
+"permission denied for function …" (production incident fixed by
+`20260725060309_restore_rls_helper_execute.sql`).
+
+Two guards prevent a regression:
+
+- **Static lint (CI)** — `npm run check:migrations`
+  (`scripts/check-migration-grants.mjs`) scans `supabase/migrations/` and
+  fails the build if a migration revokes EXECUTE (or ALL) on a
+  policy-referenced private-schema function from `authenticated` without a
+  compensating grant. Any other `revoke` mentioning `private.` +
+  `authenticated` is printed as a warning. Use `--dir <path>` to lint a
+  different directory.
+- **Runtime check (database)** — `supabase/verify_rls_helper_grants.sql`
+  verifies via `pg_policies` + `has_function_privilege` that
+  `authenticated` has EXECUTE on every policy-referenced private helper
+  and that `anon`/PUBLIC do not. Run it in psql or the Supabase SQL
+  editor; an empty result set means all grants are correct.
+
 ---
 
 ## Multitenancy model
