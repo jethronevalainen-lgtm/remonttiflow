@@ -1,0 +1,36 @@
+name: Live Production Diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Read live production metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect VaKantti production
+        run: |
+          node <<'NODE'
+          const suffix = `${Date.now()}-${Math.random()}`;
+          const versionResponse = await fetch(
+            `https://vakantti.pages.dev/version.json?diagnostic=${suffix}`,
+            { cache: 'no-store' },
+          );
+          const versionBody = await versionResponse.text();
+          const rootResponse = await fetch(
+            `https://vakantti.pages.dev/?diagnostic=${suffix}`,
+            { cache: 'no-store' },
+          );
+
+          console.log(`VERSION_STATUS=${versionResponse.status}`);
+          console.log(`VERSION_BODY=${versionBody}`);
+          console.log(`ROOT_STATUS=${rootResponse.status}`);
+          console.log(`PERMISSIONS_POLICY=${rootResponse.headers.get('permissions-policy') || 'missing'}`);
+          console.log(`CF_RAY=${rootResponse.headers.get('cf-ray') || 'missing'}`);
+          NODE
