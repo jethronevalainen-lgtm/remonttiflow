@@ -1,4 +1,5 @@
 import { supabase } from './client';
+import logger from '@/lib/logger';
 import type {
   Announcement,
   CrmLead,
@@ -412,7 +413,13 @@ export async function loadDomainData(organizationId: string): Promise<DomainData
       messages: messages.map(mapMessage),
     };
   } catch (error) {
-    throw new Error(`Organisaation tietojen lataaminen epäonnistui: ${errorMessage(error)}`);
+    // Tekninen virhe (esim. PostgreSQL 42501) vain lokiin — käyttäjälle
+    // näytetään yleinen viesti ilman tietokannan raakavirheitä.
+    logger.error('Organisaation tietojen lataaminen epäonnistui', {
+      error,
+      detail: errorMessage(error),
+    });
+    throw new Error('Organisaation tietojen lataaminen epäonnistui. Yritä uudelleen.');
   }
 }
 

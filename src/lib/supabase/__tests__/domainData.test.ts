@@ -1,11 +1,28 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import logger from '@/lib/logger';
+import { supabase } from '../client';
 import {
+  loadDomainData,
   mapCrmLead,
   mapCustomer,
   mapProject,
   mapTimeEntry,
 } from '../domainData';
+
+vi.mock('../client', () => ({
+  supabase: { from: vi.fn() },
+}));
+
+vi.mock('@/lib/logger', () => {
+  const loggerMock = {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+  return { default: loggerMock, logger: loggerMock };
+});
 
 describe('Supabase domain row mappings', () => {
   it('maps nullable customer columns to safe UI values', () => {
@@ -86,5 +103,67 @@ describe('Supabase domain row mappings', () => {
 
     expect(lead.date).toBe('2026-10-15');
     expect(lead.value).toBe(125000);
+  });
+});
+
+describe('loadDomainData error handling', () => {
+  const fromMock = supabase.from as unknown as Mock;
+  const loggerErrorMock = logger.error as unknown as Mock;
+
+  function selectResult(result: { data: unknown; error: { message: string } | null }) {
+    return {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue(result),
+    };
+  }
+
+  function failAllTables(message: string) {
+    fromMock.mockImplementation(() => selectResult({ data: null, error: { message } }));
+  }
+
+  function succeedWithEmptyRows() {
+    fromMock.mockImplementation(() => selectResult({ data: [], error: null }));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('throws a generic message without raw database details', async () => {
+    failAllTables('permission denied for function can_access_project');
+
+    const error: unknown = await loadDomainData('org-1').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toBe('Organisaation tietojen lataaminen epäonnistui. Yritä uudelleen.');
+    expect(message).not.toContain('permission denied');
+    expect(message).not.toContain('can_access_project');
+  });
+
+  it('logs the full technical error for diagnostics', async () => {
+    failAllTables('permission denied for function can_access_project');
+
+    await expect(loadDomainData('org-1')).rejects.toThrow();
+
+    expect(loggerErrorMock).toHaveBeenCalledWith(
+      'Organisaation tietojen lataaminen epäonnistui',
+      expect.objectContaining({
+        detail: expect.stringContaining('permission denied'),
+      }),
+    );
+  });
+
+  it('recovers when the load is retried after a failure', async () => {
+    failAllTables('permission denied for function can_access_project');
+    await expect(loadDomainData('org-1')).rejects.toThrow(
+      'Organisaation tietojen lataaminen epäonnistui. Yritä uudelleen.',
+    );
+
+    succeedWithEmptyRows();
+    const data = await loadDomainData('org-1');
+
+    expect(data.projects).toEqual([]);
+    expect(data.workOrders).toEqual([]);
   });
 });

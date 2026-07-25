@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.app.json && vite build && node scripts/write-version.mjs && node scripts/verify-dist.mjs",
-    "ship:check": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "ship:check": "npm run check:migrations && npm run typecheck && npm run lint && npm run test && npm run build",
     "verify:dist": "node scripts/verify-dist.mjs",
+    "check:migrations": "node scripts/check-migration-grants.mjs",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
