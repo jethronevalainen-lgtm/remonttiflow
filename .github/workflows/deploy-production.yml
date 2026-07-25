@@ -20,106 +20,16 @@ env:
   CF_PAGES_BRANCH: main
   CF_PAGES_URL: https://vakantti.pages.dev
   CF_PAGES_COMMIT_SHA: ${{ github.sha }}
-  CLOUDFLARE_PAGES_PROJECT_NAME: vakantti
-  CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CF_TOKEN }}
-  CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || vars.CF_ACCOUNT_ID }}
-  CF_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY || secrets.CF_GLOBAL_API_KEY || secrets.CLOUDFLARE_API_KEY || secrets.CF_API_KEY }}
-  CF_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL || secrets.CF_EMAIL }}
-  CF_DEPLOY_HOOK_URL: ${{ secrets.CLOUDFLARE_DEPLOY_HOOK_URL || secrets.CF_DEPLOY_HOOK_URL || secrets.DEPLOY_HOOK_URL }}
 
 jobs:
   deploy:
-    name: Build, deploy and verify
+    name: Build and verify Cloudflare Git deployment
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Resolve Cloudflare authorization
-        id: cloudflare
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mode=""
-          account_id="$CF_ACCOUNT_ID"
-
-          if [ -n "$CF_DEPLOY_HOOK_URL" ]; then
-            echo "::add-mask::$CF_DEPLOY_HOOK_URL"
-            node <<'NODE'
-            const value = process.env.CF_DEPLOY_HOOK_URL;
-            const url = new URL(value);
-            const valid =
-              url.protocol === 'https:'
-              && url.hostname === 'api.cloudflare.com'
-              && url.username === ''
-              && url.password === ''
-              && url.search === ''
-              && url.hash === ''
-              && /^\/client\/v4\/pages\/webhooks\/deploy_hooks\/[A-Za-z0-9_-]+\/?$/.test(url.pathname);
-            if (!valid) throw new Error('Configured Cloudflare deploy hook URL is invalid');
-            NODE
-            mode="hook"
-          elif [ -n "$CF_API_TOKEN" ]; then
-            echo "::add-mask::$CF_API_TOKEN"
-            mode="token"
-          elif [ -n "$CF_GLOBAL_API_KEY" ] && [ -n "$CF_EMAIL" ]; then
-            echo "::add-mask::$CF_GLOBAL_API_KEY"
-            echo "::add-mask::$CF_EMAIL"
-            mode="global-key"
-          else
-            echo "::error title=Cloudflare deployment is not configured::Add one supported credential set to this VaKantti repository: CLOUDFLARE_API_TOKEN (preferred), CLOUDFLARE_DEPLOY_HOOK_URL, or CLOUDFLARE_GLOBAL_API_KEY plus CLOUDFLARE_EMAIL. Account ID may use CLOUDFLARE_ACCOUNT_ID or CF_ACCOUNT_ID."
-            exit 1
-          fi
-
-          if [ "$mode" != "hook" ]; then
-            if [ "$mode" = "token" ]; then
-              auth_headers=(-H "Authorization: Bearer $CF_API_TOKEN")
-            else
-              auth_headers=(-H "X-Auth-Email: $CF_EMAIL" -H "X-Auth-Key: $CF_GLOBAL_API_KEY")
-            fi
-
-            verify_project() {
-              local candidate="$1"
-              local response
-              response="$(curl --fail --silent --show-error \
-                "https://api.cloudflare.com/client/v4/accounts/$candidate/pages/projects/$CLOUDFLARE_PAGES_PROJECT_NAME" \
-                "${auth_headers[@]}")" || return 1
-              [ "$(jq -r '.success // false' <<< "$response")" = "true" ] \
-                && [ "$(jq -r '.result.name // empty' <<< "$response")" = "$CLOUDFLARE_PAGES_PROJECT_NAME" ]
-            }
-
-            if [ -n "$account_id" ]; then
-              verify_project "$account_id" || {
-                echo "::error title=Cloudflare project access failed::The configured account ID or credentials cannot access Pages project $CLOUDFLARE_PAGES_PROJECT_NAME."
-                exit 1
-              }
-            else
-              accounts_json="$(curl --fail --silent --show-error \
-                'https://api.cloudflare.com/client/v4/accounts?per_page=50' \
-                "${auth_headers[@]}")"
-              mapfile -t candidate_accounts < <(jq -r '.result[]?.id // empty' <<< "$accounts_json")
-              matching_accounts=()
-              for candidate in "${candidate_accounts[@]}"; do
-                if verify_project "$candidate"; then
-                  matching_accounts+=("$candidate")
-                fi
-              done
-
-              if [ "${#matching_accounts[@]}" -ne 1 ]; then
-                echo "::error title=Cloudflare account resolution failed::Expected exactly one account containing Pages project $CLOUDFLARE_PAGES_PROJECT_NAME, found ${#matching_accounts[@]}. Add CLOUDFLARE_ACCOUNT_ID to the VaKantti repository."
-                exit 1
-              fi
-              account_id="${matching_accounts[0]}"
-            fi
-          fi
-
-          [ -n "$account_id" ] && echo "::add-mask::$account_id"
-          echo "mode=$mode" >> "$GITHUB_OUTPUT"
-          echo "account_id=$account_id" >> "$GITHUB_OUTPUT"
-          echo "Cloudflare authorization resolved for Pages project $CLOUDFLARE_PAGES_PROJECT_NAME (mode=$mode)."
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -128,43 +38,12 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Run production quality gate
         run: npm run ship:check
 
-      - name: Deploy Cloudflare Pages production
-        shell: bash
-        env:
-          RESOLVED_MODE: ${{ steps.cloudflare.outputs.mode }}
-          RESOLVED_ACCOUNT_ID: ${{ steps.cloudflare.outputs.account_id }}
-        run: |
-          set -euo pipefail
-
-          if [ "$RESOLVED_MODE" = "hook" ]; then
-            response="$(curl --fail --silent --show-error \
-              --request POST \
-              "$CF_DEPLOY_HOOK_URL")"
-            echo "Cloudflare Pages deploy hook accepted the production build request."
-            [ -n "$response" ] && echo "$response" | jq -c '.' 2>/dev/null || true
-            exit 0
-          fi
-
-          export CLOUDFLARE_ACCOUNT_ID="$RESOLVED_ACCOUNT_ID"
-          if [ "$RESOLVED_MODE" = "token" ]; then
-            export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
-          else
-            export CLOUDFLARE_API_KEY="$CF_GLOBAL_API_KEY"
-            export CLOUDFLARE_EMAIL="$CF_EMAIL"
-          fi
-
-          npx --yes wrangler@4 pages deploy dist \
-            --project-name "$CLOUDFLARE_PAGES_PROJECT_NAME" \
-            --branch main \
-            --commit-hash "$GITHUB_SHA" \
-            --commit-message "$(git log -1 --pretty=%s)"
-
-      - name: Verify live release proof
+      - name: Verify native Cloudflare Pages release
         env:
           EXPECTED_COMMIT: ${{ github.sha }}
         run: |
@@ -173,7 +52,10 @@ jobs:
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           let lastFailure = 'not checked';
 
-          for (let attempt = 1; attempt <= 30; attempt += 1) {
+          // Cloudflare Pages receives the same main push through its native
+          // GitHub integration. Poll long enough to cover its build queue and
+          // edge propagation, then require exact immutable release metadata.
+          for (let attempt = 1; attempt <= 90; attempt += 1) {
             try {
               const suffix = `${expected}-${attempt}-${Date.now()}`;
               const versionResponse = await fetch(
@@ -226,5 +108,6 @@ jobs:
           }
 
           console.error(`Production verification failed: ${lastFailure}`);
+          console.error('Confirm that Cloudflare Pages project "vakantti" is connected to this GitHub repository and production branch "main".');
           process.exit(1);
           NODE
