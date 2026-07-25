@@ -110,7 +110,7 @@ create policy work_site_check_ins_select on public.work_site_check_ins
   for select to authenticated
   using (
     user_id = (select auth.uid())
-    or public.has_org_role(organization_id, array['admin', 'supervisor'])
+    or private.has_org_role(organization_id, array['admin', 'supervisor'])
   );
 
 -- A check-in can only be created for the authenticated user and one of their
@@ -120,7 +120,7 @@ create policy work_site_check_ins_insert on public.work_site_check_ins
   for insert to authenticated
   with check (
     user_id = (select auth.uid())
-    and public.is_org_member(organization_id)
+    and private.is_org_member(organization_id)
     and (
       work_site_check_ins.project_id is null
       or exists (
@@ -168,7 +168,7 @@ begin
     raise exception 'Aktiivista työmaalle kirjautumista ei löytynyt.' using errcode = 'P0002';
   end if;
 
-  if not public.is_org_member(check_in_row.organization_id) then
+  if not private.is_org_member(check_in_row.organization_id) then
     raise exception 'Käyttäjä ei kuulu kirjauksen organisaatioon.' using errcode = '42501';
   end if;
 
