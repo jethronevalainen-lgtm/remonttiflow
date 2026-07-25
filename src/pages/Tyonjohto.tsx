@@ -6,6 +6,7 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ClipboardList,
   Clock,
   FolderKanban,
   ShieldCheck,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useInspectionWorkspace } from '@/hooks/useInspectionData';
 import { useOperationsData } from '@/hooks/useOperationsData';
 import { useSchedulingData } from '@/hooks/useSchedulingData';
 import { Badge } from '@/components/ui/badge';
@@ -52,6 +54,7 @@ export default function Tyonjohto() {
   } = useAppDataContext();
   const { diaryEntries } = useOperationsData();
   const { phases, shifts } = useSchedulingData();
+  const { inspections, findings } = useInspectionWorkspace();
 
   const activeProjects = projects.filter((project) => project.status === 'Aktiivinen' || project.status === 'Myöhässä');
   const openOrders = workOrders.filter((order) => !['Valmis', 'Peruttu'].includes(order.status));
@@ -61,6 +64,9 @@ export default function Tyonjohto() {
   const todayShifts = shifts.filter((shift) => shift.date === todayIso());
   const currentPhases = phases.filter((phase) => phase.status === 'Käynnissä' || phase.status === 'Myöhässä');
   const latestDiaries = diaryEntries.slice(0, 5);
+  const openInspections = inspections.filter((inspection) => !['Hyväksytty', 'Mitätöity'].includes(inspection.status));
+  const openFindings = findings.filter((finding) => !['Hyväksytty', 'Mitätöity'].includes(finding.status));
+  const urgentFindings = openFindings.filter((finding) => finding.severity === 'Kriittinen' || (finding.dueDate && finding.dueDate < todayIso()));
 
   const alerts = [
     ...projects.filter((project) => project.status === 'Myöhässä').map((project) => ({
@@ -68,6 +74,15 @@ export default function Tyonjohto() {
       title: `${project.name} on myöhässä`,
       detail: `${project.progress}% valmis`,
       path: '/projektit',
+      severity: 'danger' as const,
+    })),
+    ...urgentFindings.map((finding) => ({
+      id: `finding-${finding.id}`,
+      title: finding.title,
+      detail: finding.severity === 'Kriittinen'
+        ? 'Kriittinen tarkastuspuute'
+        : `Korjauksen määräaika ${finding.dueDate}`,
+      path: '/tarkastukset',
       severity: 'danger' as const,
     })),
     ...urgentOrders.map((order) => ({
@@ -89,6 +104,7 @@ export default function Tyonjohto() {
   const scorecards = [
     { label: 'Aktiiviset työmaat', value: activeProjects.length, detail: `${projects.length} projektia yhteensä`, icon: FolderKanban, path: '/projektit' },
     { label: 'Avoimet työmääräykset', value: openOrders.length, detail: `${urgentOrders.length} korkealla prioriteetilla`, icon: Wrench, path: '/tyomaaraykset' },
+    { label: 'Avoimet tarkastukset', value: openInspections.length, detail: `${openFindings.length} avointa puutetta`, icon: ClipboardList, path: '/tarkastukset' },
     { label: 'Tunnit hyväksyttävänä', value: pendingHours.length, detail: `${pendingHours.reduce((sum, entry) => sum + entry.hours, 0).toFixed(1)} tuntia`, icon: Clock, path: '/tuntikirjaukset' },
     { label: 'Avoimet turvallisuusasiat', value: openSafety.length, detail: `${openSafety.filter((item) => item.severity === 'Vakava').length} vakavaa`, icon: ShieldCheck, path: '/tyoturvallisuus' },
   ];
@@ -97,10 +113,10 @@ export default function Tyonjohto() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div>
         <h1 className="text-hero text-text-primary">Työnjohdon tilannekuva</h1>
-        <p className="mt-1 text-body-sm text-text-secondary">Työmaat, resurssit, hyväksynnät ja poikkeamat samassa näkymässä</p>
+        <p className="mt-1 text-body-sm text-text-secondary">Työmaat, tarkastukset, resurssit, hyväksynnät ja poikkeamat samassa näkymässä</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {scorecards.map((item) => (
           <button key={item.label} type="button" onClick={() => navigate(item.path)} className="text-left">
             <Card className="h-full border-slate-200 transition-shadow hover:shadow-md">

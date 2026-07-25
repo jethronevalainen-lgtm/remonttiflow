@@ -4,7 +4,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   ClipboardCheck,
-  ClipboardSignature,
+  ClipboardList,
   Clock,
   FolderKanban,
   Home,
@@ -21,15 +21,15 @@ const workerBottomItems = [
   { path: '/dashboard', label: 'Etusivu', icon: Home },
   { path: '/tyomaaraykset', label: 'Omat työt', icon: ClipboardCheck },
   { path: '/tuntikirjaukset', label: 'Tunnit', icon: Clock },
-  { path: '/kuittaukset', label: 'Kuittaukset', icon: ClipboardSignature },
+  { path: '/tarkastukset', label: 'Korjaukset', icon: ClipboardList },
   { path: '/viestinta', label: 'Viestit', icon: MessageSquare },
 ];
 
 const managementBottomItems = [
   { path: '/dashboard', label: 'Etusivu', icon: Home },
   { path: '/projektit', label: 'Projektit', icon: FolderKanban },
+  { path: '/tarkastukset', label: 'Tarkastukset', icon: ClipboardList },
   { path: '/tyomaaraykset', label: 'Työt', icon: ClipboardCheck },
-  { path: '/tuntikirjaukset', label: 'Tunnit', icon: Clock },
   { path: '/viestinta', label: 'Viestit', icon: MessageSquare },
 ];
 

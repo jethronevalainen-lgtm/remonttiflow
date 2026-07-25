@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ClipboardCheck,
+  ClipboardList,
   ClipboardSignature,
   Clock,
   FileText,
@@ -57,6 +58,7 @@ const workerGroups: NavGroup[] = [
     key: 'site-tools',
     title: 'Työmaan työkalut',
     items: [
+      { label: 'Korjattavat puutteet', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Kuittaukset', icon: ClipboardSignature, path: '/kuittaukset' },
       { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
       { label: 'Viestit', icon: MessageSquare, path: '/viestinta' },
@@ -79,6 +81,7 @@ const managementGroups: NavGroup[] = [
     title: 'Tuotanto',
     items: [
       { label: 'Projektit ja tiimit', icon: FolderKanban, path: '/projektit' },
+      { label: 'Tarkastukset ja luovutukset', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Aikataulutus', icon: CalendarClock, path: '/aikataulutus' },
       { label: 'Työvuorot', icon: CalendarClock, path: '/tyovuorokalenteri' },
