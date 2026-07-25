@@ -29,6 +29,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check migration grants
+        run: npm run check:migrations
+
       - name: Verify source quality and build
         run: npm run ship:check
 
