@@ -87,9 +87,14 @@ export default function InspectionDetailView({
   const markSectionOkay = async (results: InspectionResultDetail[]) => {
     setSavingKey(`section-${results[0]?.sectionId ?? ''}`); setOperationError(null);
     try {
-      for (const result of results) {
-        await saveInspectionResult({ inspectionId, itemId: result.itemId, status: 'Kunnossa', comment: comments[result.id], measurementValue: result.measurementValue, measurementUnit: result.measurementUnit });
-      }
+      await Promise.all(results.map((result) => saveInspectionResult({
+        inspectionId,
+        itemId: result.itemId,
+        status: 'Kunnossa',
+        comment: comments[result.id],
+        measurementValue: result.measurementValue,
+        measurementUnit: result.measurementUnit,
+      })));
       await refreshAll();
     } catch (caught) { fail(caught, 'Osion tallennus epäonnistui.'); }
     finally { setSavingKey(null); }
