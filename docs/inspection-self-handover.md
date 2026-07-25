@@ -24,4 +24,4 @@ Tarkastusta ei voi hyväksyä, jos pakollisia kohtia on käsittelemättä tai av
 
 ## Tietoturva
 
-Organisaatio- ja roolirajat pakotetaan PostgreSQL Row Level Security -politiikoilla. Tarkastusliitteet ovat yksityisessä `inspection-files`-säilössä. Selain käyttää vain lyhytikäisiä allekirjoitettuja latausosoitteita.
+Organisaatio- ja roolirajat pakotetaan PostgreSQL Row Level Security -politiikoilla. Tarkastusliitteet ovat yksityisessä `inspection-files`-säilössä. Selain käyttää vain lyhytikäisiä allekirjoitettuja latausosoitteita. Liitteen tietokantarivi voidaan rekisteröidä vain saman käyttäjän juuri lataamalle objektille ja objektipolku sidotaan organisaatiokansioon.
