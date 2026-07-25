@@ -93,6 +93,30 @@ describe('captureCurrentWorkSiteLocation', () => {
     );
   });
 
+  it('rejects location uncertainty above the database limit', async () => {
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: {
+        getCurrentPosition: (success: PositionCallback) => success({
+          coords: {
+            latitude: 60.169857,
+            longitude: 24.938379,
+            accuracy: 100_001,
+            altitude: null,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition),
+      },
+    });
+
+    await expect(captureCurrentWorkSiteLocation()).rejects.toThrow(
+      'Laite palautti virheellisen sijaintitiedon.',
+    );
+  });
+
   it('rejects browsers without geolocation support', async () => {
     Object.defineProperty(navigator, 'geolocation', {
       configurable: true,
