@@ -1,0 +1,51 @@
+name: Publish Production Status
+
+on:
+  workflow_run:
+    workflows:
+      - Deploy Production
+    types:
+      - completed
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  publish:
+    name: Record production result
+    if: github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$CONCLUSION" in
+            success)
+              state="success"
+              description="VaKantti production deployment verified"
+              ;;
+            failure|timed_out)
+              state="failure"
+              description="VaKantti production deployment failed"
+              ;;
+            *)
+              state="error"
+              description="VaKantti production deployment ended: $CONCLUSION"
+              ;;
+          esac
+
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context="production/vakantti" \
+            -f description="$description" \
+            -f target_url="$RUN_URL"
