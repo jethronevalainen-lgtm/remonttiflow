@@ -1,0 +1,102 @@
+name: Apply PR 41 review fixes
+
+on:
+  push:
+    branches:
+      - agent/inspection-self-handover
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-pr41-review-fixes
+  cancel-in-progress: false
+
+jobs:
+  fix-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/inspection-self-handover
+
+      - name: Apply review fixes
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              content = file.read_text()
+              if old not in content:
+                  raise SystemExit(f"Expected block not found in {path}")
+              file.write_text(content.replace(old, new, 1))
+
+          replace(
+              'src/pages/inspections/TemplateEditorDialog.tsx',
+              """  useEffect(() => {\n    if (!open) return;\n    let cancelled = false;\n    const load = async () => {\n      setError(null);\n      if (!template) {\n        setName(''); setCategory('Muu'); setDescription(''); setChangeNote('Ensimmäinen versio');\n        setSections([emptyTemplateSection()]);\n        return;\n      }\n      setLoading(true);\n""",
+              """  useEffect(() => {\n    if (!open) {\n      setLoading(false);\n      return;\n    }\n    let cancelled = false;\n    const load = async () => {\n      setError(null);\n      setLoading(Boolean(template));\n      if (!template) {\n        setName(''); setCategory('Muu'); setDescription(''); setChangeNote('Ensimmäinen versio');\n        setSections([emptyTemplateSection()]);\n        return;\n      }\n""",
+          )
+
+          replace(
+              'src/pages/inspections/InspectionDetailView.tsx',
+              """      for (const result of results) {\n        await saveInspectionResult({ inspectionId, itemId: result.itemId, status: 'Kunnossa', comment: comments[result.id], measurementValue: result.measurementValue, measurementUnit: result.measurementUnit });\n      }\n""",
+              """      await Promise.all(results.map((result) => saveInspectionResult({\n        inspectionId,\n        itemId: result.itemId,\n        status: 'Kunnossa',\n        comment: comments[result.id],\n        measurementValue: result.measurementValue,\n        measurementUnit: result.measurementUnit,\n      })));\n""",
+          )
+
+          replace(
+              'src/lib/supabase/inspectionRead.ts',
+              """  const [resultResponse, findingResponse, signatureResponse, attachmentResponse, reportResponse] = await Promise.all([\n    supabase.from('inspection_results').select('*').eq('inspection_id', inspectionId),\n    supabase.from('inspection_findings').select('*').eq('inspection_id', inspectionId).order('created_at'),\n    supabase.from('inspection_signatures').select('*').eq('inspection_id', inspectionId).order('signed_at'),\n    supabase.from('inspection_attachments').select('*').eq('organization_id', inspection.organizationId).order('created_at'),\n    supabase.from('inspection_reports').select('*').eq('inspection_id', inspectionId).order('version', { ascending: false }),\n  ]);\n  if (resultResponse.error) throw failure('Tarkastustulosten haku epäonnistui', resultResponse.error.message);\n  if (findingResponse.error) throw failure('Puutteiden haku epäonnistui', findingResponse.error.message);\n  if (signatureResponse.error) throw failure('Allekirjoitusten haku epäonnistui', signatureResponse.error.message);\n  if (attachmentResponse.error) throw failure('Liitteiden haku epäonnistui', attachmentResponse.error.message);\n  if (reportResponse.error) throw failure('Raporttien haku epäonnistui', reportResponse.error.message);\n""",
+              """  const [resultResponse, findingResponse, signatureResponse, reportResponse] = await Promise.all([\n    supabase.from('inspection_results').select('*').eq('inspection_id', inspectionId),\n    supabase.from('inspection_findings').select('*').eq('inspection_id', inspectionId).order('created_at'),\n    supabase.from('inspection_signatures').select('*').eq('inspection_id', inspectionId).order('signed_at'),\n    supabase.from('inspection_reports').select('*').eq('inspection_id', inspectionId).order('version', { ascending: false }),\n  ]);\n  if (resultResponse.error) throw failure('Tarkastustulosten haku epäonnistui', resultResponse.error.message);\n  if (findingResponse.error) throw failure('Puutteiden haku epäonnistui', findingResponse.error.message);\n  if (signatureResponse.error) throw failure('Allekirjoitusten haku epäonnistui', signatureResponse.error.message);\n  if (reportResponse.error) throw failure('Raporttien haku epäonnistui', reportResponse.error.message);\n""",
+          )
+
+          replace(
+              'src/lib/supabase/inspectionRead.ts',
+              """  const findings = rows(findingResponse.data).map(mapFinding);\n  const findingIds = findings.map((item) => item.id);\n  const { data: actionData, error: actionError } = findingIds.length\n    ? await supabase.from('finding_actions').select('*').in('finding_id', findingIds).order('created_at') : { data: [], error: null };\n  if (actionError) throw failure('Korjaushistorian haku epäonnistui', actionError.message);\n  const attachments = rows(attachmentResponse.data).map(mapAttachment)\n    .filter((item) => item.inspectionId === inspectionId || (item.findingId ? findingIds.includes(item.findingId) : false));\n""",
+              """  const findings = rows(findingResponse.data).map(mapFinding);\n  const findingIds = findings.map((item) => item.id);\n  const actionPromise = findingIds.length\n    ? supabase.from('finding_actions').select('*').in('finding_id', findingIds).order('created_at')\n    : Promise.resolve({ data: [], error: null });\n  const findingAttachmentPromise = findingIds.length\n    ? supabase.from('inspection_attachments').select('*')\n      .eq('organization_id', inspection.organizationId).in('finding_id', findingIds).order('created_at')\n    : Promise.resolve({ data: [], error: null });\n  const [actionResponse, inspectionAttachmentResponse, findingAttachmentResponse] = await Promise.all([\n    actionPromise,\n    supabase.from('inspection_attachments').select('*')\n      .eq('organization_id', inspection.organizationId).eq('inspection_id', inspectionId).order('created_at'),\n    findingAttachmentPromise,\n  ]);\n  if (actionResponse.error) throw failure('Korjaushistorian haku epäonnistui', actionResponse.error.message);\n  if (inspectionAttachmentResponse.error) throw failure('Tarkastuksen liitteiden haku epäonnistui', inspectionAttachmentResponse.error.message);\n  if (findingAttachmentResponse.error) throw failure('Puuteliitteiden haku epäonnistui', findingAttachmentResponse.error.message);\n  const attachmentRows = [...rows(inspectionAttachmentResponse.data), ...rows(findingAttachmentResponse.data)];\n  const attachments = [...new Map(attachmentRows.map((row) => [text(row, 'id'), mapAttachment(row)])).values()]\n    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));\n""",
+          )
+
+          inspection_read = Path('src/lib/supabase/inspectionRead.ts')
+          content = inspection_read.read_text()
+          marker = "\nexport async function loadTemplateEditor(templateVersionId: string): Promise<TemplateEditorSection[]> {"
+          if marker not in content:
+              raise SystemExit('Test utility insertion marker missing')
+          content = content.replace(
+              marker,
+              """\nexport const inspectionReadMappers = {\n  asRow,\n  num,\n  mapInspection,\n  mapFinding,\n  mapAttachment,\n};\n\nexport async function loadTemplateEditor(templateVersionId: string): Promise<TemplateEditorSection[]> {""",
+              1,
+          )
+          inspection_read.write_text(content)
+
+          migration = Path('supabase/migrations/20260725073237_tighten_inspection_worker_visibility.sql')
+          migration.write_text("""drop policy if exists \"project_buildings_select_members\" on public.project_buildings;\ncreate policy \"project_buildings_select_authorized\"\non public.project_buildings for select to authenticated\nusing (\n  private.has_org_role(organization_id, array['admin','supervisor'])\n  or private.can_access_project(project_id, organization_id, auth.uid())\n  or exists (\n    select 1 from public.inspection_findings finding\n    where finding.project_id = project_id\n      and finding.organization_id = organization_id\n      and finding.assignee_user_id = auth.uid()\n  )\n);\n\ndrop policy if exists \"project_stairwells_select_members\" on public.project_stairwells;\ncreate policy \"project_stairwells_select_authorized\"\non public.project_stairwells for select to authenticated\nusing (\n  private.has_org_role(organization_id, array['admin','supervisor'])\n  or private.can_access_project(project_id, organization_id, auth.uid())\n  or exists (\n    select 1 from public.inspection_findings finding\n    where finding.project_id = project_id\n      and finding.organization_id = organization_id\n      and finding.assignee_user_id = auth.uid()\n  )\n);\n\ndrop policy if exists \"project_units_select_members\" on public.project_units;\ncreate policy \"project_units_select_authorized\"\non public.project_units for select to authenticated\nusing (\n  private.has_org_role(organization_id, array['admin','supervisor'])\n  or private.can_access_project(project_id, organization_id, auth.uid())\n  or exists (\n    select 1 from public.inspection_findings finding\n    where finding.unit_id = id\n      and finding.organization_id = organization_id\n      and finding.assignee_user_id = auth.uid()\n  )\n);\n\ndrop policy if exists \"inspection_attachments_insert_members\" on public.inspection_attachments;\ncreate policy \"inspection_attachments_insert_authorized\"\non public.inspection_attachments for insert to authenticated\nwith check (\n  uploaded_by = auth.uid()\n  and (storage.foldername(object_path))[1] = organization_id::text\n  and exists (\n    select 1\n    from storage.objects object\n    where object.bucket_id = 'inspection-files'\n      and object.name = object_path\n      and object.owner_id = auth.uid()::text\n      and (storage.foldername(object.name))[1] = organization_id::text\n  )\n  and (\n    private.has_org_role(organization_id, array['admin','supervisor'])\n    or (\n      finding_id is not null\n      and exists (\n        select 1 from public.inspection_findings finding\n        where finding.id = finding_id\n          and finding.organization_id = organization_id\n          and finding.assignee_user_id = auth.uid()\n      )\n    )\n  )\n);\n\ndrop policy if exists \"inspection_files_select_members\" on storage.objects;\ncreate policy \"inspection_files_select_authorized\"\non storage.objects for select to authenticated\nusing (\n  bucket_id = 'inspection-files'\n  and (\n    owner_id = auth.uid()::text\n    or private.has_org_role((storage.foldername(name))[1]::uuid, array['admin','supervisor'])\n    or exists (\n      select 1\n      from public.inspection_attachments attachment\n      left join public.inspection_findings finding on finding.id = attachment.finding_id\n      left join public.inspections inspection on inspection.id = attachment.inspection_id\n      where attachment.object_path = name\n        and attachment.organization_id::text = (storage.foldername(name))[1]\n        and (\n          attachment.uploaded_by = auth.uid()\n          or (\n            finding.id is not null\n            and finding.organization_id = attachment.organization_id\n            and finding.assignee_user_id = auth.uid()\n          )\n          or (\n            inspection.id is not null\n            and inspection.organization_id = attachment.organization_id\n            and private.can_access_project(inspection.project_id, inspection.organization_id, auth.uid())\n          )\n        )\n    )\n  )\n);\n""")
+
+          test = Path('src/lib/supabase/__tests__/inspectionRead.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';\n\nimport { inspectionReadMappers } from '../inspectionRead';\n\nconst { asRow, num, mapInspection, mapFinding, mapAttachment } = inspectionReadMappers;\n\ndescribe('inspection Supabase row mappings', () => {\n  it('rejects non-record database values', () => {\n    expect(() => asRow(null)).toThrow('Tietokanta palautti virheellisen tietueen.');\n    expect(() => asRow([])).toThrow('Tietokanta palautti virheellisen tietueen.');\n  });\n\n  it('normalizes nullable inspection fields and numeric strings', () => {\n    const inspection = mapInspection({\n      id: 'inspection-1',\n      organization_id: 'org-1',\n      project_id: 'project-1',\n      unit_id: null,\n      template_version_id: 'version-1',\n      title: 'Itselleluovutus',\n      inspection_type: 'Huoneisto',\n      status: 'Käynnissä',\n      scheduled_date: null,\n      inspector_id: null,\n      summary: null,\n      progress: '75',\n      started_at: null,\n      completed_at: null,\n      approved_at: null,\n      approved_by: null,\n      report_version: null,\n      created_at: '2026-07-25T10:00:00Z',\n    });\n\n    expect(inspection).toMatchObject({\n      id: 'inspection-1',\n      unitId: undefined,\n      summary: '',\n      progress: 75,\n      reportVersion: 0,\n    });\n  });\n\n  it('maps nullable finding and attachment values to UI-safe defaults', () => {\n    const finding = mapFinding({\n      id: 'finding-1',\n      inspection_id: 'inspection-1',\n      result_id: null,\n      project_id: 'project-1',\n      unit_id: null,\n      title: 'Saumaus',\n      description: null,\n      location: null,\n      category: null,\n      severity: 'Merkittävä',\n      status: 'Avoin',\n      assignee_user_id: null,\n      contractor_name: null,\n      due_date: null,\n      correction_note: null,\n      reported_corrected_at: null,\n      verified_at: null,\n      rejection_reason: null,\n      work_order_id: null,\n      created_at: '2026-07-25T10:00:00Z',\n      updated_at: '2026-07-25T10:00:00Z',\n    });\n    const attachment = mapAttachment({\n      id: 'attachment-1',\n      inspection_id: 'inspection-1',\n      result_id: null,\n      finding_id: null,\n      object_path: 'org-1/inspection-1/file.jpg',\n      file_name: 'file.jpg',\n      mime_type: null,\n      size_bytes: '2048',\n      kind: 'Yleiskuva',\n      caption: null,\n      created_at: '2026-07-25T10:00:00Z',\n    });\n\n    expect(finding.description).toBe('');\n    expect(finding.assigneeUserId).toBeUndefined();\n    expect(attachment.mimeType).toBe('');\n    expect(attachment.sizeBytes).toBe(2048);\n    expect(num({ value: 'not-a-number' }, 'value')).toBe(0);\n  });\n});\n""")
+          PY
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify fixes
+        run: npm run ship:check
+
+      - name: Commit verified fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-pr41-review-fixes.yml
+          git add src supabase
+          git commit -m "fix: address inspection review findings"
+          git push origin HEAD:agent/inspection-self-handover
