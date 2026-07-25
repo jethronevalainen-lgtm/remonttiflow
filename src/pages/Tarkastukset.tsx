@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowRight, Building2, ClipboardCheck, ClipboardList, Clock3, FileCheck2, FileText, ListChecks, Loader2, Plus, Printer, RefreshCw, Search } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -69,23 +69,19 @@ export default function Tarkastukset() {
     return date >= today && date <= end;
   });
 
-  const filteredInspections = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('fi');
-    return workspace.inspections.filter((inspection) => {
-      if (statusFilter !== 'all' && inspection.status !== statusFilter) return false;
-      const text = `${inspection.title} ${inspection.inspectionType} ${projectName(projects, inspection.projectId)} ${unitLabel(workspace.units, inspection.unitId)}`.toLocaleLowerCase('fi');
-      return !query || text.includes(query);
-    });
-  }, [projects, search, statusFilter, workspace.inspections, workspace.units]);
+  const inspectionQuery = search.trim().toLocaleLowerCase('fi');
+  const filteredInspections = workspace.inspections.filter((inspection) => {
+    if (statusFilter !== 'all' && inspection.status !== statusFilter) return false;
+    const text = `${inspection.title} ${inspection.inspectionType} ${projectName(projects, inspection.projectId)} ${unitLabel(workspace.units, inspection.unitId)}`.toLocaleLowerCase('fi');
+    return !inspectionQuery || text.includes(inspectionQuery);
+  });
 
-  const filteredFindings = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('fi');
-    return workspace.findings.filter((finding) => {
-      if (statusFilter !== 'all' && finding.status !== statusFilter) return false;
-      const text = `${finding.title} ${finding.description} ${finding.location} ${projectName(projects, finding.projectId)} ${unitLabel(workspace.units, finding.unitId)}`.toLocaleLowerCase('fi');
-      return !query || text.includes(query);
-    });
-  }, [projects, search, statusFilter, workspace.findings, workspace.units]);
+  const findingQuery = search.trim().toLocaleLowerCase('fi');
+  const filteredFindings = workspace.findings.filter((finding) => {
+    if (statusFilter !== 'all' && finding.status !== statusFilter) return false;
+    const text = `${finding.title} ${finding.description} ${finding.location} ${projectName(projects, finding.projectId)} ${unitLabel(workspace.units, finding.unitId)}`.toLocaleLowerCase('fi');
+    return !findingQuery || text.includes(findingQuery);
+  });
 
   const metricCards = [
     { label: 'Avoimet tarkastukset', value: pendingInspections.length, detail: `${upcomingInspections.length} seuraavan 7 päivän aikana`, icon: ClipboardList, tab: 'inspections' },
