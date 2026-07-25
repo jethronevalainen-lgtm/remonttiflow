@@ -33,16 +33,19 @@ export default function TemplateEditorDialog({ open, organizationId, template, o
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     const load = async () => {
       setError(null);
+      setLoading(Boolean(template));
       if (!template) {
         setName(''); setCategory('Muu'); setDescription(''); setChangeNote('Ensimmäinen versio');
         setSections([emptyTemplateSection()]);
         return;
       }
-      setLoading(true);
       try {
         const loaded = await loadTemplateEditor(template.versionId);
         if (cancelled) return;
