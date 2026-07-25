@@ -59,15 +59,26 @@ jobs:
           const assets = (html) => [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]);
           const localAssets = assets(localIndex);
           const liveAssets = assets(liveIndex);
-
-          console.log(`LOCAL_VERSION=${localVersion}`);
-          console.log(`LOCAL_ASSETS=${JSON.stringify(localAssets)}`);
-          console.log(`VERSION_STATUS=${versionResponse.status}`);
-          console.log(`VERSION_CONTENT_TYPE=${versionResponse.headers.get('content-type') || 'missing'}`);
-          console.log(`VERSION_BODY_PREFIX=${JSON.stringify(versionBody.slice(0, 240))}`);
-          console.log(`ROOT_STATUS=${rootResponse.status}`);
-          console.log(`LIVE_ASSETS=${JSON.stringify(liveAssets)}`);
-          console.log(`ASSETS_MATCH=${JSON.stringify(localAssets) === JSON.stringify(liveAssets)}`);
-          console.log(`PERMISSIONS_POLICY=${rootResponse.headers.get('permissions-policy') || 'missing'}`);
-          console.log(`CF_RAY=${rootResponse.headers.get('cf-ray') || 'missing'}`);
+          const lines = [
+            `LOCAL_VERSION=${localVersion}`,
+            `LOCAL_ASSETS=${JSON.stringify(localAssets)}`,
+            `VERSION_STATUS=${versionResponse.status}`,
+            `VERSION_CONTENT_TYPE=${versionResponse.headers.get('content-type') || 'missing'}`,
+            `VERSION_BODY_PREFIX=${JSON.stringify(versionBody.slice(0, 240))}`,
+            `ROOT_STATUS=${rootResponse.status}`,
+            `LIVE_ASSETS=${JSON.stringify(liveAssets)}`,
+            `ASSETS_MATCH=${JSON.stringify(localAssets) === JSON.stringify(liveAssets)}`,
+            `PERMISSIONS_POLICY=${rootResponse.headers.get('permissions-policy') || 'missing'}`,
+            `CF_RAY=${rootResponse.headers.get('cf-ray') || 'missing'}`,
+          ];
+          fs.writeFileSync('diagnostic.txt', `${lines.join('\n')}\n`);
+          console.log(lines.join('\n'));
           NODE
+
+      - name: Upload diagnostic result
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-production-diagnostic
+          path: diagnostic.txt
+          if-no-files-found: error
+          retention-days: 1
