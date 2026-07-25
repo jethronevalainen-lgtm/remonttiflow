@@ -91,6 +91,7 @@ export function captureCurrentWorkSiteLocation(): Promise<CapturedWorkSiteLocati
           || longitude < -180
           || longitude > 180
           || accuracy < 0
+          || accuracy > 100_000
         ) {
           reject(new Error('Laite palautti virheellisen sijaintitiedon.'));
           return;
