@@ -186,17 +186,15 @@ export async function loadInspectionDetail(inspectionId: string): Promise<Inspec
   const { data: inspectionData, error: inspectionError } = await supabase.from('inspections').select('*').eq('id', inspectionId).single();
   if (inspectionError) throw failure('Tarkastuksen haku epäonnistui', inspectionError.message);
   const inspection = mapInspection(asRow(inspectionData));
-  const [resultResponse, findingResponse, signatureResponse, attachmentResponse, reportResponse] = await Promise.all([
+  const [resultResponse, findingResponse, signatureResponse, reportResponse] = await Promise.all([
     supabase.from('inspection_results').select('*').eq('inspection_id', inspectionId),
     supabase.from('inspection_findings').select('*').eq('inspection_id', inspectionId).order('created_at'),
     supabase.from('inspection_signatures').select('*').eq('inspection_id', inspectionId).order('signed_at'),
-    supabase.from('inspection_attachments').select('*').eq('organization_id', inspection.organizationId).order('created_at'),
     supabase.from('inspection_reports').select('*').eq('inspection_id', inspectionId).order('version', { ascending: false }),
   ]);
   if (resultResponse.error) throw failure('Tarkastustulosten haku epäonnistui', resultResponse.error.message);
   if (findingResponse.error) throw failure('Puutteiden haku epäonnistui', findingResponse.error.message);
   if (signatureResponse.error) throw failure('Allekirjoitusten haku epäonnistui', signatureResponse.error.message);
-  if (attachmentResponse.error) throw failure('Liitteiden haku epäonnistui', attachmentResponse.error.message);
   if (reportResponse.error) throw failure('Raporttien haku epäonnistui', reportResponse.error.message);
   const resultRows = rows(resultResponse.data);
   const itemIds = resultRows.map((item) => text(item, 'item_id')).filter(Boolean);
@@ -212,11 +210,25 @@ export async function loadInspectionDetail(inspectionId: string): Promise<Inspec
   const sectionMap = new Map(rows(sectionData).map((section) => [text(section, 'id'), section]));
   const findings = rows(findingResponse.data).map(mapFinding);
   const findingIds = findings.map((item) => item.id);
-  const { data: actionData, error: actionError } = findingIds.length
-    ? await supabase.from('finding_actions').select('*').in('finding_id', findingIds).order('created_at') : { data: [], error: null };
-  if (actionError) throw failure('Korjaushistorian haku epäonnistui', actionError.message);
-  const attachments = rows(attachmentResponse.data).map(mapAttachment)
-    .filter((item) => item.inspectionId === inspectionId || (item.findingId ? findingIds.includes(item.findingId) : false));
+  const actionPromise = findingIds.length
+    ? supabase.from('finding_actions').select('*').in('finding_id', findingIds).order('created_at')
+    : Promise.resolve({ data: [], error: null });
+  const findingAttachmentPromise = findingIds.length
+    ? supabase.from('inspection_attachments').select('*')
+      .eq('organization_id', inspection.organizationId).in('finding_id', findingIds).order('created_at')
+    : Promise.resolve({ data: [], error: null });
+  const [actionResponse, inspectionAttachmentResponse, findingAttachmentResponse] = await Promise.all([
+    actionPromise,
+    supabase.from('inspection_attachments').select('*')
+      .eq('organization_id', inspection.organizationId).eq('inspection_id', inspectionId).order('created_at'),
+    findingAttachmentPromise,
+  ]);
+  if (actionResponse.error) throw failure('Korjaushistorian haku epäonnistui', actionResponse.error.message);
+  if (inspectionAttachmentResponse.error) throw failure('Tarkastuksen liitteiden haku epäonnistui', inspectionAttachmentResponse.error.message);
+  if (findingAttachmentResponse.error) throw failure('Puuteliitteiden haku epäonnistui', findingAttachmentResponse.error.message);
+  const attachmentRows = [...rows(inspectionAttachmentResponse.data), ...rows(findingAttachmentResponse.data)];
+  const attachments = [...new Map(attachmentRows.map((row) => [text(row, 'id'), mapAttachment(row)])).values()]
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return {
     inspection,
     results: resultRows.map((result): InspectionResultDetail => {
@@ -235,7 +247,7 @@ export async function loadInspectionDetail(inspectionId: string): Promise<Inspec
       };
     }).sort((a, b) => a.sectionOrder - b.sectionOrder || a.itemOrder - b.itemOrder),
     findings,
-    actions: rows(actionData).map((action): FindingAction => ({
+    actions: rows(actionResponse.data).map((action): FindingAction => ({
       id: text(action, 'id'), findingId: text(action, 'finding_id'), actionType: text(action, 'action_type'),
       note: text(action, 'note'), attachmentPath: text(action, 'attachment_path'),
       createdBy: optionalText(action, 'created_by'), createdAt: text(action, 'created_at'),
@@ -249,6 +261,14 @@ export async function loadInspectionDetail(inspectionId: string): Promise<Inspec
     reports: rows(reportResponse.data).map(mapReport),
   };
 }
+
+export const inspectionReadMappers = {
+  asRow,
+  num,
+  mapInspection,
+  mapFinding,
+  mapAttachment,
+};
 
 export async function loadTemplateEditor(templateVersionId: string): Promise<TemplateEditorSection[]> {
   const { data: sectionData, error: sectionError } = await supabase.from('inspection_template_sections')
