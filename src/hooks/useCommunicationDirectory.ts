@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
 import { supabase } from '@/lib/supabase/client';
 import type { OrganizationPerson } from '@/lib/supabase/workManagement';
@@ -73,8 +73,8 @@ async function loadDirectory(
 }
 
 export function useCommunicationDirectory() {
-  const { user } = useAuth();
   const { currentOrg, currentRole } = useOrganization();
+  const { effectiveUserId } = useViewAs();
   const { projectMemberships, workOrders, canManage } = useRoleWorkspace();
   const relevantUserIds = [
     ...projectMemberships.map((item) => item.userId),
@@ -84,17 +84,17 @@ export function useCommunicationDirectory() {
     queryKey: [
       'communication-directory',
       currentOrg?.id ?? 'none',
-      user?.id ?? 'none',
+      effectiveUserId ?? 'none',
       currentRole ?? 'none',
       [...new Set(relevantUserIds)].sort().join(','),
     ],
     queryFn: () => loadDirectory(
       currentOrg?.id as string,
-      user?.id as string,
+      effectiveUserId as string,
       canManage,
       relevantUserIds,
     ),
-    enabled: Boolean(currentOrg?.id && user?.id && currentRole),
+    enabled: Boolean(currentOrg?.id && effectiveUserId && currentRole),
     staleTime: 30_000,
   });
 
