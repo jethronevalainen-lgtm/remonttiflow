@@ -69,10 +69,46 @@
 @layer base {
   * {
     @apply border-border;
+    min-width: 0;
   }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+    max-width: 100%;
+  }
+
+  html {
+    overflow: hidden;
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
     font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
   }
 }
 
@@ -97,6 +133,12 @@
 
 /* Print styles */
 @media print {
+  html,
+  body,
+  #root {
+    overflow: visible;
+  }
+
   .no-print {
     display: none !important;
   }
