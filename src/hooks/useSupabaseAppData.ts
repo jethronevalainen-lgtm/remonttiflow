@@ -13,7 +13,6 @@ import {
   createSafetyItem,
   createTimeEntry,
   createWorkOrder,
-  loadDomainData,
   patchCrmLead,
   patchCustomer,
   patchProject,
@@ -24,6 +23,7 @@ import {
   removeWorkOrder,
   type DomainData,
 } from '@/lib/supabase/domainData';
+import { loadNormalizedDomainData } from '@/lib/supabase/normalizedDomainData';
 import type {
   CrmLead,
   Customer,
@@ -48,7 +48,7 @@ export function useSupabaseAppData() {
   const organizationId = currentOrg?.id;
   const query = useQuery({
     queryKey: domainQueryKey(organizationId),
-    queryFn: () => loadDomainData(organizationId as string),
+    queryFn: () => loadNormalizedDomainData(organizationId as string),
     enabled: Boolean(organizationId),
     staleTime: 30_000,
     retry: 1,
