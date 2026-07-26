@@ -11,6 +11,7 @@ import {
   ClipboardList,
   ClipboardSignature,
   Clock,
+  Eye,
   FileText,
   FolderKanban,
   HardHat,
@@ -28,7 +29,7 @@ import {
 
 import { BRAND } from '@/config/brand';
 import { ROLE_LABELS, useAuth, type UserRole } from '@/contexts/AuthContext';
-import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { cn } from '@/lib/utils';
 
 interface NavItem {
@@ -138,8 +139,8 @@ interface NavbarProps {
 export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
-  const { currentRole } = useOrganization();
+  const { user } = useAuth();
+  const { effectiveRole, effectiveDisplayName, isPreviewing } = useViewAs();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     overview: true,
     production: true,
@@ -152,20 +153,23 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   });
 
   if (!user) return null;
-  const effectiveRole: UserRole = currentRole ?? 'worker';
-  const groups = effectiveRole === 'worker'
+  const role: UserRole = effectiveRole ?? 'worker';
+  const groups = role === 'worker'
     ? workerGroups
     : [
       ...managementGroups,
-      ...(effectiveRole === 'admin'
+      ...(role === 'admin'
         ? [{
           key: 'admin',
           title: 'Admin',
-          items: [{ label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' }],
+          items: [
+            { label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' },
+            { label: 'Käyttäjänäkymän esikatselu', icon: Eye, path: '/kayttajaesikatselu' },
+          ],
         }]
         : []),
     ];
-  const displayName = profile?.full_name ?? user.email ?? '';
+  const displayName = effectiveDisplayName || user.email || '';
 
   const goTo = (path: string) => {
     navigate(path);
@@ -178,8 +182,9 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
       <button
         type="button"
         onClick={() => goTo(item.path)}
+        aria-current={active ? 'page' : undefined}
         className={cn(
-          'group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all',
+          'group relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all',
           active
             ? 'bg-orange-500/15 text-orange-400 shadow-sm'
             : 'text-slate-400 hover:bg-slate-800 hover:text-white',
@@ -198,23 +203,26 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
 
   return (
     <motion.aside
-      className={cn('flex h-screen flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950', isMobile && 'w-[280px]')}
+      className={cn(
+        'flex h-[100dvh] max-w-[88vw] flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950',
+        isMobile && 'w-[280px]',
+      )}
       animate={{ width: collapsed ? 64 : 270 }}
       transition={{ duration: 0.22 }}
     >
       <div className="flex h-14 flex-shrink-0 items-center border-b border-slate-800 px-3">
-        <div className="flex flex-1 items-center gap-3 overflow-hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-orange-500 text-sm font-bold text-white shadow-lg shadow-orange-500/20">{BRAND.shortName}</div>
-          {!collapsed && <span className="font-bold tracking-tight text-white">{BRAND.name}</span>}
+          {!collapsed && <span className="truncate font-bold tracking-tight text-white">{BRAND.name}</span>}
         </div>
         {isMobile ? (
-          <button type="button" onClick={onToggle} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800"><X size={18} /></button>
+          <button type="button" onClick={onToggle} aria-label="Sulje valikko" className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800"><X size={18} /></button>
         ) : (
-          <button type="button" onClick={onToggle} className="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 md:flex"><motion.span animate={{ rotate: collapsed ? 180 : 0 }}><ChevronLeft size={17} /></motion.span></button>
+          <button type="button" onClick={onToggle} aria-label={collapsed ? 'Laajenna valikko' : 'Pienennä valikko'} className="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 md:flex"><motion.span animate={{ rotate: collapsed ? 180 : 0 }}><ChevronLeft size={17} /></motion.span></button>
         )}
       </div>
 
-      <nav className="flex-1 space-y-2 overflow-y-auto p-2">
+      <nav className="flex-1 space-y-2 overflow-y-auto overscroll-contain p-2">
         {groups.map((group) => {
           const open = openGroups[group.key] ?? true;
           return (
@@ -223,7 +231,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
                 <button
                   type="button"
                   onClick={() => setOpenGroups((previous) => ({ ...previous, [group.key]: !open }))}
-                  className="flex w-full items-center px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300"
+                  className="flex min-h-9 w-full items-center px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300"
                 >
                   <span className="flex-1 text-left">{group.title}</span>
                   <motion.span animate={{ rotate: open ? 0 : -90 }}><ChevronDown size={12} /></motion.span>
@@ -241,10 +249,18 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
         })}
       </nav>
 
-      <div className="border-t border-slate-800 p-3">
+      <div className="border-t border-slate-800 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-bold text-white">{initialsOf(displayName)}</div>
-          {!collapsed && <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{displayName}</p><p className="text-[11px] text-slate-400">{ROLE_LABELS[effectiveRole]}</p></div>}
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-white">{displayName}</p>
+              <p className="flex items-center gap-1 text-[11px] text-slate-400">
+                {isPreviewing && <Eye size={11} />}
+                {ROLE_LABELS[role]}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </motion.aside>

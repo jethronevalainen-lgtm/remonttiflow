@@ -10,6 +10,7 @@ describe('worker route boundaries', () => {
   it('contains only personal and worksite tools', () => {
     expect(ROLE_ROUTES.worker).toEqual([
       '/dashboard',
+      '/tarkastukset',
       '/tyomaaraykset',
       '/kuittaukset',
       '/tuntikirjaukset',

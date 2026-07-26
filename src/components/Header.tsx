@@ -22,6 +22,7 @@ import {
   useAuth,
 } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { BRAND } from '@/config/brand';
 import {
   buildHeaderAlerts,
@@ -54,6 +55,7 @@ const routes: HeaderRoute[] = [
   { path: '/lomakkeet', label: 'Lomakkeet' },
   { path: '/raportit', label: 'Raportit' },
   { path: '/hallinta', label: 'Organisaation hallinta' },
+  { path: '/kayttajaesikatselu', label: 'Käyttäjänäkymän esikatselu' },
 ];
 
 const routeLabelMap = new Map(routes.map((route) => [route.path, route.label]));
@@ -88,13 +90,13 @@ interface HeaderProps {
 export default function Header({ onMenuClick }: HeaderProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, profile, signOut } = useAuth();
+  const { signOut } = useAuth();
   const {
     organizations,
     currentOrg,
-    currentRole,
     setCurrentOrg,
   } = useOrganization();
+  const { effectiveRole, effectiveDisplayName } = useViewAs();
   const { workOrders, timeEntries, safetyItems, projects } = useAppDataContext();
 
   const [showAlerts, setShowAlerts] = useState(false);
@@ -103,11 +105,11 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const [searchFocused, setSearchFocused] = useState(false);
 
   const label = routeLabelMap.get(location.pathname) ?? BRAND.name;
-  const displayName = profile?.full_name ?? user?.email ?? '';
+  const displayName = effectiveDisplayName;
   const hasMultipleOrgs = organizations.length > 1;
   const allowedPaths = useMemo(
-    () => (currentRole ? ROLE_ROUTES[currentRole] : ['/dashboard']),
-    [currentRole],
+    () => (effectiveRole ? ROLE_ROUTES[effectiveRole] : ['/dashboard']),
+    [effectiveRole],
   );
 
   const alerts = useMemo(() => {
@@ -144,19 +146,20 @@ export default function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="relative z-20 flex h-14 flex-shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
-      <div className="flex items-center gap-3">
+    <header className="relative z-20 flex h-14 flex-shrink-0 items-center justify-between gap-1 border-b border-gray-200 bg-white px-2 sm:gap-2 sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-3">
         <button
+          type="button"
           onClick={onMenuClick}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 md:hidden"
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 md:hidden"
           aria-label="Avaa valikko"
         >
           <Menu size={20} />
         </button>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="hidden font-medium text-gray-400 sm:inline">{BRAND.name}</span>
           <span className="hidden text-gray-300 sm:inline">/</span>
-          <span className="font-semibold text-gray-900">{label}</span>
+          <span className="max-w-[36vw] truncate font-semibold text-gray-900 sm:max-w-[220px] md:max-w-none">{label}</span>
         </div>
       </div>
 
@@ -179,6 +182,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           {searchFocused && searchValue.trim() && (
             <>
               <button
+                type="button"
                 className="fixed inset-0 z-40 cursor-default"
                 onClick={() => setSearchFocused(false)}
                 aria-label="Sulje hakutulokset"
@@ -191,6 +195,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
               >
                 {searchResults.map((route) => (
                   <button
+                    type="button"
                     key={route.path}
                     onClick={() => goTo(route.path)}
                     className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
@@ -211,21 +216,23 @@ export default function Header({ onMenuClick }: HeaderProps) {
         </AnimatePresence>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-shrink-0 items-center gap-1 sm:gap-2">
         <div className="relative">
           {hasMultipleOrgs ? (
             <button
+              type="button"
               onClick={() => setShowOrgMenu(!showOrgMenu)}
-              className="flex items-center gap-2 rounded-lg px-3 py-1.5 transition-colors hover:bg-gray-100"
+              className="flex h-10 items-center gap-1 rounded-lg px-2 transition-colors hover:bg-gray-100 sm:gap-2 sm:px-3"
+              aria-label={`Vaihda organisaatiota. Nykyinen ${currentOrg?.name ?? 'Organisaatio'}`}
             >
-              <Building2 size={14} className="text-gray-400" />
+              <Building2 size={16} className="text-gray-400" />
               <span className="hidden max-w-[160px] truncate text-sm font-medium text-gray-700 sm:inline">
                 {currentOrg?.name ?? 'Organisaatio'}
               </span>
-              <ChevronDown size={14} className="text-gray-400" />
+              <ChevronDown size={14} className="hidden text-gray-400 sm:block" />
             </button>
           ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5">
+            <div className="hidden items-center gap-2 px-2 py-1.5 sm:flex sm:px-3">
               <Building2 size={14} className="text-gray-400" />
               <span className="hidden max-w-[160px] truncate text-sm font-medium text-gray-700 sm:inline">
                 {currentOrg?.name ?? 'Organisaatio'}
@@ -236,6 +243,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
             {hasMultipleOrgs && showOrgMenu && (
               <>
                 <button
+                  type="button"
                   className="fixed inset-0 z-40 cursor-default"
                   onClick={() => setShowOrgMenu(false)}
                   aria-label="Sulje organisaatiovalikko"
@@ -244,19 +252,20 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-gray-200 bg-white py-2 shadow-xl"
+                  className="absolute right-0 top-full z-50 mt-1 w-[min(16rem,calc(100vw-1rem))] rounded-xl border border-gray-200 bg-white py-2 shadow-xl"
                 >
                   <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400">
                     Vaihda organisaatiota
                   </p>
                   {organizations.map((organization) => (
                     <button
+                      type="button"
                       key={organization.id}
                       onClick={() => {
                         setCurrentOrg(organization.id);
                         setShowOrgMenu(false);
                       }}
-                      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
+                      className="flex min-h-11 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
                     >
                       <Building2 size={14} className="flex-shrink-0 text-gray-400" />
                       <p className="truncate text-sm font-medium text-gray-800">
@@ -273,19 +282,20 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </AnimatePresence>
         </div>
 
-        {currentRole && (
+        {effectiveRole && (
           <div className="hidden items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 sm:flex">
-            <div className={`h-2.5 w-2.5 rounded-full ${ROLE_COLORS[currentRole]}`} />
+            <div className={`h-2.5 w-2.5 rounded-full ${ROLE_COLORS[effectiveRole]}`} />
             <span className="text-sm font-medium text-gray-700">
-              {ROLE_LABELS[currentRole]}
+              {ROLE_LABELS[effectiveRole]}
             </span>
           </div>
         )}
 
         <div className="relative">
           <button
+            type="button"
             onClick={() => setShowAlerts(!showAlerts)}
-            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100"
+            className="relative flex h-10 w-10 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100"
             aria-label="Avaa ajankohtaiset huomiot"
           >
             <Bell size={18} />
@@ -299,6 +309,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
             {showAlerts && (
               <>
                 <button
+                  type="button"
                   className="fixed inset-0 z-40 cursor-default"
                   onClick={() => setShowAlerts(false)}
                   aria-label="Sulje ajankohtaiset huomiot"
@@ -307,7 +318,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className="absolute right-0 top-full z-50 mt-1 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+                  className="absolute right-0 top-full z-50 mt-1 w-[min(360px,calc(100vw-16px))] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
                 >
                   <div className="border-b border-gray-100 px-4 py-3">
                     <p className="text-sm font-semibold">Ajankohtaiset huomiot</p>
@@ -317,9 +328,10 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   </div>
                   {alerts.map((alert) => (
                     <button
+                      type="button"
                       key={alert.id}
                       onClick={() => goTo(alert.path)}
-                      className={`flex w-full gap-3 border-b px-4 py-3 text-left transition-colors hover:brightness-[0.98] ${alertTone(alert)}`}
+                      className={`flex min-h-11 w-full gap-3 border-b px-4 py-3 text-left transition-colors hover:brightness-[0.98] ${alertTone(alert)}`}
                     >
                       <span className="mt-0.5 flex-shrink-0">{alertIcon(alert)}</span>
                       <span>
@@ -346,7 +358,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </AnimatePresence>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="hidden items-center gap-2 xs:flex sm:flex">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 shadow-md">
             <span className="text-sm font-bold text-white">{initialsOf(displayName)}</span>
           </div>
@@ -356,9 +368,11 @@ export default function Header({ onMenuClick }: HeaderProps) {
         </div>
 
         <button
+          type="button"
           onClick={() => { void signOut(); }}
           title="Kirjaudu ulos"
-          className="flex h-9 items-center gap-2 rounded-lg px-3 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+          aria-label="Kirjaudu ulos"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 sm:w-auto sm:gap-2 sm:px-3"
         >
           <LogOut size={16} />
           <span className="hidden text-sm font-medium xl:inline">Kirjaudu ulos</span>
