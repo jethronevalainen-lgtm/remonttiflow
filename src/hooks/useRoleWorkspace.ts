@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import {
   loadRoleWorkspace,
   type RoleWorkspaceData,
@@ -15,15 +15,15 @@ const EMPTY_WORKSPACE: RoleWorkspaceData = {
 
 export function useRoleWorkspace() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const { currentOrg, currentRole } = useOrganization();
+  const { currentOrg } = useOrganization();
+  const { effectiveRole, effectiveUserId } = useViewAs();
   const organizationId = currentOrg?.id;
-  const canManage = currentRole === 'admin' || currentRole === 'supervisor';
+  const canManage = effectiveRole === 'admin' || effectiveRole === 'supervisor';
   const queryKey = [
     'role-workspace',
     organizationId ?? 'none',
-    user?.id ?? 'anonymous',
-    currentRole ?? 'none',
+    effectiveUserId ?? 'anonymous',
+    effectiveRole ?? 'none',
   ] as const;
 
   const query = useQuery({
@@ -31,9 +31,9 @@ export function useRoleWorkspace() {
     queryFn: () => loadRoleWorkspace(
       organizationId as string,
       canManage,
-      user?.id as string,
+      effectiveUserId as string,
     ),
-    enabled: Boolean(organizationId && user?.id && currentRole),
+    enabled: Boolean(organizationId && effectiveUserId && effectiveRole),
     staleTime: 15_000,
     retry: 1,
   });
