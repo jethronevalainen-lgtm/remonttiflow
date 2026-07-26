@@ -26,11 +26,15 @@ if (!supabaseUrl.startsWith('https://')) {
  * The database schema is queried through an explicit repository/mapping
  * layer. Keeping the raw client untyped prevents stale hand-written database
  * types from silently describing columns that do not exist in production.
+ *
+ * Authentication callbacks are handled explicitly on /auth/callback. This is
+ * required because the application uses HashRouter and Supabase's implicit
+ * auth response also uses the URL fragment.
  */
 export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: false,
   },
 });
