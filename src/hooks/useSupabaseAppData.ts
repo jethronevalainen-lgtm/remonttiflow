@@ -6,19 +6,21 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import logger from '@/lib/logger';
 import {
+  createCrmLeadRecord,
+  createCustomerRecord,
+  deleteCrmLeadRecord,
+  deleteCustomerRecord,
+  updateCrmLeadRecord,
+  updateCustomerRecord,
+} from '@/lib/supabase/commercialEntities';
+import {
   EMPTY_DOMAIN_DATA,
-  createCrmLead,
-  createCustomer,
   createProject,
   createSafetyItem,
   createTimeEntry,
   createWorkOrder,
-  patchCrmLead,
-  patchCustomer,
   patchProject,
   patchWorkOrder,
-  removeCrmLead,
-  removeCustomer,
   removeProject,
   removeWorkOrder,
   type DomainData,
@@ -62,151 +64,139 @@ export function useSupabaseAppData() {
   }, [organizationId, queryClient]);
 
   const runMutation = useCallback(
-    async (name: string, mutation: () => Promise<unknown>) => {
+    async (name: string, mutation: () => Promise<unknown>): Promise<boolean> => {
       if (isPreviewing) {
         setOperationError('Esikatselutila on vain lukemista varten. Lopeta esikatselu ennen tallentamista.');
-        return;
+        return false;
       }
       if (!organizationId) {
         setOperationError('Aktiivista organisaatiota ei ole valittu.');
-        return;
+        return false;
       }
       setOperationError(null);
       try {
         await mutation();
         await refresh();
+        return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Tallennus epäonnistui.';
         setOperationError(message);
         logger.error(name, { error });
+        return false;
       }
     },
     [isPreviewing, organizationId, refresh],
   );
 
   const addProject = useCallback(
-    (project: Omit<Project, 'id'>) => {
-      void runMutation('Projektin luominen epäonnistui', () =>
+    (project: Omit<Project, 'id'>) =>
+      runMutation('Projektin luominen epäonnistui', () =>
         createProject(organizationId as string, user?.id, project),
-      );
-    },
+      ),
     [organizationId, runMutation, user?.id],
   );
 
   const updateProject = useCallback(
-    (id: string, updates: Partial<Project>) => {
-      void runMutation('Projektin päivittäminen epäonnistui', () =>
+    (id: string, updates: Partial<Project>) =>
+      runMutation('Projektin päivittäminen epäonnistui', () =>
         patchProject(organizationId as string, id, updates),
-      );
-    },
+      ),
     [organizationId, runMutation],
   );
 
   const deleteProject = useCallback(
-    (id: string) => {
-      void runMutation('Projektin poistaminen epäonnistui', () =>
+    (id: string) =>
+      runMutation('Projektin poistaminen epäonnistui', () =>
         removeProject(organizationId as string, id),
-      );
-    },
+      ),
     [organizationId, runMutation],
   );
 
   const addWorkOrder = useCallback(
-    (workOrder: Omit<WorkOrder, 'id'>) => {
-      void runMutation('Työmääräyksen luominen epäonnistui', () =>
+    (workOrder: Omit<WorkOrder, 'id'>) =>
+      runMutation('Työmääräyksen luominen epäonnistui', () =>
         createWorkOrder(organizationId as string, user?.id, workOrder),
-      );
-    },
+      ),
     [organizationId, runMutation, user?.id],
   );
 
   const updateWorkOrder = useCallback(
-    (id: string, updates: Partial<WorkOrder>) => {
-      void runMutation('Työmääräyksen päivittäminen epäonnistui', () =>
+    (id: string, updates: Partial<WorkOrder>) =>
+      runMutation('Työmääräyksen päivittäminen epäonnistui', () =>
         patchWorkOrder(organizationId as string, id, updates),
-      );
-    },
+      ),
     [organizationId, runMutation],
   );
 
   const deleteWorkOrder = useCallback(
-    (id: string) => {
-      void runMutation('Työmääräyksen poistaminen epäonnistui', () =>
+    (id: string) =>
+      runMutation('Työmääräyksen poistaminen epäonnistui', () =>
         removeWorkOrder(organizationId as string, id),
-      );
-    },
+      ),
     [organizationId, runMutation],
   );
 
   const addCustomer = useCallback(
-    (customer: Omit<Customer, 'id'>) => {
-      void runMutation('Asiakkaan luominen epäonnistui', () =>
-        createCustomer(organizationId as string, user?.id, customer),
-      );
-    },
+    (customer: Omit<Customer, 'id'>) =>
+      runMutation('Asiakkaan luominen epäonnistui', () =>
+        createCustomerRecord(organizationId as string, user?.id, customer),
+      ),
     [organizationId, runMutation, user?.id],
   );
 
   const updateCustomer = useCallback(
-    (id: string, updates: Partial<Customer>) => {
-      void runMutation('Asiakkaan päivittäminen epäonnistui', () =>
-        patchCustomer(organizationId as string, id, updates),
-      );
-    },
+    (id: string, updates: Partial<Customer>) =>
+      runMutation('Asiakkaan päivittäminen epäonnistui', () =>
+        updateCustomerRecord(organizationId as string, id, updates),
+      ),
     [organizationId, runMutation],
   );
 
   const deleteCustomer = useCallback(
-    (id: string) => {
-      void runMutation('Asiakkaan poistaminen epäonnistui', () =>
-        removeCustomer(organizationId as string, id),
-      );
-    },
+    (id: string) =>
+      runMutation('Asiakkaan poistaminen epäonnistui', () =>
+        deleteCustomerRecord(organizationId as string, id),
+      ),
     [organizationId, runMutation],
   );
 
   const addCrmLead = useCallback(
-    (lead: Omit<CrmLead, 'id'>) => {
-      void runMutation('Myyntimahdollisuuden luominen epäonnistui', () =>
-        createCrmLead(organizationId as string, user?.id, lead),
-      );
-    },
+    (lead: Omit<CrmLead, 'id'>) =>
+      runMutation('Myyntimahdollisuuden luominen epäonnistui', () =>
+        createCrmLeadRecord(organizationId as string, user?.id, lead),
+      ),
     [organizationId, runMutation, user?.id],
   );
 
   const updateCrmLead = useCallback(
-    (id: string, updates: Partial<CrmLead>) => {
-      void runMutation('Myyntimahdollisuuden päivittäminen epäonnistui', () =>
-        patchCrmLead(organizationId as string, id, updates),
-      );
-    },
+    (id: string, updates: Partial<CrmLead>) =>
+      runMutation('Myyntimahdollisuuden päivittäminen epäonnistui', () =>
+        updateCrmLeadRecord(organizationId as string, id, updates),
+      ),
     [organizationId, runMutation],
   );
 
   const deleteCrmLead = useCallback(
-    (id: string) => {
-      void runMutation('Myyntimahdollisuuden poistaminen epäonnistui', () =>
-        removeCrmLead(organizationId as string, id),
-      );
-    },
+    (id: string) =>
+      runMutation('Myyntimahdollisuuden poistaminen epäonnistui', () =>
+        deleteCrmLeadRecord(organizationId as string, id),
+      ),
     [organizationId, runMutation],
   );
 
   const addTimeEntry = useCallback(
-    (entry: Omit<TimeEntry, 'id'>) => {
-      void runMutation('Tuntikirjauksen tallentaminen epäonnistui', () =>
+    (entry: Omit<TimeEntry, 'id'>) =>
+      runMutation('Tuntikirjauksen tallentaminen epäonnistui', () =>
         createTimeEntry(organizationId as string, user?.id, entry),
-      );
-    },
+      ),
     [organizationId, runMutation, user?.id],
   );
 
   const addSafetyItem = useCallback(
-    (item: Omit<SafetyItem, 'id'>) => {
-      void runMutation('Turvallisuushavainnon tallentaminen epäonnistui', () =>
+    (item: Omit<SafetyItem, 'id'>) =>
+      runMutation('Turvallisuushavainnon tallentaminen epäonnistui', () =>
         createSafetyItem(organizationId as string, user?.id, item),
-      );
-    },
+      ),
     [organizationId, runMutation, user?.id],
   );
 
