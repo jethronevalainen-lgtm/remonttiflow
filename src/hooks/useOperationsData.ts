@@ -41,6 +41,10 @@ function text(item: Row, key: string): string {
   return typeof item[key] === 'string' ? item[key] as string : '';
 }
 
+function optionalText(item: Row, key: string): string | undefined {
+  return text(item, key) || undefined;
+}
+
 function numberValue(item: Row, key: string): number {
   const value = item[key];
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -49,6 +53,10 @@ function numberValue(item: Row, key: string): number {
     if (Number.isFinite(parsed)) return parsed;
   }
   return 0;
+}
+
+function optionalNumber(item: Row, key: string): number | undefined {
+  return item[key] == null ? undefined : numberValue(item, key);
 }
 
 function booleanValue(item: Row, key: string): boolean {
@@ -91,49 +99,64 @@ async function loadOperations(organizationId: string): Promise<OperationsData> {
       .map((item): DiaryEntry => ({
         id: text(item, 'id'),
         date: text(item, 'date'),
+        projectId: optionalText(item, 'project_id'),
         project: text(item, 'project'),
         author: text(item, 'author'),
         weather: text(item, 'weather'),
         temperature: item.temperature == null ? '' : String(item.temperature),
         workers: numberValue(item, 'workers'),
         workDescription: text(item, 'work_phases'),
-        deliveries: text(item, 'deliveries') || undefined,
-        issues: text(item, 'issues') || undefined,
-        delays: text(item, 'delays') || undefined,
+        deliveries: optionalText(item, 'deliveries'),
+        issues: optionalText(item, 'issues'),
+        delays: optionalText(item, 'delays'),
         status: enumValue<DiaryStatus>(item, 'status', ['Luonnos', 'Valmis', 'Lukittu'], 'Luonnos'),
+        approvedBy: optionalText(item, 'approved_by'),
+        approvedAt: optionalText(item, 'approved_at'),
+        lockedBy: optionalText(item, 'locked_by'),
       }))
       .sort((a, b) => b.date.localeCompare(a.date)),
     wasteEntries: waste
       .map((item): WasteEntry => ({
         id: text(item, 'id'),
         date: text(item, 'date'),
+        projectId: optionalText(item, 'project_id'),
         project: text(item, 'project'),
         wasteType: text(item, 'waste_type'),
         amount: numberValue(item, 'amount'),
         method: text(item, 'unit'),
-        unit: text(item, 'unit') || undefined,
+        unit: optionalText(item, 'unit'),
         cost: numberValue(item, 'cost'),
-        notes: text(item, 'notes') || undefined,
+        notes: optionalText(item, 'notes'),
+        destination: optionalText(item, 'destination'),
+        receiptNumber: optionalText(item, 'receipt_number'),
+        hazardous: booleanValue(item, 'hazardous'),
       }))
       .sort((a, b) => b.date.localeCompare(a.date)),
     drivingLog: driving
       .map((item): DrivingLogEntry => ({
         id: text(item, 'id'),
         date: text(item, 'date'),
+        userId: optionalText(item, 'user_id'),
         driver: text(item, 'driver'),
+        equipmentId: optionalText(item, 'equipment_id'),
         vehicle: '',
         startAddress: text(item, 'start_address'),
         endAddress: text(item, 'end_address'),
         distance: numberValue(item, 'distance_km'),
         purpose: text(item, 'purpose'),
-        project: text(item, 'project') || undefined,
+        projectId: optionalText(item, 'project_id'),
+        project: optionalText(item, 'project'),
+        startOdometerKm: optionalNumber(item, 'start_odometer_km'),
+        endOdometerKm: optionalNumber(item, 'end_odometer_km'),
       }))
       .sort((a, b) => b.date.localeCompare(a.date)),
     travelExpenses: travel
       .map((item): TravelExpense => ({
         id: text(item, 'id'),
         date: text(item, 'date'),
+        userId: optionalText(item, 'user_id'),
         employee: text(item, 'employee'),
+        projectId: optionalText(item, 'project_id'),
         type: text(item, 'type'),
         description: text(item, 'description'),
         amount: numberValue(item, 'amount'),
@@ -143,6 +166,10 @@ async function loadOperations(organizationId: string): Promise<OperationsData> {
           ['Odottaa', 'Hyväksytty', 'Hylätty'],
           'Odottaa',
         ),
+        approvedBy: optionalText(item, 'approved_by'),
+        approvedAt: optionalText(item, 'approved_at'),
+        rejectionReason: optionalText(item, 'rejection_reason'),
+        attachmentPath: optionalText(item, 'attachment_path'),
       }))
       .sort((a, b) => b.date.localeCompare(a.date)),
     announcements: announcements
@@ -165,9 +192,9 @@ async function loadOperations(organizationId: string): Promise<OperationsData> {
         id: text(item, 'id'),
         sender: text(item, 'sender'),
         recipient: text(item, 'recipient'),
-        senderUserId: text(item, 'sender_user_id') || undefined,
-        recipientUserId: text(item, 'recipient_user_id') || undefined,
-        subject: text(item, 'subject') || undefined,
+        senderUserId: optionalText(item, 'sender_user_id'),
+        recipientUserId: optionalText(item, 'recipient_user_id'),
+        subject: optionalText(item, 'subject'),
         content: text(item, 'content'),
         timestamp: text(item, 'sent_at'),
         read: booleanValue(item, 'read'),
