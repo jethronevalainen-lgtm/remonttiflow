@@ -34,6 +34,7 @@ async function remove(table: EntityTable, organizationId: string, id: string): P
 
 function employeePayload(employee: Omit<Employee, 'id'> | Partial<Employee>): Payload {
   const payload: Payload = {};
+  if (employee.userId !== undefined) payload.user_id = employee.userId || null;
   if (employee.name !== undefined) payload.name = employee.name;
   if (employee.role !== undefined) payload.role = employee.role;
   if (employee.department !== undefined) payload.department = employee.department;
@@ -41,6 +42,15 @@ function employeePayload(employee: Omit<Employee, 'id'> | Partial<Employee>): Pa
   if (employee.email !== undefined) payload.email = employee.email || null;
   if (employee.startDate !== undefined) payload.start_date = employee.startDate || null;
   if (employee.status !== undefined) payload.status = employee.status;
+  if (employee.hourlyCostCents !== undefined) payload.hourly_cost_cents = employee.hourlyCostCents ?? 0;
+  if (employee.employmentType !== undefined) payload.employment_type = employee.employmentType || null;
+  if (employee.emergencyContactName !== undefined) {
+    payload.emergency_contact_name = employee.emergencyContactName || null;
+  }
+  if (employee.emergencyContactPhone !== undefined) {
+    payload.emergency_contact_phone = employee.emergencyContactPhone || null;
+  }
+  if (employee.archivedAt !== undefined) payload.archived_at = employee.archivedAt || null;
   return payload;
 }
 
@@ -54,6 +64,23 @@ function equipmentPayload(equipment: Omit<Equipment, 'id'> | Partial<Equipment>)
   if (equipment.lastMaintenance !== undefined) {
     payload.last_maintenance = equipment.lastMaintenance || null;
   }
+  if (equipment.assetNumber !== undefined) payload.asset_number = equipment.assetNumber || null;
+  if (equipment.model !== undefined) payload.model = equipment.model || null;
+  if (equipment.year !== undefined) payload.manufacture_year = equipment.year ?? null;
+  if (equipment.acquisitionCostCents !== undefined) {
+    payload.acquisition_cost_cents = equipment.acquisitionCostCents ?? 0;
+  }
+  if (equipment.hourlyCostCents !== undefined) payload.hourly_cost_cents = equipment.hourlyCostCents ?? 0;
+  if (equipment.nextMaintenance !== undefined) {
+    payload.next_maintenance = equipment.nextMaintenance || null;
+  }
+  if (equipment.currentProjectId !== undefined) {
+    payload.current_project_id = equipment.currentProjectId || null;
+  }
+  if (equipment.responsibleUserId !== undefined) {
+    payload.responsible_user_id = equipment.responsibleUserId || null;
+  }
+  if (equipment.archivedAt !== undefined) payload.archived_at = equipment.archivedAt || null;
   return payload;
 }
 
