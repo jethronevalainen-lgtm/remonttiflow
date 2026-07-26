@@ -239,6 +239,9 @@ export async function createEquipmentReservation(input: {
     status: input.status ?? 'Varattu',
     notes: input.notes?.trim() || null,
   });
+  if (error?.code === '23P01') {
+    throw new Error('Kalusto on jo varattu valitulla ajalla.');
+  }
   if (error) throw new Error(`Kalustovarauksen tallennus epäonnistui: ${error.message}`);
 }
 
