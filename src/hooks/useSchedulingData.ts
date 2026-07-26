@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { supabase } from '@/lib/supabase/client';
 
 export type PhaseStatus = 'Suunniteltu' | 'Käynnissä' | 'Valmis' | 'Myöhässä';
@@ -121,9 +122,15 @@ async function loadScheduling(organizationId: string) {
 
 export function useSchedulingData() {
   const { currentOrg } = useOrganization();
+  const { effectiveRole, effectiveUserId, effectiveDisplayName } = useViewAs();
   const queryClient = useQueryClient();
   const organizationId = currentOrg?.id;
-  const queryKey = ['scheduling-data', organizationId ?? 'none'] as const;
+  const queryKey = [
+    'scheduling-data',
+    organizationId ?? 'none',
+    effectiveRole ?? 'none',
+    effectiveUserId ?? 'anonymous',
+  ] as const;
   const query = useQuery({
     queryKey,
     queryFn: () => loadScheduling(organizationId as string),
@@ -132,9 +139,17 @@ export function useSchedulingData() {
     retry: 1,
   });
 
+  const isWorkerView = effectiveRole === 'worker';
+  const normalizedName = effectiveDisplayName.trim().toLocaleLowerCase('fi');
+  const shifts = (query.data?.shifts ?? []).filter((shift) => {
+    if (!isWorkerView) return true;
+    if (effectiveUserId && shift.userId === effectiveUserId) return true;
+    return Boolean(normalizedName && shift.employeeName.trim().toLocaleLowerCase('fi') === normalizedName);
+  });
+
   return {
-    phases: query.data?.phases ?? [],
-    shifts: query.data?.shifts ?? [],
+    phases: isWorkerView ? [] : query.data?.phases ?? [],
+    shifts,
     loading: query.isLoading,
     refreshing: query.isFetching,
     error: query.error instanceof Error ? query.error.message : null,
