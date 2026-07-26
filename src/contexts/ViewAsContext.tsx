@@ -9,13 +9,8 @@ import {
 } from 'react';
 
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  useOrganization,
-  VIEW_AS_CHANGE_EVENT,
-} from '@/contexts/OrganizationContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import type { OrganizationRole } from '@/lib/supabase/types';
-
-const VIEW_AS_STORAGE_KEY = 'vakantti-v1-view-as';
 
 export interface ViewAsTarget {
   userId: string;
@@ -24,19 +19,10 @@ export interface ViewAsTarget {
   role: OrganizationRole;
 }
 
-interface StoredViewAsState {
-  organizationId: string;
-  target: ViewAsTarget;
-}
-
 interface ViewAsContextValue {
-  /** Signed-in administrator's real role. Never affected by preview mode. */
   actualRole: OrganizationRole | null;
-  /** Role used by navigation and ordinary route guards while previewing. */
   effectiveRole: OrganizationRole | null;
-  /** Signed-in user's id, or the selected member id while previewing. */
   effectiveUserId: string | null;
-  /** Signed-in user's name, or the selected member name while previewing. */
   effectiveDisplayName: string;
   previewTarget: ViewAsTarget | null;
   isPreviewing: boolean;
@@ -46,87 +32,32 @@ interface ViewAsContextValue {
 
 const ViewAsContext = createContext<ViewAsContextValue | null>(null);
 
-function readStoredPreview(organizationId: string): ViewAsTarget | null {
-  try {
-    const raw = window.sessionStorage.getItem(VIEW_AS_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredViewAsState>;
-    const target = parsed.target;
-    if (
-      parsed.organizationId !== organizationId
-      || !target
-      || typeof target.userId !== 'string'
-      || typeof target.displayName !== 'string'
-      || (target.role !== 'admin' && target.role !== 'supervisor' && target.role !== 'worker' && target.role !== 'customer')
-    ) {
-      return null;
-    }
-    return {
-      userId: target.userId,
-      displayName: target.displayName,
-      email: typeof target.email === 'string' ? target.email : null,
-      role: target.role,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function clearStoredPreview(): void {
-  try {
-    window.sessionStorage.removeItem(VIEW_AS_STORAGE_KEY);
-  } catch {
-    // Session storage may be unavailable in strict privacy modes.
-  }
-}
-
-function publishPreviewRole(organizationId: string, role: OrganizationRole | null): void {
-  window.dispatchEvent(new CustomEvent(VIEW_AS_CHANGE_EVENT, {
-    detail: { organizationId, role },
-  }));
-}
-
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const { user, profile } = useAuth();
-  const { currentOrg, actualRole, currentRole } = useOrganization();
+  const { currentOrg, actualRole } = useOrganization();
   const organizationId = currentOrg?.id ?? null;
   const [previewTarget, setPreviewTarget] = useState<ViewAsTarget | null>(null);
 
+  // Preview is intentionally memory-only. A reload, sign-in or organization
+  // switch always returns the administrator to their real role.
   useEffect(() => {
-    if (actualRole !== 'admin' || !organizationId) {
-      setPreviewTarget(null);
-      clearStoredPreview();
-      return;
-    }
-    setPreviewTarget(readStoredPreview(organizationId));
-  }, [actualRole, organizationId]);
+    setPreviewTarget(null);
+  }, [actualRole, organizationId, user?.id]);
 
   const startPreview = useCallback((target: ViewAsTarget) => {
     if (actualRole !== 'admin' || !organizationId) return;
     setPreviewTarget(target);
-    try {
-      const stored: StoredViewAsState = {
-        organizationId,
-        target,
-      };
-      window.sessionStorage.setItem(VIEW_AS_STORAGE_KEY, JSON.stringify(stored));
-    } catch {
-      // Preview still works in memory when storage is unavailable.
-    }
-    publishPreviewRole(organizationId, target.role);
   }, [actualRole, organizationId]);
 
   const stopPreview = useCallback(() => {
     setPreviewTarget(null);
-    clearStoredPreview();
-    if (organizationId) publishPreviewRole(organizationId, null);
-  }, [organizationId]);
+  }, []);
 
   const value = useMemo<ViewAsContextValue>(() => {
     const signedInDisplayName = profile?.full_name ?? user?.email ?? '';
     return {
       actualRole,
-      effectiveRole: previewTarget?.role ?? currentRole,
+      effectiveRole: previewTarget?.role ?? actualRole,
       effectiveUserId: previewTarget?.userId ?? user?.id ?? null,
       effectiveDisplayName: previewTarget?.displayName || previewTarget?.email || signedInDisplayName,
       previewTarget,
@@ -134,7 +65,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
       startPreview,
       stopPreview,
     };
-  }, [actualRole, currentRole, previewTarget, profile?.full_name, startPreview, stopPreview, user?.email, user?.id]);
+  }, [actualRole, previewTarget, profile?.full_name, startPreview, stopPreview, user?.email, user?.id]);
 
   return <ViewAsContext.Provider value={value}>{children}</ViewAsContext.Provider>;
 }
