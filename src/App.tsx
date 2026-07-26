@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth, type UserRole } from './contexts/AuthContext';
-import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
 import { LoadingState } from '@/components/states';
@@ -29,22 +29,24 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RoleGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: UserRole[] }) {
-  const { currentRole, loading } = useOrganization();
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <LoadingState text="Ladataan…" />
-      </div>
-    );
-  }
-  if (!currentRole || !allowedRoles.includes(currentRole)) return (
-    <div className="flex flex-col items-center justify-center h-full gap-4">
-      <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+function RoleGuard({
+  children,
+  allowedRoles,
+  useActualRole = false,
+}: {
+  children: React.ReactNode;
+  allowedRoles: UserRole[];
+  useActualRole?: boolean;
+}) {
+  const { actualRole, effectiveRole } = useViewAs();
+  const role = useActualRole ? actualRole : effectiveRole;
+  if (!role || !allowedRoles.includes(role)) return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-4 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
         <span className="text-2xl">🔒</span>
       </div>
       <h2 className="text-xl font-bold text-gray-900">Pääsy kielletty</h2>
-      <p className="text-gray-500">Sinulla ei ole oikeuksia tälle sivulle.</p>
+      <p className="text-gray-500">Tämä näkymä ei kuulu valitun käyttäjäroolin oikeuksiin.</p>
     </div>
   );
   return <>{children}</>;
@@ -79,7 +81,7 @@ function AppRoutes() {
         <Route path="/henkilosto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Henkilosto /></RoleGuard>} />
         <Route path="/lomakkeet" element={<Lomakkeet />} />
         <Route path="/raportit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Raportit /></RoleGuard>} />
-        <Route path="/hallinta" element={<RoleGuard allowedRoles={['admin']}><Hallinta /></RoleGuard>} />
+        <Route path="/hallinta" element={<RoleGuard allowedRoles={['admin']} useActualRole><Hallinta /></RoleGuard>} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
