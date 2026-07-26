@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -39,12 +39,24 @@ const managementBottomItems = [
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const previewContentRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { effectiveRole, isPreviewing, previewTarget, stopPreview } = useViewAs();
   const { loading, refreshing, error, operationError, refresh } = useAppDataContext();
   const visibleError = operationError ?? error;
   const bottomItems = effectiveRole === 'worker' ? workerBottomItems : managementBottomItems;
+
+  useEffect(() => {
+    const node = previewContentRef.current;
+    if (!node) return;
+    if (isPreviewing) {
+      node.setAttribute('inert', '');
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    } else {
+      node.removeAttribute('inert');
+    }
+  }, [isPreviewing, location.pathname]);
 
   return (
     <div className="flex h-[100dvh] min-h-[100dvh] w-full max-w-full overflow-hidden bg-slate-50">
@@ -77,7 +89,7 @@ export default function Layout() {
                 <span className="font-semibold">Esikatselutila:</span>{' '}
                 <span className="font-medium">{previewTarget.displayName || previewTarget.email}</span>{' '}
                 <span className="text-indigo-700">({ROLE_LABELS[previewTarget.role]})</span>.
-                <span className="hidden sm:inline"> Sivujen muokkaustoiminnot on poistettu käytöstä esikatselun ajaksi.</span>
+                <span className="hidden sm:inline"> Sivujen kaikki muokkaustoiminnot on poistettu käytöstä esikatselun ajaksi.</span>
               </p>
             </div>
             <button
@@ -114,6 +126,7 @@ export default function Layout() {
         <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 pb-24 sm:px-4 sm:py-5 md:px-6 md:py-6 md:pb-8">
           <AnimatePresence mode="wait">
             <motion.div
+              ref={previewContentRef}
               key={location.pathname}
               className={`min-w-0 max-w-full ${isPreviewing ? 'pointer-events-none select-text' : ''}`}
               aria-disabled={isPreviewing || undefined}
