@@ -12,10 +12,12 @@ import {
   ClipboardSignature,
   Clock,
   Eye,
+  FileQuestion,
   FileText,
   FolderKanban,
   HardHat,
   LayoutDashboard,
+  MessageCircle,
   MessageSquare,
   Settings,
   ShieldCheck,
@@ -32,17 +34,8 @@ import { ROLE_LABELS, useAuth, type UserRole } from '@/contexts/AuthContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { cn } from '@/lib/utils';
 
-interface NavItem {
-  label: string;
-  icon: LucideIcon;
-  path: string;
-}
-
-interface NavGroup {
-  key: string;
-  title: string;
-  items: NavItem[];
-}
+interface NavItem { label: string; icon: LucideIcon; path: string; }
+interface NavGroup { key: string; title: string; items: NavItem[]; }
 
 const workerGroups: NavGroup[] = [
   {
@@ -59,6 +52,8 @@ const workerGroups: NavGroup[] = [
     key: 'site-tools',
     title: 'Työmaan työkalut',
     items: [
+      { label: 'Turvallisuushavainnot', icon: ShieldCheck, path: '/tyoturvallisuus' },
+      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
       { label: 'Korjattavat puutteet', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Kuittaukset', icon: ClipboardSignature, path: '/kuittaukset' },
       { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
@@ -72,7 +67,9 @@ const customerGroups: NavGroup[] = [
     key: 'customer-portal',
     title: 'Tilaajan työtila',
     items: [
-      { label: 'Tilaukseni', icon: ClipboardList, path: '/tilaajan-tyot' },
+      { label: 'Projektini', icon: FolderKanban, path: '/tilaajan-tyot' },
+      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
+      { label: 'Turvallisuushavainto', icon: ShieldCheck, path: '/tyoturvallisuus' },
     ],
   },
 ];
@@ -92,6 +89,8 @@ const managementGroups: NavGroup[] = [
     title: 'Tuotanto',
     items: [
       { label: 'Projektit ja tiimit', icon: FolderKanban, path: '/projektit' },
+      { label: 'Projektipyynnöt', icon: FileQuestion, path: '/projektipyynnot' },
+      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
       { label: 'Tarkastukset ja luovutukset', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Tilaukset', icon: ClipboardList, path: '/tilaukset' },
@@ -141,11 +140,7 @@ function initialsOf(name: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-interface NavbarProps {
-  collapsed: boolean;
-  onToggle: () => void;
-  isMobile?: boolean;
-}
+interface NavbarProps { collapsed: boolean; onToggle: () => void; isMobile?: boolean; }
 
 export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   const location = useLocation();
@@ -160,28 +155,29 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
     tools: false,
     'own-work': true,
     'site-tools': true,
+    'customer-portal': true,
     admin: true,
   });
 
-  if (!user) return null;
-  const role: UserRole = effectiveRole ?? 'worker';
+  if (!user || !effectiveRole) return null;
+  const role: UserRole = effectiveRole;
   const groups = role === 'worker'
     ? workerGroups
     : role === 'customer'
       ? customerGroups
       : [
-      ...managementGroups,
-      ...(role === 'admin'
-        ? [{
-          key: 'admin',
-          title: 'Admin',
-          items: [
-            { label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' },
-            { label: 'Käyttäjänäkymän esikatselu', icon: Eye, path: '/kayttajaesikatselu' },
-          ],
-        }]
-        : []),
-    ];
+          ...managementGroups,
+          ...(role === 'admin'
+            ? [{
+                key: 'admin',
+                title: 'Admin',
+                items: [
+                  { label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' },
+                  { label: 'Käyttäjänäkymän esikatselu', icon: Eye, path: '/kayttajaesikatselu' },
+                ],
+              }]
+            : []),
+        ];
   const displayName = effectiveDisplayName || user.email || '';
 
   const goTo = (path: string) => {
@@ -190,7 +186,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   };
 
   const NavButton = ({ item }: { item: NavItem }) => {
-    const active = location.pathname === item.path;
+    const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
     return (
       <button
         type="button"
@@ -198,28 +194,19 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
         aria-current={active ? 'page' : undefined}
         className={cn(
           'group relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all',
-          active
-            ? 'bg-orange-500/15 text-orange-400 shadow-sm'
-            : 'text-slate-400 hover:bg-slate-800 hover:text-white',
+          active ? 'bg-orange-500/15 text-orange-400 shadow-sm' : 'text-slate-400 hover:bg-slate-800 hover:text-white',
         )}
       >
         <item.icon size={19} className="flex-shrink-0" />
         {!collapsed && <span className="truncate">{item.label}</span>}
-        {collapsed && (
-          <span className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
-            {item.label}
-          </span>
-        )}
+        {collapsed && <span className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">{item.label}</span>}
       </button>
     );
   };
 
   return (
     <motion.aside
-      className={cn(
-        'flex h-[100dvh] max-w-[88vw] flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950',
-        isMobile && 'w-[280px]',
-      )}
+      className={cn('flex h-[100dvh] max-w-[88vw] flex-shrink-0 flex-col border-r border-slate-800 bg-slate-950', isMobile && 'w-[280px]')}
       animate={{ width: collapsed ? 64 : 270 }}
       transition={{ duration: 0.22 }}
     >
@@ -241,11 +228,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
           return (
             <div key={group.key}>
               {!collapsed && (
-                <button
-                  type="button"
-                  onClick={() => setOpenGroups((previous) => ({ ...previous, [group.key]: !open }))}
-                  className="flex min-h-9 w-full items-center px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300"
-                >
+                <button type="button" onClick={() => setOpenGroups((previous) => ({ ...previous, [group.key]: !open }))} className="flex min-h-9 w-full items-center px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300">
                   <span className="flex-1 text-left">{group.title}</span>
                   <motion.span animate={{ rotate: open ? 0 : -90 }}><ChevronDown size={12} /></motion.span>
                 </button>
@@ -268,10 +251,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
           {!collapsed && (
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-white">{displayName}</p>
-              <p className="flex items-center gap-1 text-[11px] text-slate-400">
-                {isPreviewing && <Eye size={11} />}
-                {ROLE_LABELS[role]}
-              </p>
+              <p className="flex items-center gap-1 text-[11px] text-slate-400">{isPreviewing && <Eye size={11} />}{ROLE_LABELS[role]}</p>
             </div>
           )}
         </div>
