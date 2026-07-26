@@ -44,14 +44,14 @@ export function useSupabaseAppData() {
   const queryClient = useQueryClient();
   const { currentOrg } = useOrganization();
   const { user } = useAuth();
-  const { isPreviewing } = useViewAs();
+  const { isPreviewing, effectiveRole } = useViewAs();
   const [operationError, setOperationError] = useState<string | null>(null);
 
   const organizationId = currentOrg?.id;
   const query = useQuery({
     queryKey: domainQueryKey(organizationId),
     queryFn: () => loadNormalizedDomainData(organizationId as string),
-    enabled: Boolean(organizationId),
+    enabled: Boolean(organizationId && effectiveRole !== 'customer'),
     staleTime: 30_000,
     retry: 1,
   });

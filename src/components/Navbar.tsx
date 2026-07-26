@@ -67,6 +67,16 @@ const workerGroups: NavGroup[] = [
   },
 ];
 
+const customerGroups: NavGroup[] = [
+  {
+    key: 'customer-portal',
+    title: 'Tilaajan työtila',
+    items: [
+      { label: 'Tilaukseni', icon: ClipboardList, path: '/tilaajan-tyot' },
+    ],
+  },
+];
+
 const managementGroups: NavGroup[] = [
   {
     key: 'overview',
@@ -84,6 +94,7 @@ const managementGroups: NavGroup[] = [
       { label: 'Projektit ja tiimit', icon: FolderKanban, path: '/projektit' },
       { label: 'Tarkastukset ja luovutukset', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
+      { label: 'Tilaukset', icon: ClipboardList, path: '/tilaukset' },
       { label: 'Aikataulutus', icon: CalendarClock, path: '/aikataulutus' },
       { label: 'Työvuorot', icon: CalendarClock, path: '/tyovuorokalenteri' },
       { label: 'Päiväkirjat', icon: FileText, path: '/paivakirjat' },
@@ -156,7 +167,9 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   const role: UserRole = effectiveRole ?? 'worker';
   const groups = role === 'worker'
     ? workerGroups
-    : [
+    : role === 'customer'
+      ? customerGroups
+      : [
       ...managementGroups,
       ...(role === 'admin'
         ? [{

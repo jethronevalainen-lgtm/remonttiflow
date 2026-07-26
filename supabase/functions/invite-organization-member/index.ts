@@ -11,13 +11,14 @@ const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
 };
 
-type OrganizationRole = 'admin' | 'supervisor' | 'worker';
+type OrganizationRole = 'admin' | 'supervisor' | 'worker' | 'customer';
 
 interface InviteRequest {
   organizationId?: unknown;
   email?: unknown;
   fullName?: unknown;
   role?: unknown;
+  customerId?: unknown;
 }
 
 function json(body: unknown, status = 200) {
@@ -40,7 +41,7 @@ function readNamedKey(variableName: string, legacyName: string): string | null {
 }
 
 function isRole(value: unknown): value is OrganizationRole {
-  return value === 'admin' || value === 'supervisor' || value === 'worker';
+  return value === 'admin' || value === 'supervisor' || value === 'worker' || value === 'customer';
 }
 
 Deno.serve(async (request: Request) => {
@@ -80,6 +81,7 @@ Deno.serve(async (request: Request) => {
     ? payload.fullName.trim()
     : '';
   const role = payload.role;
+  const customerId = typeof payload.customerId === 'string' ? payload.customerId.trim() : '';
 
   if (!organizationId || !/^[0-9a-f-]{36}$/i.test(organizationId)) {
     return json({ error: 'Organisaation tunniste puuttuu tai on virheellinen.' }, 400);
@@ -92,6 +94,9 @@ Deno.serve(async (request: Request) => {
   }
   if (!isRole(role)) {
     return json({ error: 'Rooli on virheellinen.' }, 400);
+  }
+  if (role === 'customer' && (!customerId || !/^[0-9a-f-]{36}$/i.test(customerId))) {
+    return json({ error: 'Valitse tilaajakäyttäjälle asiakas.' }, 400);
   }
 
   const userClient = createClient(supabaseUrl, publishableKey, {
@@ -181,13 +186,35 @@ Deno.serve(async (request: Request) => {
     return json({ error: `Jäsenyyden luominen epäonnistui: ${insertError.message}` }, 400);
   }
 
+  if (role === 'customer') {
+    const { data: customer, error: customerError } = await adminClient
+      .from('customers')
+      .select('id')
+      .eq('id', customerId)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    if (customerError || !customer) {
+      await adminClient.from('organization_members').delete()
+        .eq('organization_id', organizationId).eq('user_id', targetUserId);
+      return json({ error: 'Valittu asiakas ei kuulu organisaatioon.' }, 400);
+    }
+    const { error: linkError } = await adminClient.from('customer_users').insert({
+      organization_id: organizationId, customer_id: customerId, user_id: targetUserId,
+    });
+    if (linkError) {
+      await adminClient.from('organization_members').delete()
+        .eq('organization_id', organizationId).eq('user_id', targetUserId);
+      return json({ error: `Tilaajakytkennän luominen epäonnistui: ${linkError.message}` }, 400);
+    }
+  }
+
   await adminClient.from('audit_logs').insert({
     organization_id: organizationId,
     user_id: actor.id,
     action: invited ? 'organization_member_invited' : 'organization_member_added_existing_user',
     table_name: 'organization_members',
     record_id: targetUserId,
-    metadata: { target_user_id: targetUserId, email, role },
+    metadata: { target_user_id: targetUserId, email, role, customer_id: customerId || null },
   });
 
   return json({

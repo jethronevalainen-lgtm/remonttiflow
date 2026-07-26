@@ -316,6 +316,7 @@ export default function ProjectWorkspace() {
               <Button variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10" onClick={() => void workspace.refresh()} disabled={workspace.refreshing}>
                 <RefreshCw size={16} className={workspace.refreshing ? 'mr-2 animate-spin' : 'mr-2'} /> Päivitä
               </Button>
+              {canManage && <Button className="bg-orange-500 text-white hover:bg-orange-600" onClick={() => navigate(`/tyomaaraykset?project=${encodeURIComponent(projectId)}&new=1`)}><ClipboardList size={16} className="mr-2" /> Uusi työmääräys</Button>}
               {canManage && <Button className="bg-orange-500 text-white hover:bg-orange-600" onClick={openChange}><Plus size={16} className="mr-2" /> Muutostyö</Button>}
               <Button className="bg-white text-slate-950 hover:bg-slate-100" onClick={openDocument}><Upload size={16} className="mr-2" /> Dokumentti</Button>
             </div>
@@ -376,7 +377,7 @@ export default function ProjectWorkspace() {
               <CardHeader><CardTitle className="flex items-center gap-2"><UsersRound size={19} /> Pikatoiminnot</CardTitle></CardHeader>
               <CardContent className="grid gap-2">
                 {[
-                  { label: 'Työmääräykset', path: '/tyomaaraykset', icon: ClipboardList },
+                  { label: 'Työmääräykset', path: `/tyomaaraykset?project=${encodeURIComponent(projectId)}`, icon: ClipboardList },
                   { label: 'Aikataulu', path: '/aikataulutus', icon: Clock3 },
                   { label: 'Tarkastukset', path: '/tarkastukset', icon: CheckCircle2 },
                   { label: 'Päiväkirjat', path: '/paivakirjat', icon: BookOpen },

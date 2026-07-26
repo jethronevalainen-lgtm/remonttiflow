@@ -10,7 +10,7 @@ import {
   Paivakirjat, Kuittaukset, Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset,
   Tyovuorokalenteri, Tuntikirjaukset, Matkakulut, Tyoturvallisuus, CRM, Asiakkaat,
   AIPage, Viestinta, Kalusto, Henkilosto, Lomakkeet, Raportit, Hallinta,
-  KayttajaEsikatselu,
+  KayttajaEsikatselu, Tilaukset, TilaajanTyot,
 } from './pages';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
@@ -82,6 +82,8 @@ function AppRoutes() {
         <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Maaralaskenta /></RoleGuard>} />
         <Route path="/jatehuolto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Jatehuolto /></RoleGuard>} />
         <Route path="/tyomaaraykset" element={<Tyomaaraykset />} />
+        <Route path="/tilaukset" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tilaukset /></RoleGuard>} />
+        <Route path="/tilaajan-tyot" element={<RoleGuard allowedRoles={['customer']}><TilaajanTyot /></RoleGuard>} />
         <Route path="/tyovuorokalenteri" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tyovuorokalenteri /></RoleGuard>} />
         <Route path="/tuntikirjaukset" element={<Tuntikirjaukset />} />
         <Route path="/matkakulut" element={<Matkakulut />} />

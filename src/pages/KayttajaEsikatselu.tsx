@@ -25,12 +25,14 @@ const ROLE_BADGES: Record<OrganizationRole, string> = {
   admin: 'border-purple-200 bg-purple-50 text-purple-700',
   supervisor: 'border-orange-200 bg-orange-50 text-orange-700',
   worker: 'border-blue-200 bg-blue-50 text-blue-700',
+  customer: 'border-emerald-200 bg-emerald-50 text-emerald-700',
 };
 
 const ROLE_HELP: Record<OrganizationRole, string> = {
   admin: 'Kaikki työnjohdon toiminnot sekä organisaation hallinta.',
   supervisor: 'Tuotannon, projektien, henkilöstön ja hyväksyntöjen näkymät.',
   worker: 'Omat työt, kirjaukset, korjaukset, lomakkeet ja viestit.',
+  customer: 'Omat kohteet ja tilaajan työtilaukset.',
 };
 
 function initials(name: string): string {

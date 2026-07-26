@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -111,6 +112,8 @@ function assignmentLabel(order: ManagedWorkOrder) {
 }
 
 export default function Tyomaaraykset() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const { currentOrg, currentRole } = useOrganization();
   const { projects, deleteWorkOrder, refresh: refreshDomain } = useAppDataContext();
   const {
@@ -135,6 +138,8 @@ export default function Tyomaaraykset() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const projectFilterId = new URLSearchParams(location.search).get('project') ?? '';
+  const selectedProject = projects.find((project) => project.id === projectFilterId);
 
   const filteredOrders = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fi');
@@ -146,9 +151,10 @@ export default function Tyomaaraykset() {
         assignmentLabel(order),
       ].some((value) => value.toLocaleLowerCase('fi').includes(query));
       const matchesStatus = statusFilter === ALL || order.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesProject = !projectFilterId || order.projectId === projectFilterId;
+      return matchesSearch && matchesStatus && matchesProject;
     });
-  }, [search, statusFilter, workOrders]);
+  }, [projectFilterId, search, statusFilter, workOrders]);
 
   const activeOrders = workOrders.filter((order) => order.status === 'Käynnissä');
   const openOrders = workOrders.filter((order) => order.status === 'Avoin');
@@ -159,10 +165,24 @@ export default function Tyomaaraykset() {
       .filter((membership) => membership.projectId === form.projectId)
       .map((membership) => membership.userId),
   );
+  const selectedProjectPeople = people.filter((person) => selectedProjectMemberIds.has(person.userId));
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const projectId = params.get('project');
+    if (!canManage || params.get('new') !== '1' || !projectId || !projects.some((project) => project.id === projectId)) return;
+
+    setEditing(null);
+    setForm({ ...EMPTY_FORM, projectId });
+    setFormErrors([]);
+    setOperationError(null);
+    setDialogOpen(true);
+    navigate(`/tyomaaraykset?project=${encodeURIComponent(projectId)}`, { replace: true });
+  }, [canManage, location.search, navigate, projects]);
 
   const openCreate = () => {
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, projectId: projectFilterId });
     setFormErrors([]);
     setOperationError(null);
     setDialogOpen(true);
@@ -201,6 +221,9 @@ export default function Tyomaaraykset() {
     if (!form.projectId) nextErrors.push('Valitse projekti.');
     if (form.assignmentScope === 'people' && form.assigneeUserIds.length === 0) {
       nextErrors.push('Valitse vähintään yksi vastuuhenkilö.');
+    }
+    if (form.assignmentScope === 'people' && form.assigneeUserIds.some((userId) => !selectedProjectMemberIds.has(userId))) {
+      nextErrors.push('Vastuuhenkilöiden täytyy kuulua valitun projektin tiimiin.');
     }
     if (form.assignmentScope === 'project_team' && selectedProjectMemberIds.size === 0) {
       nextErrors.push('Valitulla projektilla ei ole projektitiimiä. Lisää tiimi ensin Projektit-näkymässä.');
@@ -343,6 +366,13 @@ export default function Tyomaaraykset() {
         </div>
       </div>
 
+      {selectedProject && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+          <span>Projektin <strong>{selectedProject.name}</strong> työmääräykset</span>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/tyomaaraykset')}>Näytä kaikki</Button>
+        </div>
+      )}
+
       <div className="grid gap-4 xl:grid-cols-2">
         {filteredOrders.map((order) => (
           <Card key={order.id} className={cn('overflow-hidden border-slate-200 shadow-sm transition-shadow hover:shadow-md', order.priority === 'Korkea' && !['Valmis', 'Peruttu'].includes(order.status) && 'border-l-4 border-l-red-500')}>
@@ -399,7 +429,7 @@ export default function Tyomaaraykset() {
           {formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="work-title">Tehtävä *</Label><Input id="work-title" value={form.title} onChange={(event) => setForm((previous) => ({ ...previous, title: event.target.value }))} /></div>
-            <div className="space-y-2 sm:col-span-2"><Label>Projekti *</Label><Select value={form.projectId} onValueChange={(projectId) => setForm((previous) => ({ ...previous, projectId }))}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2 sm:col-span-2"><Label>Projekti *</Label><Select value={form.projectId} onValueChange={(projectId) => setForm((previous) => ({ ...previous, projectId, assigneeUserIds: previous.assigneeUserIds.filter((userId) => projectMemberships.some((membership) => membership.projectId === projectId && membership.userId === userId)) }))}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label htmlFor="work-due">Määräaika</Label><Input id="work-due" type="date" value={form.dueDate} onChange={(event) => setForm((previous) => ({ ...previous, dueDate: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="work-type">Työlaji</Label><Input id="work-type" value={form.type} onChange={(event) => setForm((previous) => ({ ...previous, type: event.target.value }))} placeholder="Esim. kirvesmiestyö" /></div>
             <div className="space-y-2"><Label>Prioriteetti</Label><Select value={form.priority} onValueChange={(priority: WorkOrderPriority) => setForm((previous) => ({ ...previous, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
@@ -407,16 +437,17 @@ export default function Tyomaaraykset() {
             <div className="space-y-2 sm:col-span-2"><Label>Kohdistus</Label><Select value={form.assignmentScope} onValueChange={(assignmentScope: WorkAssignmentScope) => setForm((previous) => ({ ...previous, assignmentScope }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="people">Nimetyt henkilöt</SelectItem><SelectItem value="project_team">Koko projektitiimi</SelectItem></SelectContent></Select></div>
             {form.assignmentScope === 'people' && (
               <div className="space-y-2 sm:col-span-2">
-                <Label>Vastuuhenkilöt *</Label>
+                <Label>Vastuuhenkilöt projektitiimistä *</Label>
                 <div className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-2">
-                  {people.map((person) => (
+                  {selectedProjectPeople.map((person) => (
                     <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-slate-50">
                       <Checkbox checked={form.assigneeUserIds.includes(person.userId)} onCheckedChange={(checked) => toggleAssignee(person.userId, checked === true)} />
                       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</span>
                       <span className="min-w-0"><span className="block truncate text-sm font-medium">{person.name}</span><span className="block truncate text-xs text-slate-500">{person.email || person.role}</span></span>
                     </label>
                   ))}
-                  {people.length === 0 && <p className="text-sm text-slate-500 sm:col-span-2">Organisaatioon ei ole vielä kutsuttu käyttäjiä.</p>}
+                  {!form.projectId && <p className="text-sm text-slate-500 sm:col-span-2">Valitse ensin projekti.</p>}
+                  {form.projectId && selectedProjectPeople.length === 0 && <p className="text-sm text-slate-500 sm:col-span-2">Projektilla ei ole vielä asentajia. Lisää heidät ensin projektin Tiimi-toiminnolla.</p>}
                 </div>
               </div>
             )}

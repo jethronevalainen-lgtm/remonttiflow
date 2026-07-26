@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { useAuth, ROLE_LABELS } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganizationAdmin } from '@/hooks/useOrganizationAdmin';
 import {
   inviteOrganizationMember,
@@ -49,24 +50,28 @@ const ROLE_DESCRIPTIONS: Record<OrganizationRole, string> = {
   admin: 'Hallitsee organisaatiota, käyttäjiä ja kaikkia toimintoja.',
   supervisor: 'Hallitsee työmaita, henkilöstöä, laskentaa ja hyväksyntöjä.',
   worker: 'Näkee ja käyttää työntekijälle kuuluvia päivittäisiä toimintoja.',
+  customer: 'Voi luoda työtilauksia vain omiin kohteisiinsa ja seurata niiden käsittelyä.',
 };
 
 const ROLE_BADGES: Record<OrganizationRole, string> = {
   admin: 'border-purple-200 bg-purple-50 text-purple-700',
   supervisor: 'border-orange-200 bg-orange-50 text-orange-700',
   worker: 'border-blue-200 bg-blue-50 text-blue-700',
+  customer: 'border-teal-200 bg-teal-50 text-teal-700',
 };
 
 interface InviteDraft {
   email: string;
   fullName: string;
   role: OrganizationRole;
+  customerId: string;
 }
 
 const EMPTY_INVITE: InviteDraft = {
   email: '',
   fullName: '',
   role: 'worker',
+  customerId: '',
 };
 
 function initials(member: OrganizationMemberView) {
@@ -81,6 +86,7 @@ export default function Hallinta() {
   const { user } = useAuth();
   const { currentOrg, refreshOrganizations } = useOrganization();
   const { members, loading, error, refresh } = useOrganizationAdmin();
+  const { customers } = useAppDataContext();
 
   const [organizationName, setOrganizationName] = useState('');
   const [businessId, setBusinessId] = useState('');
@@ -149,6 +155,10 @@ export default function Hallinta() {
       setOperationError('Anna kelvollinen sähköpostiosoite.');
       return;
     }
+    if (inviteDraft.role === 'customer' && !inviteDraft.customerId) {
+      setOperationError('Valitse tilaajakäyttäjälle asiakas.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -157,6 +167,7 @@ export default function Hallinta() {
         email,
         fullName: inviteDraft.fullName,
         role: inviteDraft.role,
+        customerId: inviteDraft.customerId,
       });
       await refresh();
       setInviteOpen(false);
@@ -324,7 +335,9 @@ export default function Hallinta() {
                       </div>
                     </div>
                   </div>
-                  <Select
+                  {member.role === 'customer' ? (
+                    <div className="px-2 py-2 text-sm text-text-secondary">Tilaaja — asiakaskytkentä määritetty kutsuttaessa</div>
+                  ) : <Select
                     value={member.role}
                     disabled={saving || isSelf}
                     onValueChange={(role: OrganizationRole) => void changeRole(member, role)}
@@ -335,7 +348,7 @@ export default function Hallinta() {
                       <SelectItem value="supervisor">Työnjohtaja</SelectItem>
                       <SelectItem value="worker">Työntekijä</SelectItem>
                     </SelectContent>
-                  </Select>
+                  </Select>}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -411,10 +424,21 @@ export default function Hallinta() {
                   <SelectItem value="worker">Työntekijä</SelectItem>
                   <SelectItem value="supervisor">Työnjohtaja</SelectItem>
                   <SelectItem value="admin">Ylläpitäjä</SelectItem>
+                  <SelectItem value="customer">Tilaaja</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs leading-5 text-text-secondary">{ROLE_DESCRIPTIONS[inviteDraft.role]}</p>
             </div>
+            {inviteDraft.role === 'customer' && (
+              <div className="space-y-2">
+                <Label>Tilaaja-asiakas *</Label>
+                <Select value={inviteDraft.customerId} onValueChange={(customerId) => setInviteDraft((previous) => ({ ...previous, customerId }))}>
+                  <SelectTrigger><SelectValue placeholder="Valitse asiakas" /></SelectTrigger>
+                  <SelectContent>{customers.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>)}</SelectContent>
+                </Select>
+                {customers.length === 0 && <p className="text-xs text-red-600">Luo asiakas ensin Asiakkaat-näkymässä.</p>}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)} disabled={saving}>Peruuta</Button>

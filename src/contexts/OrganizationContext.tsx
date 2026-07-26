@@ -64,7 +64,7 @@ function readPreviewRole(organizationId: string, actualRole: OrganizationRole | 
     const role = parsed.target?.role;
     if (
       parsed.organizationId !== organizationId
-      || (role !== 'admin' && role !== 'supervisor' && role !== 'worker')
+      || (role !== 'admin' && role !== 'supervisor' && role !== 'worker' && role !== 'customer')
     ) return null;
     return role;
   } catch {

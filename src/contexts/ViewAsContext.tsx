@@ -57,7 +57,7 @@ function readStoredPreview(organizationId: string): ViewAsTarget | null {
       || !target
       || typeof target.userId !== 'string'
       || typeof target.displayName !== 'string'
-      || (target.role !== 'admin' && target.role !== 'supervisor' && target.role !== 'worker')
+      || (target.role !== 'admin' && target.role !== 'supervisor' && target.role !== 'worker' && target.role !== 'customer')
     ) {
       return null;
     }

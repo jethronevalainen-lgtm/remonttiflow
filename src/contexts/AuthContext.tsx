@@ -23,18 +23,20 @@ import type { ProfileRow } from '@/lib/supabase/types';
 
 export type { Session, User };
 
-export type UserRole = 'admin' | 'supervisor' | 'worker';
+export type UserRole = 'admin' | 'supervisor' | 'worker' | 'customer';
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Järjestelmänvalvoja',
   supervisor: 'Työnjohtaja',
   worker: 'Työntekijä',
+  customer: 'Tilaaja',
 };
 
 export const ROLE_COLORS: Record<UserRole, string> = {
   admin: 'bg-purple-500',
   supervisor: 'bg-orange-500',
   worker: 'bg-blue-500',
+  customer: 'bg-teal-500',
 };
 
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
@@ -55,6 +57,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
     '/dashboard', '/tarkastukset', '/tyomaaraykset', '/kuittaukset', '/tuntikirjaukset', '/matkakulut',
     '/viestinta', '/lomakkeet',
   ],
+  customer: ['/tilaajan-tyot'],
 };
 
 /** Fallback message for any sign-in failure we do not specifically map. */

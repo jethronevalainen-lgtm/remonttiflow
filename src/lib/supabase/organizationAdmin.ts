@@ -138,6 +138,7 @@ export async function inviteOrganizationMember(values: {
   email: string;
   fullName: string;
   role: OrganizationRole;
+  customerId?: string;
 }): Promise<InviteResponse> {
   const { data, error } = await supabase.functions.invoke<InviteResponse>(
     'invite-organization-member',
@@ -147,6 +148,7 @@ export async function inviteOrganizationMember(values: {
         email: values.email.trim().toLowerCase(),
         fullName: values.fullName.trim(),
         role: values.role,
+        customerId: values.customerId || null,
       },
     },
   );

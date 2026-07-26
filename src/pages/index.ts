@@ -4,6 +4,8 @@ export { default as ProjectWorkspace } from './ProjectWorkspace';
 export { default as Asiakkaat } from './Asiakkaat';
 export { default as Henkilosto } from './Henkilosto';
 export { default as Tyomaaraykset } from './Tyomaaraykset';
+export { default as Tilaukset } from './Tilaukset';
+export { default as TilaajanTyot } from './TilaajanTyot';
 export { default as Tuntikirjaukset } from './Tuntikirjaukset';
 export { default as Kalusto } from './Kalusto';
 export { default as Laskenta } from './Laskenta';
