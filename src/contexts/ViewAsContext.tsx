@@ -9,7 +9,10 @@ import {
 } from 'react';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { useOrganization } from '@/contexts/OrganizationContext';
+import {
+  useOrganization,
+  VIEW_AS_CHANGE_EVENT,
+} from '@/contexts/OrganizationContext';
 import type { OrganizationRole } from '@/lib/supabase/types';
 
 const VIEW_AS_STORAGE_KEY = 'vakantti-v1-view-as';
@@ -77,23 +80,29 @@ function clearStoredPreview(): void {
   }
 }
 
+function publishPreviewRole(organizationId: string, role: OrganizationRole | null): void {
+  window.dispatchEvent(new CustomEvent(VIEW_AS_CHANGE_EVENT, {
+    detail: { organizationId, role },
+  }));
+}
+
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const { user, profile } = useAuth();
-  const { currentOrg, currentRole } = useOrganization();
+  const { currentOrg, actualRole, currentRole } = useOrganization();
   const organizationId = currentOrg?.id ?? null;
   const [previewTarget, setPreviewTarget] = useState<ViewAsTarget | null>(null);
 
   useEffect(() => {
-    if (currentRole !== 'admin' || !organizationId) {
+    if (actualRole !== 'admin' || !organizationId) {
       setPreviewTarget(null);
       clearStoredPreview();
       return;
     }
     setPreviewTarget(readStoredPreview(organizationId));
-  }, [currentRole, organizationId]);
+  }, [actualRole, organizationId]);
 
   const startPreview = useCallback((target: ViewAsTarget) => {
-    if (currentRole !== 'admin' || !organizationId) return;
+    if (actualRole !== 'admin' || !organizationId) return;
     setPreviewTarget(target);
     try {
       const stored: StoredViewAsState = {
@@ -104,17 +113,19 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     } catch {
       // Preview still works in memory when storage is unavailable.
     }
-  }, [currentRole, organizationId]);
+    publishPreviewRole(organizationId, target.role);
+  }, [actualRole, organizationId]);
 
   const stopPreview = useCallback(() => {
     setPreviewTarget(null);
     clearStoredPreview();
-  }, []);
+    if (organizationId) publishPreviewRole(organizationId, null);
+  }, [organizationId]);
 
   const value = useMemo<ViewAsContextValue>(() => {
     const signedInDisplayName = profile?.full_name ?? user?.email ?? '';
     return {
-      actualRole: currentRole,
+      actualRole,
       effectiveRole: previewTarget?.role ?? currentRole,
       effectiveUserId: previewTarget?.userId ?? user?.id ?? null,
       effectiveDisplayName: previewTarget?.displayName || previewTarget?.email || signedInDisplayName,
@@ -123,7 +134,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
       startPreview,
       stopPreview,
     };
-  }, [currentRole, previewTarget, profile?.full_name, startPreview, stopPreview, user?.email, user?.id]);
+  }, [actualRole, currentRole, previewTarget, profile?.full_name, startPreview, stopPreview, user?.email, user?.id]);
 
   return <ViewAsContext.Provider value={value}>{children}</ViewAsContext.Provider>;
 }
