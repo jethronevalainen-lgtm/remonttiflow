@@ -15,7 +15,7 @@ test.describe('VaKantti mobile smoke', () => {
   test('login view fits a phone viewport and remains usable', async ({ page }) => {
     await page.goto('/#/login');
 
-    await expect(page.getByRole('heading', { name: 'VaKantti' })).toBeVisible();
+    await expect(page.getByText('VaKantti', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Sähköposti')).toBeVisible();
     await expect(page.getByLabel('Salasana')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Kirjaudu sisään' })).toBeVisible();
