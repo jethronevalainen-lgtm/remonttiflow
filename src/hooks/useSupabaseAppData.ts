@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import logger from '@/lib/logger';
 import {
   EMPTY_DOMAIN_DATA,
@@ -41,6 +42,7 @@ export function useSupabaseAppData() {
   const queryClient = useQueryClient();
   const { currentOrg } = useOrganization();
   const { user } = useAuth();
+  const { isPreviewing } = useViewAs();
   const [operationError, setOperationError] = useState<string | null>(null);
 
   const organizationId = currentOrg?.id;
@@ -61,6 +63,10 @@ export function useSupabaseAppData() {
 
   const runMutation = useCallback(
     async (name: string, mutation: () => Promise<unknown>) => {
+      if (isPreviewing) {
+        setOperationError('Esikatselutila on vain lukemista varten. Lopeta esikatselu ennen tallentamista.');
+        return;
+      }
       if (!organizationId) {
         setOperationError('Aktiivista organisaatiota ei ole valittu.');
         return;
@@ -75,7 +81,7 @@ export function useSupabaseAppData() {
         logger.error(name, { error });
       }
     },
-    [organizationId, refresh],
+    [isPreviewing, organizationId, refresh],
   );
 
   const addProject = useCallback(
