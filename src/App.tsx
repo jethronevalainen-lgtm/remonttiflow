@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth, type UserRole } from './contexts/AuthContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
@@ -39,10 +40,20 @@ function RoleGuard({
   allowedRoles: UserRole[];
   useActualRole?: boolean;
 }) {
+  const { loading } = useOrganization();
   const { actualRole, effectiveRole } = useViewAs();
   const role = useActualRole ? actualRole : effectiveRole;
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <LoadingState text="Ladataan käyttöoikeuksia…" />
+      </div>
+    );
+  }
+
   if (!role || !allowedRoles.includes(role)) return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 px-4 text-center">
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 px-4 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
         <span className="text-2xl">🔒</span>
       </div>
