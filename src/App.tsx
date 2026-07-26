@@ -4,7 +4,7 @@ import { useOrganization } from '@/contexts/OrganizationContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
-import { LoadingState } from '@/components/states';
+import { ErrorState, LoadingState } from '@/components/states';
 import {
   Dashboard, Tyonjohto, Tarkastukset, Projektit, ProjectWorkspace, Aikataulutus,
   Paivakirjat, Kuittaukset, Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset,
@@ -33,6 +33,25 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function WorkspaceError({
+  error,
+  onRetry,
+}: {
+  error: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center px-4">
+      <ErrorState
+        title={error ? 'Työtilaa ei voitu avata' : 'Työtilaa ei löytynyt'}
+        description={error ?? 'Käyttäjätilillä ei ole voimassa olevaa organisaatiojäsenyyttä.'}
+        onRetry={onRetry}
+        className="w-full max-w-lg"
+      />
+    </div>
+  );
+}
+
 function RoleGuard({
   children,
   allowedRoles,
@@ -42,9 +61,10 @@ function RoleGuard({
   allowedRoles: UserRole[];
   useActualRole?: boolean;
 }) {
-  const { loading } = useOrganization();
+  const { loading, error, refreshOrganizations } = useOrganization();
   const { actualRole, effectiveRole } = useViewAs();
   const role = useActualRole ? actualRole : effectiveRole;
+  const retry = () => { void refreshOrganizations().catch(() => undefined); };
 
   if (loading) {
     return (
@@ -54,22 +74,33 @@ function RoleGuard({
     );
   }
 
-  if (!role || !allowedRoles.includes(role)) {
+  if (error || !role) {
+    return <WorkspaceError error={error} onRetry={retry} />;
+  }
+
+  if (!allowedRoles.includes(role)) {
     return <Navigate to={homeForRole(role)} replace />;
   }
   return <>{children}</>;
 }
 
 function RoleHome() {
-  const { loading } = useOrganization();
+  const { loading, error, refreshOrganizations } = useOrganization();
   const { effectiveRole } = useViewAs();
-  if (loading || !effectiveRole) {
+  const retry = () => { void refreshOrganizations().catch(() => undefined); };
+
+  if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <LoadingState text="Avataan työtilaa…" />
       </div>
     );
   }
+
+  if (error || !effectiveRole) {
+    return <WorkspaceError error={error} onRetry={retry} />;
+  }
+
   return <Navigate to={homeForRole(effectiveRole)} replace />;
 }
 
