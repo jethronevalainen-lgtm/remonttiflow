@@ -7,7 +7,7 @@ import {
 } from '@/lib/workspaceRules';
 
 describe('worker route boundaries', () => {
-  it('contains only personal and worksite tools', () => {
+  it('contains personal work, safety and project collaboration tools', () => {
     expect(ROLE_ROUTES.worker).toEqual([
       '/dashboard',
       '/tarkastukset',
@@ -15,6 +15,8 @@ describe('worker route boundaries', () => {
       '/kuittaukset',
       '/tuntikirjaukset',
       '/matkakulut',
+      '/tyoturvallisuus',
+      '/projektikeskustelut',
       '/viestinta',
       '/lomakkeet',
     ]);
@@ -23,6 +25,7 @@ describe('worker route boundaries', () => {
   it('does not expose management or administration routes', () => {
     const forbidden = [
       '/projektit',
+      '/projektipyynnot',
       '/tyonjohto',
       '/aikataulutus',
       '/tyovuorokalenteri',
@@ -31,10 +34,7 @@ describe('worker route boundaries', () => {
       '/raportit',
       '/hallinta',
     ];
-
-    forbidden.forEach((path) => {
-      expect(ROLE_ROUTES.worker).not.toContain(path);
-    });
+    forbidden.forEach((path) => expect(ROLE_ROUTES.worker).not.toContain(path));
   });
 });
 
