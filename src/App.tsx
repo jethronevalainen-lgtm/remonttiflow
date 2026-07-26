@@ -9,6 +9,7 @@ import {
   Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset, Tyovuorokalenteri,
   Tuntikirjaukset, Matkakulut, Tyoturvallisuus, CRM, Asiakkaat,
   AIPage, Viestinta, Kalusto, Henkilosto, Lomakkeet, Raportit, Hallinta,
+  KayttajaEsikatselu,
 } from './pages';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
@@ -82,6 +83,7 @@ function AppRoutes() {
         <Route path="/lomakkeet" element={<Lomakkeet />} />
         <Route path="/raportit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Raportit /></RoleGuard>} />
         <Route path="/hallinta" element={<RoleGuard allowedRoles={['admin']} useActualRole><Hallinta /></RoleGuard>} />
+        <Route path="/kayttajaesikatselu" element={<RoleGuard allowedRoles={['admin']} useActualRole><KayttajaEsikatselu /></RoleGuard>} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
