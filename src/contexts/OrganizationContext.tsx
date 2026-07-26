@@ -13,6 +13,9 @@ import { getMyOrganizations, type MyOrganization } from '@/lib/supabase/orgConte
 import type { OrganizationRole } from '@/lib/supabase/types';
 
 export const CURRENT_ORG_STORAGE_KEY = 'vakantti-v1-currentOrg';
+const ORGANIZATION_LOAD_TIMEOUT_MS = 10_000;
+const ORGANIZATION_LOAD_ATTEMPTS = 2;
+const ORGANIZATION_RETRY_DELAY_MS = 600;
 
 export interface OrganizationContextValue {
   organizations: MyOrganization[];
@@ -51,8 +54,44 @@ function chooseOrganization(organizations: MyOrganization[], preferredId: string
   );
 }
 
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function loadOrganizationsForUser(userId: string): Promise<MyOrganization[]> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= ORGANIZATION_LOAD_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => controller.abort(),
+      ORGANIZATION_LOAD_TIMEOUT_MS,
+    );
+
+    try {
+      const organizations = await getMyOrganizations(userId, controller.signal);
+      if (organizations.length === 0) {
+        throw new Error('Käyttäjätiliä ei ole liitetty yhteenkään organisaatioon.');
+      }
+      return organizations;
+    } catch (caught) {
+      lastError = caught;
+      if (attempt < ORGANIZATION_LOAD_ATTEMPTS) {
+        await wait(ORGANIZATION_RETRY_DELAY_MS);
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Työtilan lataaminen epäonnistui.');
+}
+
 export function OrganizationProvider({ children }: { children: ReactNode }) {
   const { session, loading: authLoading } = useAuth();
+  const userId = session?.user.id ?? null;
   const [organizations, setOrganizations] = useState<MyOrganization[]>([]);
   const [currentOrg, setCurrentOrgState] = useState<MyOrganization | null>(null);
   const [orgsLoading, setOrgsLoading] = useState(false);
@@ -67,7 +106,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!session) {
+    if (!userId) {
       setOrganizations([]);
       setCurrentOrgState(null);
       setOrgsLoading(false);
@@ -80,7 +119,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
       setOrgsLoading(true);
       setError(null);
       try {
-        const orgs = await getMyOrganizations();
+        const orgs = await loadOrganizationsForUser(userId);
         if (!cancelled) applyOrganizations(orgs, readStoredOrgId());
       } catch (caught) {
         if (!cancelled) {
@@ -95,14 +134,14 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
 
     void load();
     return () => { cancelled = true; };
-  }, [applyOrganizations, session]);
+  }, [applyOrganizations, userId]);
 
   const refreshOrganizations = useCallback(async () => {
-    if (!session) return;
+    if (!userId) return;
     setOrgsLoading(true);
     setError(null);
     try {
-      const orgs = await getMyOrganizations();
+      const orgs = await loadOrganizationsForUser(userId);
       applyOrganizations(orgs, currentOrg?.id ?? readStoredOrgId());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Organisaatioiden lataaminen epäonnistui.');
@@ -110,7 +149,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     } finally {
       setOrgsLoading(false);
     }
-  }, [applyOrganizations, currentOrg?.id, session]);
+  }, [applyOrganizations, currentOrg?.id, userId]);
 
   const setCurrentOrg = useCallback((orgId: string) => {
     const next = organizations.find((organization) => organization.id === orgId);
