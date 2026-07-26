@@ -77,7 +77,7 @@ export default function Layout() {
                 <span className="font-semibold">Esikatselutila:</span>{' '}
                 <span className="font-medium">{previewTarget.displayName || previewTarget.email}</span>{' '}
                 <span className="text-indigo-700">({ROLE_LABELS[previewTarget.role]})</span>.
-                <span className="hidden sm:inline"> Tallennukset on estetty sovelluksen yhteisessä tietokerroksessa.</span>
+                <span className="hidden sm:inline"> Sivujen muokkaustoiminnot on poistettu käytöstä esikatselun ajaksi.</span>
               </p>
             </div>
             <button
@@ -115,7 +115,8 @@ export default function Layout() {
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
-              className="min-w-0 max-w-full"
+              className={`min-w-0 max-w-full ${isPreviewing ? 'pointer-events-none select-text' : ''}`}
+              aria-disabled={isPreviewing || undefined}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
