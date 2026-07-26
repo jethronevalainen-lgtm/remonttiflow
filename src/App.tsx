@@ -11,7 +11,8 @@ import {
   Tyovuorokalenteri, Tuntikirjaukset, Matkakulut, CRM, Asiakkaat,
   AIPage, Viestinta, Kalusto, Henkilosto, Lomakkeet, Raportit, Hallinta,
   KayttajaEsikatselu, Tilaukset, TilaajanTyot, CustomerProject,
-  ProjectDiscussions, ProjectConversation, ProjectRequests, SafetyPortal,
+  CustomerCollaborationManager, ProjectDiscussions, ProjectConversation,
+  ProjectRequests, SafetyPortal,
 } from './pages';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
@@ -84,6 +85,7 @@ function AppRoutes() {
         <Route path="/tarkastukset" element={<RoleGuard allowedRoles={['admin', 'supervisor', 'worker']}><Tarkastukset /></RoleGuard>} />
         <Route path="/projektit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Projektit /></RoleGuard>} />
         <Route path="/projektit/:projectId" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><ProjectWorkspace /></RoleGuard>} />
+        <Route path="/projektit/:projectId/tilaajayhteistyo" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><CustomerCollaborationManager /></RoleGuard>} />
         <Route path="/projektipyynnot" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><ProjectRequests /></RoleGuard>} />
         <Route path="/projektikeskustelut" element={<RoleGuard allowedRoles={allRoles}><ProjectDiscussions /></RoleGuard>} />
         <Route path="/projektikeskustelut/:projectId" element={<RoleGuard allowedRoles={allRoles}><ProjectConversation /></RoleGuard>} />

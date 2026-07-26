@@ -19,7 +19,14 @@ export type Permission =
   | 'safety.read.own'
   | 'safety.manage'
   | 'project_chat.shared'
-  | 'project_chat.internal';
+  | 'project_chat.internal'
+  | 'project_chat.attach'
+  | 'project_chat.edit_own'
+  | 'project_documents.customer.read'
+  | 'project_documents.customer.share'
+  | 'change_orders.customer.read'
+  | 'change_orders.customer.submit'
+  | 'change_orders.customer.decide';
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Järjestelmänvalvoja',
@@ -76,22 +83,31 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     'projects.request', 'project_requests.manage', 'work_orders.read.all',
     'work_orders.manage', 'work_orders.transition', 'safety.create',
     'safety.read.all', 'safety.manage', 'project_chat.shared',
-    'project_chat.internal',
+    'project_chat.internal', 'project_chat.attach', 'project_chat.edit_own',
+    'project_documents.customer.read', 'project_documents.customer.share',
+    'change_orders.customer.read', 'change_orders.customer.submit',
   ]),
   supervisor: new Set<Permission>([
     'projects.read.all', 'projects.manage', 'projects.request',
     'project_requests.manage', 'work_orders.read.all', 'work_orders.manage',
     'work_orders.transition', 'safety.create', 'safety.read.all', 'safety.manage',
-    'project_chat.shared', 'project_chat.internal',
+    'project_chat.shared', 'project_chat.internal', 'project_chat.attach',
+    'project_chat.edit_own', 'project_documents.customer.read',
+    'project_documents.customer.share', 'change_orders.customer.read',
+    'change_orders.customer.submit',
   ]),
   worker: new Set<Permission>([
     'projects.read.assigned', 'work_orders.read.assigned', 'work_orders.transition',
     'safety.create', 'safety.read.project', 'safety.read.own',
-    'project_chat.shared', 'project_chat.internal',
+    'project_chat.shared', 'project_chat.internal', 'project_chat.attach',
+    'project_chat.edit_own',
   ]),
   customer: new Set<Permission>([
     'projects.read.customer', 'projects.request', 'safety.create',
     'safety.read.project', 'safety.read.own', 'project_chat.shared',
+    'project_chat.attach', 'project_chat.edit_own',
+    'project_documents.customer.read', 'change_orders.customer.read',
+    'change_orders.customer.decide',
   ]),
 };
 
