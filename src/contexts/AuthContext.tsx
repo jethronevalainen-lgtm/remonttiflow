@@ -1,12 +1,9 @@
 /**
  * Supabase-backed authentication context.
  *
- * Owns the auth session lifecycle: initial session resolution on mount,
- * the onAuthStateChange subscription, and the profile row fetch from the
- * `profiles` table whenever a session exists. Organization membership and
- * role resolution live in OrganizationContext — this context is role-free
- * except for the shared UserRole type and its Finnish label/color maps
- * (imported by Navbar/Header).
+ * Organization membership and effective role resolution live outside this
+ * context. Role constants are re-exported from the central permission model so
+ * legacy imports continue to work while the application has one source of truth.
  */
 import {
   createContext,
@@ -22,60 +19,38 @@ import { supabase } from '@/lib/supabase/client';
 import type { ProfileRow } from '@/lib/supabase/types';
 
 export type { Session, User };
+export {
+  ROLE_COLORS,
+  ROLE_HOME,
+  ROLE_LABELS,
+  ROLE_ROUTES,
+  hasPermission,
+  homeForRole,
+} from '@/auth/permissions';
+export type { Permission, UserRole } from '@/auth/permissions';
 
-export type UserRole = 'admin' | 'supervisor' | 'worker' | 'customer';
-
-export const ROLE_LABELS: Record<UserRole, string> = {
-  admin: 'Järjestelmänvalvoja',
-  supervisor: 'Työnjohtaja',
-  worker: 'Työntekijä',
-  customer: 'Tilaaja',
-};
-
-export const ROLE_COLORS: Record<UserRole, string> = {
-  admin: 'bg-purple-500',
-  supervisor: 'bg-orange-500',
-  worker: 'bg-blue-500',
-  customer: 'bg-teal-500',
-};
-
-export const ROLE_ROUTES: Record<UserRole, string[]> = {
-  admin: [
-    '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
-    '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tyovuorokalenteri',
-    '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus', '/crm', '/asiakkaat',
-    '/ai', '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet', '/raportit', '/hallinta',
-    '/kayttajaesikatselu',
-  ],
-  supervisor: [
-    '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
-    '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tyovuorokalenteri',
-    '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus', '/crm', '/asiakkaat',
-    '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet', '/raportit',
-  ],
-  worker: [
-    '/dashboard', '/tarkastukset', '/tyomaaraykset', '/kuittaukset', '/tuntikirjaukset', '/matkakulut',
-    '/viestinta', '/lomakkeet',
-  ],
-  customer: ['/tilaajan-tyot'],
-};
-
-/** Fallback message for any sign-in failure we do not specifically map. */
 const SIGN_IN_GENERIC_ERROR = 'Kirjautuminen epäonnistui. Yritä uudelleen myöhemmin.';
-/** Message for wrong email/password (Supabase: "Invalid login credentials"). */
 const SIGN_IN_INVALID_CREDENTIALS_ERROR = 'Virheellinen sähköposti tai salasana';
+const VIEW_AS_STORAGE_KEY = 'vakantti-v1-view-as';
 
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   profile: ProfileRow | null;
-  /** True until the initial session has been resolved on mount. */
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function clearPreviewState(): void {
+  try {
+    window.sessionStorage.removeItem(VIEW_AS_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in strict privacy modes.
+  }
+}
 
 function mapSignInError(message: string | undefined): string {
   if (message && /invalid login credentials/i.test(message)) {
@@ -93,11 +68,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const query = () => supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     let { data, error } = await query();
     if (error) {
-      // Transient network/RLS races happen (e.g. parallel sign-ins) — retry once.
       await new Promise((resolve) => setTimeout(resolve, 800));
       ({ data, error } = await query());
     }
-    // A missing/failed profile must not block the session — degrade to null.
     return error ? null : data;
   }, []);
 
@@ -125,12 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (nextSession?.user) {
-        // Fire-and-forget: profile failure degrades to null.
         void fetchProfile(nextSession.user.id).then((nextProfile) => {
           if (!cancelled) setProfile(nextProfile);
         });
       } else {
         setProfile(null);
+        clearPreviewState();
       }
     });
 
@@ -143,11 +116,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (email: string, password: string): Promise<{ error: string | null }> => {
       try {
+        clearPreviewState();
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          return { error: mapSignInError(error.message) };
-        }
-        // Session/profile state is updated via the onAuthStateChange listener.
+        if (error) return { error: mapSignInError(error.message) };
         return { error: null };
       } catch {
         return { error: SIGN_IN_GENERIC_ERROR };
@@ -157,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    clearPreviewState();
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
