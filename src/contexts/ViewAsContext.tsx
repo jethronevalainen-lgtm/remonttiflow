@@ -80,30 +80,31 @@ function clearStoredPreview(): void {
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const { user, profile } = useAuth();
   const { currentOrg, currentRole } = useOrganization();
+  const organizationId = currentOrg?.id ?? null;
   const [previewTarget, setPreviewTarget] = useState<ViewAsTarget | null>(null);
 
   useEffect(() => {
-    if (currentRole !== 'admin' || !currentOrg) {
+    if (currentRole !== 'admin' || !organizationId) {
       setPreviewTarget(null);
       clearStoredPreview();
       return;
     }
-    setPreviewTarget(readStoredPreview(currentOrg.id));
-  }, [currentOrg?.id, currentRole]);
+    setPreviewTarget(readStoredPreview(organizationId));
+  }, [currentRole, organizationId]);
 
   const startPreview = useCallback((target: ViewAsTarget) => {
-    if (currentRole !== 'admin' || !currentOrg) return;
+    if (currentRole !== 'admin' || !organizationId) return;
     setPreviewTarget(target);
     try {
       const stored: StoredViewAsState = {
-        organizationId: currentOrg.id,
+        organizationId,
         target,
       };
       window.sessionStorage.setItem(VIEW_AS_STORAGE_KEY, JSON.stringify(stored));
     } catch {
       // Preview still works in memory when storage is unavailable.
     }
-  }, [currentOrg, currentRole]);
+  }, [currentRole, organizationId]);
 
   const stopPreview = useCallback(() => {
     setPreviewTarget(null);
