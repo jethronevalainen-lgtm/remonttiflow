@@ -1,5 +1,6 @@
 export { default as Dashboard } from './Dashboard';
 export { default as Projektit } from './Projektit';
+export { default as ProjectWorkspace } from './ProjectWorkspace';
 export { default as Asiakkaat } from './Asiakkaat';
 export { default as Henkilosto } from './Henkilosto';
 export { default as Tyomaaraykset } from './Tyomaaraykset';
