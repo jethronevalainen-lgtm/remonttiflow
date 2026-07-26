@@ -7,21 +7,28 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { OrganizationProvider } from '@/contexts/OrganizationContext';
 import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import { AppProviders } from './providers/AppProviders';
+import AuthCallback from '@/pages/AuthCallback';
 import './index.css';
+
+const isAuthCallback = window.location.pathname === '/auth/callback';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <AuthProvider>
-        <OrganizationProvider>
-          <ViewAsProvider>
-            <AppProviders>
-              <HashRouter>
-                <App />
-              </HashRouter>
-            </AppProviders>
-          </ViewAsProvider>
-        </OrganizationProvider>
+        {isAuthCallback ? (
+          <AuthCallback />
+        ) : (
+          <OrganizationProvider>
+            <ViewAsProvider>
+              <AppProviders>
+                <HashRouter>
+                  <App />
+                </HashRouter>
+              </AppProviders>
+            </ViewAsProvider>
+          </OrganizationProvider>
+        )}
       </AuthProvider>
     </ErrorBoundary>
   </StrictMode>,
