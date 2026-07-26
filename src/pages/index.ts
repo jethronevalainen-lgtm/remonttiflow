@@ -22,3 +22,4 @@ export { default as Tarkastukset } from './Tarkastukset';
 export { default as CRM } from './CRM';
 export { default as AIPage } from './AI';
 export { default as Hallinta } from './Hallinta';
+export { default as KayttajaEsikatselu } from './KayttajaEsikatselu';
