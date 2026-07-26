@@ -39,19 +39,20 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 
 export const ROLE_ROUTES: Record<UserRole, string[]> = {
   admin: [
-    '/dashboard', '/tyonjohto', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
+    '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
     '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tyovuorokalenteri',
     '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus', '/crm', '/asiakkaat',
     '/ai', '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet', '/raportit', '/hallinta',
+    '/kayttajaesikatselu',
   ],
   supervisor: [
-    '/dashboard', '/tyonjohto', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
+    '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/aikataulutus', '/paivakirjat', '/kuittaukset',
     '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tyovuorokalenteri',
     '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus', '/crm', '/asiakkaat',
     '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet', '/raportit',
   ],
   worker: [
-    '/dashboard', '/tyomaaraykset', '/kuittaukset', '/tuntikirjaukset', '/matkakulut',
+    '/dashboard', '/tarkastukset', '/tyomaaraykset', '/kuittaukset', '/tuntikirjaukset', '/matkakulut',
     '/viestinta', '/lomakkeet',
   ],
 };
