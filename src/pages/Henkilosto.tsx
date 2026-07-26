@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
+  Award,
   Calendar,
   Download,
   Edit3,
@@ -14,9 +15,16 @@ import {
   Users,
 } from 'lucide-react';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { useAppDataContext } from '@/contexts/AppDataContext';
-import { useOrganization } from '@/contexts/OrganizationContext';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,22 +32,31 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useResourceManagement } from '@/hooks/useResourceManagement';
 import {
   createEmployeeRecord,
   deleteEmployeeRecord,
   updateEmployeeRecord,
 } from '@/lib/supabase/organizationEntities';
+import {
+  createEmployeeAbsence,
+  createEmployeeCertification,
+  deleteEmployeeAbsence,
+  deleteEmployeeCertification,
+  type EmployeeAbsence,
+  type EmployeeCertification,
+} from '@/lib/supabase/resourceManagement';
 import logger from '@/lib/logger';
 import type { Employee, EmployeeStatus } from '@/types';
 
-const ALL = 'Kaikki';
-const EMPLOYEE_STATUSES: EmployeeStatus[] = [
-  'Aktiivinen',
-  'Lomalla',
-  'Sairas',
-  'Koulutuksessa',
-  'Eroonnut',
-];
+const EMPLOYEE_STATUSES: EmployeeStatus[] = ['Aktiivinen', 'Lomalla', 'Sairas', 'Koulutuksessa', 'Eroonnut'];
+const CERTIFICATION_TYPES = ['Työturvallisuuskortti', 'Tulityökortti', 'Ensiapu', 'Märkätila-asentaja', 'Asbestityölupa', 'Muu'];
+const ABSENCE_TYPES = ['Loma', 'Sairaus', 'Koulutus', 'Palkaton vapaa', 'Muu'];
 
 interface EmployeeForm {
   name: string;
@@ -49,16 +66,16 @@ interface EmployeeForm {
   email: string;
   startDate: string;
   status: EmployeeStatus;
+  hourlyCost: string;
+  employmentType: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
 }
 
-const emptyForm: EmployeeForm = {
-  name: '',
-  role: '',
-  department: '',
-  phone: '',
-  email: '',
-  startDate: '',
-  status: 'Aktiivinen',
+const emptyEmployee: EmployeeForm = {
+  name: '', role: '', department: '', phone: '', email: '', startDate: '',
+  status: 'Aktiivinen', hourlyCost: '', employmentType: '',
+  emergencyContactName: '', emergencyContactPhone: '',
 };
 
 function statusBadge(status: EmployeeStatus) {
@@ -76,52 +93,69 @@ function csvCell(value: string | number) {
   return `"${String(value).replaceAll('"', '""')}"`;
 }
 
+function dateLabel(value?: string) {
+  if (!value) return '—';
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('fi-FI');
+}
+
 export default function Henkilosto() {
   const { user } = useAuth();
   const { currentOrg } = useOrganization();
-  const { employees, refresh } = useAppDataContext();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState(ALL);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const { employees, refresh: refreshDomain } = useAppDataContext();
+  const resources = useResourceManagement();
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('Kaikki');
+  const [employeeDialog, setEmployeeDialog] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
-  const [form, setForm] = useState<EmployeeForm>(emptyForm);
+  const [deleteEmployee, setDeleteEmployee] = useState<Employee | null>(null);
+  const [employeeForm, setEmployeeForm] = useState<EmployeeForm>(emptyEmployee);
+  const [certDialog, setCertDialog] = useState(false);
+  const [absenceDialog, setAbsenceDialog] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [certType, setCertType] = useState(CERTIFICATION_TYPES[0]);
+  const [certNumber, setCertNumber] = useState('');
+  const [certIssuer, setCertIssuer] = useState('');
+  const [certIssuedAt, setCertIssuedAt] = useState('');
+  const [certExpiresAt, setCertExpiresAt] = useState('');
+  const [certNotes, setCertNotes] = useState('');
+  const [absenceType, setAbsenceType] = useState(ABSENCE_TYPES[0]);
+  const [absenceStart, setAbsenceStart] = useState('');
+  const [absenceEnd, setAbsenceEnd] = useState('');
+  const [absenceNotes, setAbsenceNotes] = useState('');
+  const [deleteCertification, setDeleteCertification] = useState<EmployeeCertification | null>(null);
+  const [deleteAbsence, setDeleteAbsence] = useState<EmployeeAbsence | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
+  const today = new Date().toISOString().slice(0, 10);
+  const nextMonth = new Date(); nextMonth.setDate(nextMonth.getDate() + 30);
+  const nextMonthIso = nextMonth.toISOString().slice(0, 10);
   const filteredEmployees = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const query = search.trim().toLocaleLowerCase('fi');
     return employees.filter((employee) => {
-      const matchesSearch =
-        !query ||
-        employee.name.toLowerCase().includes(query) ||
-        employee.role.toLowerCase().includes(query) ||
-        employee.department.toLowerCase().includes(query) ||
-        employee.email.toLowerCase().includes(query);
-      const matchesStatus = statusFilter === ALL || employee.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesSearch = !query || [employee.name, employee.role, employee.department, employee.email]
+        .some((value) => value.toLocaleLowerCase('fi').includes(query));
+      return matchesSearch && (statusFilter === 'Kaikki' || employee.status === statusFilter);
     });
-  }, [employees, searchQuery, statusFilter]);
+  }, [employees, search, statusFilter]);
+  const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
+  const expiring = resources.certifications.filter((item) => item.expiresAt && item.expiresAt >= today && item.expiresAt <= nextMonthIso);
+  const expired = resources.certifications.filter((item) => item.expiresAt && item.expiresAt < today);
+  const activeAbsences = resources.absences.filter((item) => item.startDate <= today && item.endDate >= today);
 
-  const departmentCount = new Set(
-    employees.map((employee) => employee.department).filter(Boolean),
-  ).size;
-  const unavailableCount = employees.filter(
-    (employee) => employee.status === 'Lomalla' || employee.status === 'Sairas',
-  ).length;
-
-  const openCreate = () => {
+  const openEmployeeCreate = () => {
     setEditingEmployee(null);
-    setForm(emptyForm);
+    setEmployeeForm(emptyEmployee);
     setErrors([]);
     setOperationError(null);
-    setDialogOpen(true);
+    setEmployeeDialog(true);
   };
 
-  const openEdit = (employee: Employee) => {
+  const openEmployeeEdit = (employee: Employee) => {
     setEditingEmployee(employee);
-    setForm({
+    setEmployeeForm({
       name: employee.name,
       role: employee.role,
       department: employee.department,
@@ -129,190 +163,148 @@ export default function Henkilosto() {
       email: employee.email,
       startDate: employee.startDate,
       status: employee.status,
+      hourlyCost: employee.hourlyCostCents == null ? '' : String(employee.hourlyCostCents / 100),
+      employmentType: employee.employmentType ?? '',
+      emergencyContactName: employee.emergencyContactName ?? '',
+      emergencyContactPhone: employee.emergencyContactPhone ?? '',
     });
     setErrors([]);
     setOperationError(null);
-    setDialogOpen(true);
+    setEmployeeDialog(true);
   };
 
   const saveEmployee = async () => {
+    const hourlyCost = employeeForm.hourlyCost === '' ? undefined : Number(employeeForm.hourlyCost.replace(',', '.'));
     const nextErrors: string[] = [];
-    if (!form.name.trim()) nextErrors.push('Nimi on pakollinen.');
-    if (!form.role.trim()) nextErrors.push('Tehtävä on pakollinen.');
-    if (!form.department.trim()) nextErrors.push('Osasto on pakollinen.');
-    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) nextErrors.push('Sähköpostiosoite ei ole kelvollinen.');
+    if (!employeeForm.name.trim()) nextErrors.push('Nimi on pakollinen.');
+    if (!employeeForm.role.trim()) nextErrors.push('Tehtävä on pakollinen.');
+    if (!employeeForm.department.trim()) nextErrors.push('Osasto on pakollinen.');
+    if (employeeForm.email && !/^\S+@\S+\.\S+$/.test(employeeForm.email)) nextErrors.push('Sähköpostiosoite ei ole kelvollinen.');
+    if (hourlyCost !== undefined && (!Number.isFinite(hourlyCost) || hourlyCost < 0)) nextErrors.push('Tuntikustannuksen pitää olla nolla tai positiivinen.');
     setErrors(nextErrors);
-    if (nextErrors.length > 0 || !currentOrg) return;
+    if (nextErrors.length || !currentOrg) return;
 
     const payload: Omit<Employee, 'id'> = {
-      name: form.name.trim(),
-      role: form.role.trim(),
-      department: form.department.trim(),
-      phone: form.phone.trim(),
-      email: form.email.trim(),
-      startDate: form.startDate,
-      status: form.status,
-      projects: 0,
-      hours: 0,
-      training: 0,
-      certifications: [],
+      name: employeeForm.name.trim(),
+      role: employeeForm.role.trim(),
+      department: employeeForm.department.trim(),
+      phone: employeeForm.phone.trim(),
+      email: employeeForm.email.trim(),
+      startDate: employeeForm.startDate,
+      status: employeeForm.status,
+      hourlyCostCents: hourlyCost == null ? undefined : Math.round(hourlyCost * 100),
+      employmentType: employeeForm.employmentType.trim() || undefined,
+      emergencyContactName: employeeForm.emergencyContactName.trim() || undefined,
+      emergencyContactPhone: employeeForm.emergencyContactPhone.trim() || undefined,
+      projects: editingEmployee?.projects ?? 0,
+      hours: editingEmployee?.hours ?? 0,
+      training: editingEmployee?.training ?? 0,
+      certifications: editingEmployee?.certifications ?? [],
     };
 
     setSaving(true);
     setOperationError(null);
     try {
-      if (editingEmployee) {
-        await updateEmployeeRecord(currentOrg.id, editingEmployee.id, payload);
-      } else {
-        await createEmployeeRecord(currentOrg.id, user?.id, payload);
-      }
-      await refresh();
-      setDialogOpen(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Tallennus epäonnistui.';
-      setOperationError(message);
-      logger.error('Henkilöstötietojen tallennus epäonnistui', { error });
-    } finally {
-      setSaving(false);
-    }
+      if (editingEmployee) await updateEmployeeRecord(currentOrg.id, editingEmployee.id, payload);
+      else await createEmployeeRecord(currentOrg.id, user?.id, payload);
+      await refreshDomain();
+      setEmployeeDialog(false);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Tallennus epäonnistui.');
+      logger.error('Henkilön tallennus epäonnistui', { error: caught });
+    } finally { setSaving(false); }
   };
 
   const removeEmployee = async () => {
-    if (!deleteTarget || !currentOrg) return;
+    if (!currentOrg || !deleteEmployee) return;
     setSaving(true);
-    setOperationError(null);
     try {
-      await deleteEmployeeRecord(currentOrg.id, deleteTarget.id);
-      await refresh();
-      setDeleteTarget(null);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Poistaminen epäonnistui.';
-      setOperationError(message);
-      logger.error('Henkilön poistaminen epäonnistui', { error });
-    } finally {
-      setSaving(false);
-    }
+      await deleteEmployeeRecord(currentOrg.id, deleteEmployee.id);
+      await refreshDomain();
+      setDeleteEmployee(null);
+    } catch (caught) { setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.'); }
+    finally { setSaving(false); }
+  };
+
+  const openCertification = (employeeId = '') => {
+    setSelectedEmployeeId(employeeId);
+    setCertType(CERTIFICATION_TYPES[0]);
+    setCertNumber(''); setCertIssuer(''); setCertIssuedAt(''); setCertExpiresAt(''); setCertNotes('');
+    setOperationError(null); setCertDialog(true);
+  };
+
+  const saveCertification = async () => {
+    if (!currentOrg || !selectedEmployeeId) { setOperationError('Valitse henkilö.'); return; }
+    if (certIssuedAt && certExpiresAt && certExpiresAt < certIssuedAt) { setOperationError('Voimassaolo ei voi päättyä ennen myöntämispäivää.'); return; }
+    setSaving(true); setOperationError(null);
+    try {
+      await createEmployeeCertification({ organizationId: currentOrg.id, employeeId: selectedEmployeeId, userId: user?.id, certificationType: certType, certificationNumber: certNumber, issuer: certIssuer, issuedAt: certIssuedAt, expiresAt: certExpiresAt, notes: certNotes });
+      await resources.refresh(); setCertDialog(false);
+    } catch (caught) { setOperationError(caught instanceof Error ? caught.message : 'Pätevyyden tallennus epäonnistui.'); }
+    finally { setSaving(false); }
+  };
+
+  const openAbsence = (employeeId = '') => {
+    setSelectedEmployeeId(employeeId); setAbsenceType(ABSENCE_TYPES[0]); setAbsenceStart(today); setAbsenceEnd(today); setAbsenceNotes(''); setOperationError(null); setAbsenceDialog(true);
+  };
+
+  const saveAbsence = async () => {
+    if (!currentOrg || !selectedEmployeeId) { setOperationError('Valitse henkilö.'); return; }
+    if (!absenceStart || !absenceEnd || absenceEnd < absenceStart) { setOperationError('Anna kelvollinen poissaolojakso.'); return; }
+    setSaving(true); setOperationError(null);
+    try {
+      await createEmployeeAbsence({ organizationId: currentOrg.id, employeeId: selectedEmployeeId, userId: user?.id, approvedBy: user?.id, absenceType, startDate: absenceStart, endDate: absenceEnd, notes: absenceNotes });
+      await resources.refresh(); setAbsenceDialog(false);
+    } catch (caught) { setOperationError(caught instanceof Error ? caught.message : 'Poissaolon tallennus epäonnistui.'); }
+    finally { setSaving(false); }
+  };
+
+  const removeCertification = async () => {
+    if (!currentOrg || !deleteCertification) return;
+    setSaving(true); try { await deleteEmployeeCertification(currentOrg.id, deleteCertification.id); await resources.refresh(); setDeleteCertification(null); }
+    catch (caught) { setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.'); }
+    finally { setSaving(false); }
+  };
+
+  const removeAbsence = async () => {
+    if (!currentOrg || !deleteAbsence) return;
+    setSaving(true); try { await deleteEmployeeAbsence(currentOrg.id, deleteAbsence.id); await resources.refresh(); setDeleteAbsence(null); }
+    catch (caught) { setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.'); }
+    finally { setSaving(false); }
   };
 
   const exportCsv = () => {
-    const rows = employees.map((employee) => [
-      employee.name,
-      employee.role,
-      employee.department,
-      employee.phone,
-      employee.email,
-      employee.startDate,
-      employee.status,
-    ]);
-    const csv = [
-      ['Nimi', 'Tehtävä', 'Osasto', 'Puhelin', 'Sähköposti', 'Aloittanut', 'Tila'],
-      ...rows,
-    ].map((row) => row.map(csvCell).join(';')).join('\n');
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `henkilosto-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    const rows = employees.map((employee) => [employee.name, employee.role, employee.department, employee.phone, employee.email, employee.startDate, employee.status, (employee.hourlyCostCents ?? 0) / 100]);
+    const csv = [['Nimi','Tehtävä','Osasto','Puhelin','Sähköposti','Aloittanut','Tila','Tuntikustannus EUR'], ...rows].map((row) => row.map(csvCell).join(';')).join('\n');
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = `henkilosto-${today}.csv`; link.click(); URL.revokeObjectURL(url);
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-hero text-text-primary">Henkilöstö</h1>
-          <p className="mt-1 text-body-sm text-text-secondary">Organisaation työntekijät ja yhteystiedot</p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={openCreate} className="gap-2"><Plus size={16} /> Lisää henkilö</Button>
-          <Button variant="outline" onClick={exportCsv} disabled={employees.length === 0} className="gap-2"><Download size={16} /> Vie CSV</Button>
-        </div>
-      </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-hero text-text-primary">Henkilöstö ja pätevyydet</h1><p className="mt-1 text-body-sm text-text-secondary">Henkilörekisteri, osaamiset, kortit, voimassaolot ja poissaolot</p></div><div className="flex flex-wrap gap-2"><Button onClick={openEmployeeCreate}><Plus size={16} className="mr-2" /> Lisää henkilö</Button><Button variant="outline" onClick={exportCsv}><Download size={16} className="mr-2" /> CSV</Button></div></div>
+      {(resources.error || operationError) && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} />{operationError ?? resources.error}</div>}
 
-      {operationError && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          <AlertTriangle size={16} /> {operationError}
-        </div>
-      )}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
+        { label: 'Henkilöstö', value: employees.length, icon: Users },
+        { label: 'Aktiivisena', value: employees.filter((item) => item.status === 'Aktiivinen').length, icon: UserCheck },
+        { label: 'Pätevyyksiä vanhenee', value: expiring.length, icon: Award },
+        { label: 'Poissa tänään', value: activeAbsences.length, icon: Calendar },
+      ].map((item) => <Card key={item.label}><CardContent className="p-5"><div className="flex justify-between text-sm text-text-secondary"><span>{item.label}</span><item.icon size={18} className="text-primary" /></div><p className="mt-2 font-mono text-3xl font-bold">{item.value}</p></CardContent></Card>)}</div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          { label: 'Henkilöstö yhteensä', value: employees.length, icon: Users },
-          { label: 'Aktiivisena', value: employees.filter((employee) => employee.status === 'Aktiivinen').length, icon: UserCheck },
-          { label: 'Poissa', value: unavailableCount, icon: Calendar },
-          { label: 'Osastoja', value: departmentCount, icon: Users },
-        ].map((item) => (
-          <Card key={item.label} className="border-slate-200 shadow-card">
-            <CardContent className="p-5">
-              <div className="mb-3 flex items-center justify-between"><span className="text-xs uppercase tracking-wider text-text-secondary">{item.label}</span><item.icon size={19} className="text-primary" /></div>
-              <p className="font-mono text-3xl font-bold text-text-primary">{item.value}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Tabs defaultValue="people" className="space-y-4"><TabsList className="h-auto flex-wrap"><TabsTrigger value="people">Henkilöt</TabsTrigger><TabsTrigger value="certifications">Pätevyydet ({resources.certifications.length})</TabsTrigger><TabsTrigger value="absences">Poissaolot ({resources.absences.length})</TabsTrigger></TabsList>
+        <TabsContent value="people" className="space-y-4"><div className="flex flex-col gap-3 sm:flex-row"><div className="relative flex-1 sm:max-w-md"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae nimellä, tehtävällä tai osastolla…" className="pl-9" /></div><Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Kaikki">Kaikki tilat</SelectItem>{EMPLOYEE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><Card className="overflow-hidden"><CardContent className="p-0">{filteredEmployees.map((employee) => { const certCount = resources.certifications.filter((item) => item.employeeId === employee.id).length; const absent = activeAbsences.some((item) => item.employeeId === employee.id); return <div key={employee.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_1fr_130px_170px] lg:items-center"><div><p className="font-semibold">{employee.name}</p><p className="text-xs text-text-secondary">{employee.email || 'Ei sähköpostia'}</p></div><div><p className="text-sm">{employee.role}</p><p className="text-xs text-text-secondary">{employee.department}</p></div><div className="text-xs text-text-secondary">{employee.phone && <p className="flex items-center gap-1"><Phone size={12} />{employee.phone}</p>}{employee.email && <p className="flex items-center gap-1"><Mail size={12} />{employee.email}</p>}</div><div>{statusBadge(employee.status)}{absent && <Badge className="ml-1 border-0 bg-amber-50 text-amber-700">Poissa</Badge>}<p className="mt-1 text-xs text-text-muted">{certCount} pätevyyttä</p></div><div className="flex flex-wrap justify-end gap-1"><Button variant="ghost" size="sm" onClick={() => openCertification(employee.id)}><Award size={14} /></Button><Button variant="ghost" size="sm" onClick={() => openAbsence(employee.id)}><Calendar size={14} /></Button><Button variant="ghost" size="sm" onClick={() => openEmployeeEdit(employee)}><Edit3 size={14} /></Button><Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteEmployee(employee)}><Trash2 size={14} /></Button></div></div>; })}{!filteredEmployees.length && <div className="p-12 text-center"><Users size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei henkilöstöä</p></div>}</CardContent></Card></TabsContent>
+        <TabsContent value="certifications" className="space-y-4"><div className="flex justify-end"><Button onClick={() => openCertification()}><Plus size={16} className="mr-2" /> Lisää pätevyys</Button></div>{(expired.length > 0 || expiring.length > 0) && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm"><strong>Huomio:</strong> {expired.length} pätevyyttä on vanhentunut ja {expiring.length} vanhenee 30 päivän sisällä.</div>}<Card><CardContent className="p-0">{resources.certifications.map((item) => { const employee = employeeById.get(item.employeeId); const isExpired = item.expiresAt && item.expiresAt < today; const isExpiring = item.expiresAt && item.expiresAt >= today && item.expiresAt <= nextMonthIso; return <div key={item.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_160px_130px_60px] lg:items-center"><div><p className="font-semibold">{item.certificationType}</p><p className="text-xs text-text-secondary">{employee?.name ?? 'Tuntematon henkilö'} · {item.certificationNumber || 'Ei numeroa'}</p></div><span className="text-sm">{item.issuer || '—'}</span><span className="text-sm">{dateLabel(item.issuedAt)} – {dateLabel(item.expiresAt)}</span><div>{isExpired ? <Badge className="border-0 bg-red-50 text-red-700">Vanhentunut</Badge> : isExpiring ? <Badge className="border-0 bg-amber-50 text-amber-700">Vanhenee pian</Badge> : <Badge className="border-0 bg-emerald-50 text-emerald-700">Voimassa</Badge>}</div><Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteCertification(item)}><Trash2 size={14} /></Button></div>; })}{!resources.certifications.length && <div className="p-12 text-center"><Award size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei pätevyyksiä</p></div>}</CardContent></Card></TabsContent>
+        <TabsContent value="absences" className="space-y-4"><div className="flex justify-end"><Button onClick={() => openAbsence()}><Plus size={16} className="mr-2" /> Lisää poissaolo</Button></div><Card><CardContent className="p-0">{resources.absences.map((item) => <div key={item.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_180px_120px_60px] lg:items-center"><div><p className="font-semibold">{employeeById.get(item.employeeId)?.name ?? 'Tuntematon henkilö'}</p><p className="text-xs text-text-secondary">{item.notes || 'Ei lisätietoja'}</p></div><span>{item.absenceType}</span><span>{dateLabel(item.startDate)} – {dateLabel(item.endDate)}</span><Badge variant="outline">{item.status}</Badge><Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteAbsence(item)}><Trash2 size={14} /></Button></div>)}{!resources.absences.length && <div className="p-12 text-center"><Calendar size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei poissaoloja</p></div>}</CardContent></Card></TabsContent>
+      </Tabs>
 
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1 sm:max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-          <Input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Hae nimellä, tehtävällä tai osastolla…" className="pl-9" />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-48"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value={ALL}>Kaikki tilat</SelectItem>{EMPLOYEE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
+      <Dialog open={employeeDialog} onOpenChange={setEmployeeDialog}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editingEmployee ? 'Muokkaa henkilöä' : 'Lisää henkilö'}</DialogTitle></DialogHeader>{errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label>Nimi *</Label><Input value={employeeForm.name} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-2"><Label>Tehtävä *</Label><Input value={employeeForm.role} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, role: event.target.value }))} /></div><div className="space-y-2"><Label>Osasto *</Label><Input value={employeeForm.department} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, department: event.target.value }))} /></div><div className="space-y-2"><Label>Puhelin</Label><Input value={employeeForm.phone} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, phone: event.target.value }))} /></div><div className="space-y-2"><Label>Sähköposti</Label><Input value={employeeForm.email} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, email: event.target.value }))} /></div><div className="space-y-2"><Label>Aloituspäivä</Label><Input type="date" value={employeeForm.startDate} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div><div className="space-y-2"><Label>Tila</Label><Select value={employeeForm.status} onValueChange={(status: EmployeeStatus) => setEmployeeForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{EMPLOYEE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Työsuhdetyyppi</Label><Input value={employeeForm.employmentType} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, employmentType: event.target.value }))} /></div><div className="space-y-2"><Label>Tuntikustannus €</Label><Input inputMode="decimal" value={employeeForm.hourlyCost} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, hourlyCost: event.target.value }))} /></div><div className="space-y-2"><Label>Hätäyhteyshenkilö</Label><Input value={employeeForm.emergencyContactName} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactName: event.target.value }))} /></div><div className="space-y-2"><Label>Hätäyhteyshenkilön puhelin</Label><Input value={employeeForm.emergencyContactPhone} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactPhone: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setEmployeeDialog(false)}>Peruuta</Button><Button onClick={() => void saveEmployee()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter></DialogContent></Dialog>
 
-      <Card className="overflow-hidden border-slate-200 shadow-card">
-        <CardContent className="p-0">
-          <div className="hidden grid-cols-[1.2fr_1fr_1fr_1fr_110px_90px] gap-4 border-b bg-slate-50 px-6 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted lg:grid">
-            <span>Henkilö</span><span>Tehtävä</span><span>Osasto</span><span>Yhteystiedot</span><span>Tila</span><span className="text-right">Toiminnot</span>
-          </div>
-          {filteredEmployees.map((employee) => (
-            <div key={employee.id} className="grid grid-cols-1 items-center gap-3 border-b border-slate-100 px-6 py-4 lg:grid-cols-[1.2fr_1fr_1fr_1fr_110px_90px] lg:gap-4">
-              <div><p className="font-semibold text-text-primary">{employee.name}</p><p className="text-xs text-text-secondary">Aloittanut {employee.startDate || '—'}</p></div>
-              <span className="text-sm text-text-primary">{employee.role}</span>
-              <span className="text-sm text-text-secondary">{employee.department}</span>
-              <div className="space-y-1 text-xs text-text-secondary">
-                {employee.phone && <p className="flex items-center gap-1"><Phone size={12} />{employee.phone}</p>}
-                {employee.email && <p className="flex items-center gap-1 truncate"><Mail size={12} />{employee.email}</p>}
-                {!employee.phone && !employee.email && <span>Ei yhteystietoja</span>}
-              </div>
-              <div>{statusBadge(employee.status)}</div>
-              <div className="flex justify-end gap-1">
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(employee)} aria-label={`Muokkaa ${employee.name}`}><Edit3 size={15} /></Button>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-danger" onClick={() => setDeleteTarget(employee)} aria-label={`Poista ${employee.name}`}><Trash2 size={15} /></Button>
-              </div>
-            </div>
-          ))}
-          {filteredEmployees.length === 0 && <div className="p-12 text-center"><Users size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei henkilöstöä</p><p className="mt-1 text-sm text-text-secondary">Lisää ensimmäinen henkilö tai muuta hakuehtoja.</p></div>}
-        </CardContent>
-      </Card>
+      <Dialog open={certDialog} onOpenChange={setCertDialog}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Lisää pätevyys</DialogTitle></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label>Henkilö *</Label><Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}><SelectTrigger><SelectValue placeholder="Valitse henkilö" /></SelectTrigger><SelectContent>{employees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Pätevyys</Label><Select value={certType} onValueChange={setCertType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{CERTIFICATION_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Numero</Label><Input value={certNumber} onChange={(event) => setCertNumber(event.target.value)} /></div><div className="space-y-2"><Label>Myönnetty</Label><Input type="date" value={certIssuedAt} onChange={(event) => setCertIssuedAt(event.target.value)} /></div><div className="space-y-2"><Label>Voimassa asti</Label><Input type="date" value={certExpiresAt} onChange={(event) => setCertExpiresAt(event.target.value)} /></div><div className="space-y-2 sm:col-span-2"><Label>Myöntäjä</Label><Input value={certIssuer} onChange={(event) => setCertIssuer(event.target.value)} /></div><div className="space-y-2 sm:col-span-2"><Label>Huomiot</Label><Textarea value={certNotes} onChange={(event) => setCertNotes(event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => setCertDialog(false)}>Peruuta</Button><Button onClick={() => void saveCertification()} disabled={saving}>Tallenna</Button></DialogFooter></DialogContent></Dialog>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader><DialogTitle>{editingEmployee ? 'Muokkaa henkilöä' : 'Lisää henkilö'}</DialogTitle></DialogHeader>
-          {errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="employee-name">Nimi *</Label><Input id="employee-name" value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="employee-role">Tehtävä *</Label><Input id="employee-role" value={form.role} onChange={(event) => setForm((previous) => ({ ...previous, role: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="employee-department">Osasto *</Label><Input id="employee-department" value={form.department} onChange={(event) => setForm((previous) => ({ ...previous, department: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="employee-phone">Puhelin</Label><Input id="employee-phone" value={form.phone} onChange={(event) => setForm((previous) => ({ ...previous, phone: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="employee-email">Sähköposti</Label><Input id="employee-email" type="email" value={form.email} onChange={(event) => setForm((previous) => ({ ...previous, email: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="employee-start">Aloituspäivä</Label><Input id="employee-start" type="date" value={form.startDate} onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Tila</Label><Select value={form.status} onValueChange={(value: EmployeeStatus) => setForm((previous) => ({ ...previous, status: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{EMPLOYEE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveEmployee()} disabled={saving}>{saving ? 'Tallennetaan…' : editingEmployee ? 'Tallenna muutokset' : 'Lisää henkilö'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Dialog open={absenceDialog} onOpenChange={setAbsenceDialog}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Lisää poissaolo</DialogTitle></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label>Henkilö *</Label><Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}><SelectTrigger><SelectValue placeholder="Valitse henkilö" /></SelectTrigger><SelectContent>{employees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Tyyppi</Label><Select value={absenceType} onValueChange={setAbsenceType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ABSENCE_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div><div /><div className="space-y-2"><Label>Alkaa</Label><Input type="date" value={absenceStart} onChange={(event) => setAbsenceStart(event.target.value)} /></div><div className="space-y-2"><Label>Päättyy</Label><Input type="date" value={absenceEnd} onChange={(event) => setAbsenceEnd(event.target.value)} /></div><div className="space-y-2 sm:col-span-2"><Label>Huomiot</Label><Textarea value={absenceNotes} onChange={(event) => setAbsenceNotes(event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => setAbsenceDialog(false)}>Peruuta</Button><Button onClick={() => void saveAbsence()} disabled={saving}>Tallenna</Button></DialogFooter></DialogContent></Dialog>
 
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Poista henkilö</DialogTitle></DialogHeader>
-          <p className="text-sm text-text-secondary">Poistetaanko <strong>{deleteTarget?.name}</strong> henkilöstörekisteristä?</p>
-          <DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={saving}>Peruuta</Button><Button variant="destructive" onClick={() => void removeEmployee()} disabled={saving}>{saving ? 'Poistetaan…' : 'Poista'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog open={Boolean(deleteEmployee || deleteCertification || deleteAbsence)} onOpenChange={(open) => { if (!open) { setDeleteEmployee(null); setDeleteCertification(null); setDeleteAbsence(null); } }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Poistetaanko tieto?</AlertDialogTitle><AlertDialogDescription>Poistoa ei voi perua.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => deleteEmployee ? void removeEmployee() : deleteCertification ? void removeCertification() : void removeAbsence()}>Poista</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </motion.div>
   );
 }
