@@ -13,20 +13,11 @@ import { getMyOrganizations, type MyOrganization } from '@/lib/supabase/orgConte
 import type { OrganizationRole } from '@/lib/supabase/types';
 
 export const CURRENT_ORG_STORAGE_KEY = 'vakantti-v1-currentOrg';
-const VIEW_AS_STORAGE_KEY = 'vakantti-v1-view-as';
-export const VIEW_AS_CHANGE_EVENT = 'vakantti:view-as-change';
-
-interface ViewAsChangeDetail {
-  organizationId: string;
-  role: OrganizationRole | null;
-}
 
 export interface OrganizationContextValue {
   organizations: MyOrganization[];
   currentOrg: MyOrganization | null;
-  /** Signed-in membership role. Never changes during preview. */
   actualRole: OrganizationRole | null;
-  /** Role existing pages should render. May be overridden by admin preview. */
   currentRole: OrganizationRole | null;
   setCurrentOrg: (orgId: string) => void;
   refreshOrganizations: () => Promise<void>;
@@ -52,26 +43,6 @@ function writeStoredOrgId(orgId: string): void {
   }
 }
 
-function readPreviewRole(organizationId: string, actualRole: OrganizationRole | null): OrganizationRole | null {
-  if (actualRole !== 'admin') return null;
-  try {
-    const raw = window.sessionStorage.getItem(VIEW_AS_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as {
-      organizationId?: unknown;
-      target?: { role?: unknown };
-    };
-    const role = parsed.target?.role;
-    if (
-      parsed.organizationId !== organizationId
-      || (role !== 'admin' && role !== 'supervisor' && role !== 'worker' && role !== 'customer')
-    ) return null;
-    return role;
-  } catch {
-    return null;
-  }
-}
-
 function chooseOrganization(organizations: MyOrganization[], preferredId: string | null) {
   return (
     (preferredId ? organizations.find((organization) => organization.id === preferredId) : undefined)
@@ -84,7 +55,6 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
   const { session, loading: authLoading } = useAuth();
   const [organizations, setOrganizations] = useState<MyOrganization[]>([]);
   const [currentOrg, setCurrentOrgState] = useState<MyOrganization | null>(null);
-  const [previewRole, setPreviewRole] = useState<OrganizationRole | null>(null);
   const [orgsLoading, setOrgsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const actualRole = currentOrg?.role ?? null;
@@ -100,7 +70,6 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     if (!session) {
       setOrganizations([]);
       setCurrentOrgState(null);
-      setPreviewRole(null);
       setOrgsLoading(false);
       setError(null);
       return;
@@ -117,7 +86,6 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         if (!cancelled) {
           setOrganizations([]);
           setCurrentOrgState(null);
-          setPreviewRole(null);
           setError(caught instanceof Error ? caught.message : 'Organisaatioiden lataaminen epäonnistui.');
         }
       } finally {
@@ -128,30 +96,6 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     void load();
     return () => { cancelled = true; };
   }, [applyOrganizations, session]);
-
-  useEffect(() => {
-    if (!currentOrg) {
-      setPreviewRole(null);
-      return;
-    }
-    setPreviewRole(readPreviewRole(currentOrg.id, actualRole));
-  }, [actualRole, currentOrg]);
-
-  useEffect(() => {
-    const handlePreviewChange = (event: Event) => {
-      const detail = (event as CustomEvent<ViewAsChangeDetail>).detail;
-      if (
-        !currentOrg
-        || !detail
-        || detail.organizationId !== currentOrg.id
-        || actualRole !== 'admin'
-      ) return;
-      setPreviewRole(detail.role);
-    };
-
-    window.addEventListener(VIEW_AS_CHANGE_EVENT, handlePreviewChange);
-    return () => window.removeEventListener(VIEW_AS_CHANGE_EVENT, handlePreviewChange);
-  }, [actualRole, currentOrg]);
 
   const refreshOrganizations = useCallback(async () => {
     if (!session) return;
@@ -171,7 +115,6 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
   const setCurrentOrg = useCallback((orgId: string) => {
     const next = organizations.find((organization) => organization.id === orgId);
     if (!next) return;
-    setPreviewRole(null);
     setCurrentOrgState(next);
     writeStoredOrgId(next.id);
   }, [organizations]);
@@ -180,7 +123,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     organizations,
     currentOrg,
     actualRole,
-    currentRole: previewRole ?? actualRole,
+    currentRole: actualRole,
     setCurrentOrg,
     refreshOrganizations,
     loading: authLoading || orgsLoading,
@@ -192,7 +135,6 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     error,
     organizations,
     orgsLoading,
-    previewRole,
     refreshOrganizations,
     setCurrentOrg,
   ]);
