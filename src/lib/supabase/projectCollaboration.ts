@@ -37,6 +37,10 @@ function booleanValue(row: Row, key: string): boolean {
   return row[key] === true;
 }
 
+function stringArray(row: Row, key: string): string[] {
+  return Array.isArray(row[key]) ? row[key].filter((value): value is string => typeof value === 'string') : [];
+}
+
 export interface CustomerAccount {
   customerId: string;
   customerName: string;
@@ -99,6 +103,22 @@ export interface ProjectConversationContext {
   canUseInternal: boolean;
 }
 
+export interface ProjectConversationParticipant {
+  userId: string;
+  displayName: string;
+  email: string;
+  role: string;
+  canUseInternal: boolean;
+}
+
+export interface ProjectMessageAttachment {
+  id: string;
+  storagePath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface ProjectMessage {
   id: string;
   projectId: string;
@@ -106,6 +126,12 @@ export interface ProjectMessage {
   authorName: string;
   channel: ProjectMessageChannel;
   body: string;
+  replyToId: string | null;
+  replyAuthorName: string | null;
+  replyBody: string | null;
+  mentionedUserIds: string[];
+  mentionedNames: string[];
+  attachments: ProjectMessageAttachment[];
   createdAt: string;
   editedAt: string | null;
 }
@@ -259,11 +285,35 @@ export async function loadProjectConversationContext(projectId: string): Promise
   };
 }
 
+export async function loadProjectConversationParticipants(projectId: string): Promise<ProjectConversationParticipant[]> {
+  const { data, error } = await supabase.rpc('project_conversation_participants_v2', {
+    p_project_id: projectId,
+  });
+  if (error) throw new Error(`Osallistujien haku epäonnistui: ${error.message}`);
+  return rows(data).map((row) => ({
+    userId: text(row, 'user_id'),
+    displayName: text(row, 'display_name') || 'Käyttäjä',
+    email: text(row, 'email'),
+    role: text(row, 'role'),
+    canUseInternal: booleanValue(row, 'can_use_internal'),
+  })).filter((item) => item.userId);
+}
+
+function mapAttachments(value: unknown): ProjectMessageAttachment[] {
+  return rows(value).map((row) => ({
+    id: text(row, 'id'),
+    storagePath: text(row, 'storage_path'),
+    fileName: text(row, 'file_name'),
+    mimeType: text(row, 'mime_type'),
+    sizeBytes: numberValue(row, 'size_bytes'),
+  })).filter((item) => item.id && item.storagePath);
+}
+
 export async function loadProjectMessages(
   projectId: string,
   channel: ProjectMessageChannel,
 ): Promise<ProjectMessage[]> {
-  const { data, error } = await supabase.rpc('project_messages_for_user', {
+  const { data, error } = await supabase.rpc('project_messages_for_user_v2', {
     p_project_id: projectId,
     p_channel: channel,
   });
@@ -275,6 +325,12 @@ export async function loadProjectMessages(
     authorName: text(row, 'author_name') || 'Käyttäjä',
     channel: text(row, 'channel') === 'internal' ? 'internal' : 'shared',
     body: text(row, 'body'),
+    replyToId: nullableText(row, 'reply_to_id'),
+    replyAuthorName: nullableText(row, 'reply_author_name'),
+    replyBody: nullableText(row, 'reply_body'),
+    mentionedUserIds: stringArray(row, 'mentioned_user_ids'),
+    mentionedNames: stringArray(row, 'mentioned_names'),
+    attachments: mapAttachments(row.attachments),
     createdAt: text(row, 'created_at'),
     editedAt: nullableText(row, 'edited_at'),
   }));
@@ -284,15 +340,84 @@ export async function sendProjectMessage(
   projectId: string,
   channel: ProjectMessageChannel,
   body: string,
+  options?: { replyToId?: string | null; mentionedUserIds?: string[] },
 ): Promise<string> {
-  const { data, error } = await supabase.rpc('send_project_message', {
+  const { data, error } = await supabase.rpc('send_project_message_v2', {
     p_project_id: projectId,
     p_channel: channel,
     p_body: body,
+    p_reply_to_id: options?.replyToId || null,
+    p_mentioned_user_ids: options?.mentionedUserIds ?? [],
   });
   if (error) throw new Error(`Viestin lähetys epäonnistui: ${error.message}`);
   if (typeof data !== 'string') throw new Error('Tietokanta ei palauttanut viestin tunnistetta.');
   return data;
+}
+
+export async function editProjectMessage(
+  messageId: string,
+  body: string,
+  mentionedUserIds: string[],
+): Promise<void> {
+  const { error } = await supabase.rpc('edit_project_message_v2', {
+    p_message_id: messageId,
+    p_body: body,
+    p_mentioned_user_ids: mentionedUserIds,
+  });
+  if (error) throw new Error(`Viestin muokkaus epäonnistui: ${error.message}`);
+}
+
+export async function deleteProjectMessage(messageId: string): Promise<void> {
+  const { error } = await supabase.rpc('delete_project_message_v2', {
+    p_message_id: messageId,
+  });
+  if (error) throw new Error(`Viestin poisto epäonnistui: ${error.message}`);
+}
+
+function safeFileName(name: string): string {
+  const normalized = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+  return normalized.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'liite';
+}
+
+export async function uploadProjectMessageAttachments(input: {
+  organizationId: string;
+  projectId: string;
+  messageId: string;
+  files: File[];
+}): Promise<void> {
+  if (input.files.length > 5) throw new Error('Yhteen viestiin voi lisätä enintään viisi liitettä.');
+  for (const file of input.files) {
+    if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: tiedosto ylittää 10 Mt kokorajan.`);
+    const attachmentId = crypto.randomUUID();
+    const storagePath = `${input.organizationId}/${input.projectId}/${input.messageId}/${attachmentId}/${safeFileName(file.name)}`;
+    const { error: uploadError } = await supabase.storage
+      .from('project-message-attachments')
+      .upload(storagePath, file, { upsert: false, contentType: file.type || 'application/octet-stream' });
+    if (uploadError) throw new Error(`${file.name}: lataus epäonnistui: ${uploadError.message}`);
+
+    const { error: metadataError } = await supabase.rpc('attach_project_message_file_v2', {
+      p_message_id: input.messageId,
+      p_attachment_id: attachmentId,
+      p_storage_path: storagePath,
+      p_file_name: file.name,
+      p_mime_type: file.type || 'application/octet-stream',
+      p_size_bytes: file.size,
+    });
+    if (metadataError) {
+      await supabase.storage.from('project-message-attachments').remove([storagePath]);
+      throw new Error(`${file.name}: liitteen tietojen tallennus epäonnistui: ${metadataError.message}`);
+    }
+  }
+}
+
+export async function createProjectMessageAttachmentUrl(storagePath: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from('project-message-attachments')
+    .createSignedUrl(storagePath, 600);
+  if (error || !data?.signedUrl) {
+    throw new Error(`Liitteen avaaminen epäonnistui: ${error?.message ?? 'linkkiä ei voitu luoda'}`);
+  }
+  return data.signedUrl;
 }
 
 export async function markProjectMessagesRead(
@@ -308,10 +433,20 @@ export async function markProjectMessagesRead(
 
 export function subscribeProjectMessages(projectId: string, onChange: () => void) {
   const channel = supabase
-    .channel(`project-messages-${projectId}`)
+    .channel(`project-collaboration-${projectId}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'project_messages', filter: `project_id=eq.${projectId}` },
+      onChange,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'project_message_attachments', filter: `project_id=eq.${projectId}` },
+      onChange,
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'project_message_mentions' },
       onChange,
     )
     .subscribe();
