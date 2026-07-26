@@ -21,7 +21,11 @@ type Payload = Record<string, unknown>;
 type Row = Record<string, unknown>;
 
 function text(row: Row, key: string): string {
-  return typeof row[key] === 'string' ? (row[key] as string) : '';
+  return typeof row[key] === 'string' ? row[key] as string : '';
+}
+
+function optionalText(row: Row, key: string): string | undefined {
+  return text(row, key) || undefined;
 }
 
 function numeric(row: Row, key: string): number {
@@ -32,6 +36,10 @@ function numeric(row: Row, key: string): number {
     if (Number.isFinite(parsed)) return parsed;
   }
   return 0;
+}
+
+function booleanValue(row: Row, key: string): boolean {
+  return row[key] === true;
 }
 
 function toRow(value: unknown): Row {
@@ -78,6 +86,7 @@ function basePayload(organizationId: string, createdBy?: string): Payload {
 
 function diaryPayload(entry: Omit<DiaryEntry, 'id'> | Partial<DiaryEntry>): Payload {
   const payload: Payload = {};
+  if (entry.projectId !== undefined) payload.project_id = entry.projectId || null;
   if (entry.project !== undefined) payload.project = entry.project || null;
   if (entry.date !== undefined) payload.date = entry.date;
   if (entry.weather !== undefined) payload.weather = entry.weather || null;
@@ -91,6 +100,9 @@ function diaryPayload(entry: Omit<DiaryEntry, 'id'> | Partial<DiaryEntry>): Payl
   if (entry.delays !== undefined) payload.delays = entry.delays || null;
   if (entry.author !== undefined) payload.author = entry.author || null;
   if (entry.status !== undefined) payload.status = entry.status;
+  if (entry.approvedBy !== undefined) payload.approved_by = entry.approvedBy || null;
+  if (entry.approvedAt !== undefined) payload.approved_at = entry.approvedAt || null;
+  if (entry.lockedBy !== undefined) payload.locked_by = entry.lockedBy || null;
   return payload;
 }
 
@@ -118,6 +130,7 @@ export const deleteDiaryEntryRecord = (organizationId: string, id: string) =>
 
 function wastePayload(entry: Omit<WasteEntry, 'id'> | Partial<WasteEntry>): Payload {
   const payload: Payload = {};
+  if (entry.projectId !== undefined) payload.project_id = entry.projectId || null;
   if (entry.project !== undefined) payload.project = entry.project || null;
   if (entry.date !== undefined) payload.date = entry.date;
   if (entry.wasteType !== undefined) payload.waste_type = entry.wasteType;
@@ -125,9 +138,10 @@ function wastePayload(entry: Omit<WasteEntry, 'id'> | Partial<WasteEntry>): Payl
   if (entry.unit !== undefined) payload.unit = entry.unit || null;
   if (entry.cost !== undefined) payload.cost = entry.cost;
   if (entry.notes !== undefined) payload.notes = entry.notes || null;
-  if (entry.method !== undefined && entry.unit === undefined && entry.notes === undefined) {
-    payload.unit = entry.method || null;
-  }
+  if (entry.destination !== undefined) payload.destination = entry.destination || null;
+  if (entry.receiptNumber !== undefined) payload.receipt_number = entry.receiptNumber || null;
+  if (entry.hazardous !== undefined) payload.hazardous = entry.hazardous;
+  if (entry.method !== undefined && entry.unit === undefined) payload.unit = entry.method || null;
   return payload;
 }
 
@@ -156,12 +170,17 @@ export const deleteWasteEntryRecord = (organizationId: string, id: string) =>
 function drivingPayload(entry: Omit<DrivingLogEntry, 'id'> | Partial<DrivingLogEntry>): Payload {
   const payload: Payload = {};
   if (entry.date !== undefined) payload.date = entry.date;
+  if (entry.userId !== undefined) payload.user_id = entry.userId || null;
   if (entry.driver !== undefined) payload.driver = entry.driver || null;
+  if (entry.equipmentId !== undefined) payload.equipment_id = entry.equipmentId || null;
   if (entry.startAddress !== undefined) payload.start_address = entry.startAddress || null;
   if (entry.endAddress !== undefined) payload.end_address = entry.endAddress || null;
   if (entry.distance !== undefined) payload.distance_km = entry.distance;
   if (entry.purpose !== undefined) payload.purpose = entry.purpose || null;
+  if (entry.projectId !== undefined) payload.project_id = entry.projectId || null;
   if (entry.project !== undefined) payload.project = entry.project || null;
+  if (entry.startOdometerKm !== undefined) payload.start_odometer_km = entry.startOdometerKm ?? null;
+  if (entry.endOdometerKm !== undefined) payload.end_odometer_km = entry.endOdometerKm ?? null;
   return payload;
 }
 
@@ -198,16 +217,22 @@ export async function loadTravelExpenses(organizationId: string): Promise<Travel
     const row = toRow(item);
     const rawStatus = text(row, 'status');
     const status: TravelExpenseStatus = ['Hyväksytty', 'Hylätty'].includes(rawStatus)
-      ? (rawStatus as TravelExpenseStatus)
+      ? rawStatus as TravelExpenseStatus
       : 'Odottaa';
     return {
       id: text(row, 'id'),
       date: text(row, 'date'),
+      userId: optionalText(row, 'user_id'),
       employee: text(row, 'employee'),
+      projectId: optionalText(row, 'project_id'),
       type: text(row, 'type'),
       description: text(row, 'description'),
       amount: numeric(row, 'amount'),
       status,
+      approvedBy: optionalText(row, 'approved_by'),
+      approvedAt: optionalText(row, 'approved_at'),
+      rejectionReason: optionalText(row, 'rejection_reason'),
+      attachmentPath: optionalText(row, 'attachment_path'),
     };
   });
 }
@@ -217,11 +242,17 @@ function travelExpensePayload(
 ): Payload {
   const payload: Payload = {};
   if (expense.date !== undefined) payload.date = expense.date;
+  if (expense.userId !== undefined) payload.user_id = expense.userId || null;
   if (expense.employee !== undefined) payload.employee = expense.employee || null;
+  if (expense.projectId !== undefined) payload.project_id = expense.projectId || null;
   if (expense.type !== undefined) payload.type = expense.type || null;
   if (expense.description !== undefined) payload.description = expense.description || null;
   if (expense.amount !== undefined) payload.amount = expense.amount;
   if (expense.status !== undefined) payload.status = expense.status;
+  if (expense.approvedBy !== undefined) payload.approved_by = expense.approvedBy || null;
+  if (expense.approvedAt !== undefined) payload.approved_at = expense.approvedAt || null;
+  if (expense.rejectionReason !== undefined) payload.rejection_reason = expense.rejectionReason || null;
+  if (expense.attachmentPath !== undefined) payload.attachment_path = expense.attachmentPath || null;
   return payload;
 }
 
