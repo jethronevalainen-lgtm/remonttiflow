@@ -162,7 +162,10 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
         ? [{
           key: 'admin',
           title: 'Admin',
-          items: [{ label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' }],
+          items: [
+            { label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' },
+            { label: 'Käyttäjänäkymän esikatselu', icon: Eye, path: '/kayttajaesikatselu' },
+          ],
         }]
         : []),
     ];
