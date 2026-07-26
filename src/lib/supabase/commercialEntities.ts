@@ -68,9 +68,8 @@ function leadPayload(lead: Omit<CrmLead, 'id'> | Partial<CrmLead>): Payload {
   if (lead.probability !== undefined) payload.probability = lead.probability ?? null;
   if (lead.source !== undefined) payload.source = lead.source || null;
   if (lead.lostReason !== undefined) payload.lost_reason = lead.lostReason || null;
-  if (lead.expectedCloseDate !== undefined) payload.expected_close_date = lead.expectedCloseDate || null;
   if (lead.convertedProjectId !== undefined) payload.converted_project_id = lead.convertedProjectId || null;
-  if (lead.date !== undefined) payload.date = lead.date;
+  if (lead.date !== undefined) payload.expected_date = lead.date || null;
   return payload;
 }
 
