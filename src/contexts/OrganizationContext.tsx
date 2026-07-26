@@ -69,11 +69,7 @@ async function loadOrganizationsForUser(userId: string): Promise<MyOrganization[
     );
 
     try {
-      const organizations = await getMyOrganizations(userId, controller.signal);
-      if (organizations.length === 0) {
-        throw new Error('Käyttäjätiliä ei ole liitetty yhteenkään organisaatioon.');
-      }
-      return organizations;
+      return await getMyOrganizations(userId, controller.signal);
     } catch (caught) {
       lastError = caught;
       if (attempt < ORGANIZATION_LOAD_ATTEMPTS) {
@@ -90,8 +86,8 @@ async function loadOrganizationsForUser(userId: string): Promise<MyOrganization[
 }
 
 export function OrganizationProvider({ children }: { children: ReactNode }) {
-  const { session, loading: authLoading } = useAuth();
-  const userId = session?.user.id ?? null;
+  const { session, user, loading: authLoading } = useAuth();
+  const userId = user?.id ?? session?.user?.id ?? null;
   const [organizations, setOrganizations] = useState<MyOrganization[]>([]);
   const [currentOrg, setCurrentOrgState] = useState<MyOrganization | null>(null);
   const [orgsLoading, setOrgsLoading] = useState(false);
