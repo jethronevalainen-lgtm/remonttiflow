@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -43,7 +43,7 @@ export default function Varmuuskopiot() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -53,13 +53,12 @@ export default function Varmuuskopiot() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [load]);
 
   const latest = runs[0];
-  const successful = runs.filter((run) => run.status === 'completed');
-  const latestSuccessful = successful[0];
+  const latestSuccessful = runs.find((run) => run.status === 'completed');
   const failedLastSeven = useMemo(() => {
     const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return runs.filter((run) => run.status === 'failed' && new Date(run.startedAt).getTime() >= cutoff).length;
@@ -99,9 +98,7 @@ export default function Varmuuskopiot() {
 
         <div className="space-y-5">
           <Card className="border-slate-200 shadow-sm"><CardContent className="space-y-4 p-5 sm:p-6"><div className="flex items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-orange-600"><Clock3 size={21} /></div><div><h2 className="font-semibold text-slate-950">Automaattinen aikataulu</h2><p className="mt-1 text-sm leading-6 text-slate-500">Ajo suoritetaan kahdesti vuorokaudessa 12 tunnin välein. Cron käyttää suojattua palvelintunnistetta, jota ei anneta selaimelle.</p></div></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs uppercase tracking-wider text-slate-500">Seuraamisen kohteet</p><p className="mt-2 font-semibold text-slate-950">Tietokantataulut + Storage-liitteet</p><p className="mt-1 text-xs leading-5 text-slate-500">Varmuuskopiot säilytetään yksityisessä app-backups-bucketissa 30 vuorokautta.</p></div></CardContent></Card>
-
           <Card className="border-slate-200 shadow-sm"><CardContent className="space-y-4 p-5 sm:p-6"><div className="flex items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><ArchiveRestore size={21} /></div><div><h2 className="font-semibold text-slate-950">Palautusmalli</h2><p className="mt-1 text-sm leading-6 text-slate-500">Tietokannan katastrofipalautus tehdään Supabasen hallitusta varmistuksesta tai PITR-palautuspisteestä. VaKantin JSON-varmistusta käytetään yksittäisten tietojen, siirtojen ja Storage-liitteiden palauttamiseen.</p></div></div></CardContent></Card>
-
           {latest?.status === 'failed' && <Card className="border-red-200 bg-red-50 shadow-sm"><CardContent className="p-5"><div className="flex items-start gap-3"><AlertTriangle size={20} className="mt-0.5 shrink-0 text-red-700" /><div><h2 className="font-semibold text-red-950">Viimeisin ajo epäonnistui</h2><p className="mt-1 text-sm leading-6 text-red-800">{latest.errorMessage || 'Virheen syytä ei kirjattu.'}</p></div></div></CardContent></Card>}
         </div>
       </div>
