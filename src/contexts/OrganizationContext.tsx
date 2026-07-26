@@ -25,13 +25,22 @@ import type { OrganizationRole } from '@/lib/supabase/types';
 
 /** localStorage key for the persisted active-organization id. */
 export const CURRENT_ORG_STORAGE_KEY = 'vakantti-v1-currentOrg';
+const VIEW_AS_STORAGE_KEY = 'vakantti-v1-view-as';
+export const VIEW_AS_CHANGE_EVENT = 'vakantti:view-as-change';
+
+interface ViewAsChangeDetail {
+  organizationId: string;
+  role: OrganizationRole | null;
+}
 
 export interface OrganizationContextValue {
   /** Every organization the current user is a member of. */
   organizations: MyOrganization[];
   /** The active organization, or null when none is available/selected. */
   currentOrg: MyOrganization | null;
-  /** The user's membership role in currentOrg, or null without one. */
+  /** Actual signed-in membership role. This never changes during preview. */
+  actualRole: OrganizationRole | null;
+  /** Effective role used by existing pages. May be overridden by admin preview. */
   currentRole: OrganizationRole | null;
   /** Switches the active organization (must be one of `organizations`). */
   setCurrentOrg: (orgId: string) => void;
@@ -61,6 +70,28 @@ function writeStoredOrgId(orgId: string): void {
   }
 }
 
+function readPreviewRole(organizationId: string, actualRole: OrganizationRole | null): OrganizationRole | null {
+  if (actualRole !== 'admin') return null;
+  try {
+    const raw = window.sessionStorage.getItem(VIEW_AS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      organizationId?: unknown;
+      target?: { role?: unknown };
+    };
+    const role = parsed.target?.role;
+    if (
+      parsed.organizationId !== organizationId
+      || (role !== 'admin' && role !== 'supervisor' && role !== 'worker')
+    ) {
+      return null;
+    }
+    return role;
+  } catch {
+    return null;
+  }
+}
+
 function chooseOrganization(
   organizations: MyOrganization[],
   preferredId: string | null,
@@ -79,14 +110,17 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
 
   const [organizations, setOrganizations] = useState<MyOrganization[]>([]);
   const [currentOrg, setCurrentOrgState] = useState<MyOrganization | null>(null);
+  const [previewRole, setPreviewRole] = useState<OrganizationRole | null>(null);
   const [orgsLoading, setOrgsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const actualRole = currentOrg?.role ?? null;
 
   useEffect(() => {
     // No session → signed out (or never signed in): reset everything.
     if (!session) {
       setOrganizations([]);
       setCurrentOrgState(null);
+      setPreviewRole(null);
       setOrgsLoading(false);
       setError(null);
       return;
@@ -109,6 +143,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setOrganizations([]);
         setCurrentOrgState(null);
+        setPreviewRole(null);
         setError(
           err instanceof Error
             ? err.message
@@ -124,6 +159,26 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [session]);
+
+  useEffect(() => {
+    if (!currentOrg) {
+      setPreviewRole(null);
+      return;
+    }
+    setPreviewRole(readPreviewRole(currentOrg.id, actualRole));
+  }, [actualRole, currentOrg?.id]);
+
+  useEffect(() => {
+    const handlePreviewChange = (event: Event) => {
+      const detail = (event as CustomEvent<ViewAsChangeDetail>).detail;
+      if (!currentOrg || !detail || detail.organizationId !== currentOrg.id || actualRole !== 'admin') {
+        return;
+      }
+      setPreviewRole(detail.role);
+    };
+    window.addEventListener(VIEW_AS_CHANGE_EVENT, handlePreviewChange);
+    return () => window.removeEventListener(VIEW_AS_CHANGE_EVENT, handlePreviewChange);
+  }, [actualRole, currentOrg]);
 
   const refreshOrganizations = useCallback(async () => {
     if (!session) return;
@@ -154,6 +209,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     (orgId: string) => {
       const next = organizations.find((org) => org.id === orgId);
       if (!next) return; // Not a member of that organization — ignore.
+      setPreviewRole(null);
       setCurrentOrgState(next);
       writeStoredOrgId(next.id);
     },
@@ -164,7 +220,8 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     () => ({
       organizations,
       currentOrg,
-      currentRole: currentOrg?.role ?? null,
+      actualRole,
+      currentRole: previewRole ?? actualRole,
       setCurrentOrg,
       refreshOrganizations,
       loading: authLoading || orgsLoading,
@@ -173,6 +230,8 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     [
       organizations,
       currentOrg,
+      actualRole,
+      previewRole,
       setCurrentOrg,
       refreshOrganizations,
       authLoading,
