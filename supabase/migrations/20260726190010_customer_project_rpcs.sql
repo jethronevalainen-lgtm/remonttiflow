@@ -323,7 +323,7 @@ as $$
   where p.organization_id = p_organization_id
     and p.archived_at is null
     and private.can_collaborate_on_project(p.id, p.organization_id, auth.uid())
-  order by last_message_at desc nulls last, p.name;
+  order by 7 desc nulls last, p.name;
 $$;
 
 create or replace function public.project_conversation_context(p_project_id uuid)
