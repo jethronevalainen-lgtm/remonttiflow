@@ -5,7 +5,6 @@ import type {
   DrivingLogEntry,
   Message,
   TravelExpense,
-  TravelExpenseStatus,
   WasteEntry,
 } from '@/types';
 
@@ -16,37 +15,13 @@ type TableName =
   | 'travel_expenses'
   | 'announcements'
   | 'messages';
-
 type Payload = Record<string, unknown>;
-type Row = Record<string, unknown>;
 
-function text(row: Row, key: string): string {
-  return typeof row[key] === 'string' ? row[key] as string : '';
-}
-
-function optionalText(row: Row, key: string): string | undefined {
-  return text(row, key) || undefined;
-}
-
-function numeric(row: Row, key: string): number {
-  const value = row[key];
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-}
-
-function booleanValue(row: Row, key: string): boolean {
-  return row[key] === true;
-}
-
-function toRow(value: unknown): Row {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Tietokanta palautti virheellisen tietueen.');
-  }
-  return value as Row;
+function basePayload(organizationId: string, createdBy?: string): Payload {
+  return {
+    organization_id: organizationId,
+    ...(createdBy ? { created_by: createdBy } : {}),
+  };
 }
 
 async function insert(table: TableName, payload: Payload): Promise<void> {
@@ -63,8 +38,8 @@ async function update(
   const { error } = await supabase
     .from(table)
     .update(payload)
-    .eq('id', id)
-    .eq('organization_id', organizationId);
+    .eq('organization_id', organizationId)
+    .eq('id', id);
   if (error) throw new Error(`Päivitys epäonnistui: ${error.message}`);
 }
 
@@ -72,16 +47,9 @@ async function remove(table: TableName, organizationId: string, id: string): Pro
   const { error } = await supabase
     .from(table)
     .delete()
-    .eq('id', id)
-    .eq('organization_id', organizationId);
+    .eq('organization_id', organizationId)
+    .eq('id', id);
   if (error) throw new Error(`Poistaminen epäonnistui: ${error.message}`);
-}
-
-function basePayload(organizationId: string, createdBy?: string): Payload {
-  return {
-    organization_id: organizationId,
-    ...(createdBy ? { created_by: createdBy } : {}),
-  };
 }
 
 function diaryPayload(entry: Omit<DiaryEntry, 'id'> | Partial<DiaryEntry>): Payload {
@@ -89,16 +57,14 @@ function diaryPayload(entry: Omit<DiaryEntry, 'id'> | Partial<DiaryEntry>): Payl
   if (entry.projectId !== undefined) payload.project_id = entry.projectId || null;
   if (entry.project !== undefined) payload.project = entry.project || null;
   if (entry.date !== undefined) payload.date = entry.date;
+  if (entry.author !== undefined) payload.author = entry.author || null;
   if (entry.weather !== undefined) payload.weather = entry.weather || null;
-  if (entry.temperature !== undefined) {
-    payload.temperature = entry.temperature === '' ? null : Number(entry.temperature);
-  }
+  if (entry.temperature !== undefined) payload.temperature = entry.temperature === '' ? null : Number(entry.temperature);
   if (entry.workers !== undefined) payload.workers = entry.workers;
   if (entry.workDescription !== undefined) payload.work_phases = entry.workDescription || null;
   if (entry.deliveries !== undefined) payload.deliveries = entry.deliveries || null;
   if (entry.issues !== undefined) payload.issues = entry.issues || null;
   if (entry.delays !== undefined) payload.delays = entry.delays || null;
-  if (entry.author !== undefined) payload.author = entry.author || null;
   if (entry.status !== undefined) payload.status = entry.status;
   if (entry.approvedBy !== undefined) payload.approved_by = entry.approvedBy || null;
   if (entry.approvedAt !== undefined) payload.approved_at = entry.approvedAt || null;
@@ -111,10 +77,7 @@ export async function createDiaryEntryRecord(
   createdBy: string | undefined,
   entry: Omit<DiaryEntry, 'id'>,
 ): Promise<void> {
-  await insert('diary_entries', {
-    ...basePayload(organizationId, createdBy),
-    ...diaryPayload(entry),
-  });
+  await insert('diary_entries', { ...basePayload(organizationId, createdBy), ...diaryPayload(entry) });
 }
 
 export async function updateDiaryEntryRecord(
@@ -136,12 +99,12 @@ function wastePayload(entry: Omit<WasteEntry, 'id'> | Partial<WasteEntry>): Payl
   if (entry.wasteType !== undefined) payload.waste_type = entry.wasteType;
   if (entry.amount !== undefined) payload.amount = entry.amount;
   if (entry.unit !== undefined) payload.unit = entry.unit || null;
+  else if (entry.method !== undefined) payload.unit = entry.method || null;
   if (entry.cost !== undefined) payload.cost = entry.cost;
   if (entry.notes !== undefined) payload.notes = entry.notes || null;
   if (entry.destination !== undefined) payload.destination = entry.destination || null;
   if (entry.receiptNumber !== undefined) payload.receipt_number = entry.receiptNumber || null;
   if (entry.hazardous !== undefined) payload.hazardous = entry.hazardous;
-  if (entry.method !== undefined && entry.unit === undefined) payload.unit = entry.method || null;
   return payload;
 }
 
@@ -150,10 +113,7 @@ export async function createWasteEntryRecord(
   createdBy: string | undefined,
   entry: Omit<WasteEntry, 'id'>,
 ): Promise<void> {
-  await insert('waste_entries', {
-    ...basePayload(organizationId, createdBy),
-    ...wastePayload(entry),
-  });
+  await insert('waste_entries', { ...basePayload(organizationId, createdBy), ...wastePayload(entry) });
 }
 
 export async function updateWasteEntryRecord(
@@ -189,10 +149,7 @@ export async function createDrivingLogRecord(
   createdBy: string | undefined,
   entry: Omit<DrivingLogEntry, 'id'>,
 ): Promise<void> {
-  await insert('driving_log_entries', {
-    ...basePayload(organizationId, createdBy),
-    ...drivingPayload(entry),
-  });
+  await insert('driving_log_entries', { ...basePayload(organizationId, createdBy), ...drivingPayload(entry) });
 }
 
 export async function updateDrivingLogRecord(
@@ -206,40 +163,7 @@ export async function updateDrivingLogRecord(
 export const deleteDrivingLogRecord = (organizationId: string, id: string) =>
   remove('driving_log_entries', organizationId, id);
 
-export async function loadTravelExpenses(organizationId: string): Promise<TravelExpense[]> {
-  const { data, error } = await supabase
-    .from('travel_expenses')
-    .select('*')
-    .eq('organization_id', organizationId)
-    .order('date', { ascending: false });
-  if (error) throw new Error(`Matkakulujen haku epäonnistui: ${error.message}`);
-  return (Array.isArray(data) ? data : []).map((item) => {
-    const row = toRow(item);
-    const rawStatus = text(row, 'status');
-    const status: TravelExpenseStatus = ['Hyväksytty', 'Hylätty'].includes(rawStatus)
-      ? rawStatus as TravelExpenseStatus
-      : 'Odottaa';
-    return {
-      id: text(row, 'id'),
-      date: text(row, 'date'),
-      userId: optionalText(row, 'user_id'),
-      employee: text(row, 'employee'),
-      projectId: optionalText(row, 'project_id'),
-      type: text(row, 'type'),
-      description: text(row, 'description'),
-      amount: numeric(row, 'amount'),
-      status,
-      approvedBy: optionalText(row, 'approved_by'),
-      approvedAt: optionalText(row, 'approved_at'),
-      rejectionReason: optionalText(row, 'rejection_reason'),
-      attachmentPath: optionalText(row, 'attachment_path'),
-    };
-  });
-}
-
-function travelExpensePayload(
-  expense: Omit<TravelExpense, 'id'> | Partial<TravelExpense>,
-): Payload {
+function travelPayload(expense: Omit<TravelExpense, 'id'> | Partial<TravelExpense>): Payload {
   const payload: Payload = {};
   if (expense.date !== undefined) payload.date = expense.date;
   if (expense.userId !== undefined) payload.user_id = expense.userId || null;
@@ -261,10 +185,7 @@ export async function createTravelExpenseRecord(
   createdBy: string | undefined,
   expense: Omit<TravelExpense, 'id'>,
 ): Promise<void> {
-  await insert('travel_expenses', {
-    ...basePayload(organizationId, createdBy),
-    ...travelExpensePayload(expense),
-  });
+  await insert('travel_expenses', { ...basePayload(organizationId, createdBy), ...travelPayload(expense) });
 }
 
 export async function updateTravelExpenseRecord(
@@ -272,22 +193,20 @@ export async function updateTravelExpenseRecord(
   id: string,
   expense: Partial<TravelExpense>,
 ): Promise<void> {
-  await update('travel_expenses', organizationId, id, travelExpensePayload(expense));
+  await update('travel_expenses', organizationId, id, travelPayload(expense));
 }
 
 export const deleteTravelExpenseRecord = (organizationId: string, id: string) =>
   remove('travel_expenses', organizationId, id);
 
-function announcementPayload(
-  announcement: Omit<Announcement, 'id'> | Partial<Announcement>,
-): Payload {
-  const payload: Payload = {};
-  if (announcement.title !== undefined) payload.title = announcement.title;
-  if (announcement.content !== undefined) payload.content = announcement.content || null;
-  if (announcement.priority !== undefined) payload.priority = announcement.priority;
-  if (announcement.author !== undefined) payload.author = announcement.author || null;
-  if (announcement.date !== undefined) payload.published_at = announcement.date;
-  return payload;
+function announcementPayload(announcement: Omit<Announcement, 'id'>): Payload {
+  return {
+    title: announcement.title,
+    content: announcement.content || null,
+    priority: announcement.priority,
+    author: announcement.author || null,
+    published_at: announcement.date,
+  };
 }
 
 export async function createAnnouncementRecord(
@@ -301,9 +220,8 @@ export async function createAnnouncementRecord(
   });
 }
 
-export async function deleteAnnouncementRecord(organizationId: string, id: string): Promise<void> {
-  await remove('announcements', organizationId, id);
-}
+export const deleteAnnouncementRecord = (organizationId: string, id: string) =>
+  remove('announcements', organizationId, id);
 
 function messagePayload(message: Omit<Message, 'id'> | Partial<Message>): Payload {
   const payload: Payload = {};
@@ -321,10 +239,7 @@ export async function createMessageRecord(
   createdBy: string | undefined,
   message: Omit<Message, 'id'>,
 ): Promise<void> {
-  await insert('messages', {
-    ...basePayload(organizationId, createdBy),
-    ...messagePayload(message),
-  });
+  await insert('messages', { ...basePayload(organizationId, createdBy), ...messagePayload(message) });
 }
 
 export async function updateMessageRecord(
