@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
+  ArrowRight,
   Calendar,
   CheckCircle2,
   Download,
@@ -15,7 +17,16 @@ import {
   UsersRound,
 } from 'lucide-react';
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -30,7 +41,6 @@ import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
 import { replaceProjectMembers } from '@/lib/supabase/workManagement';
-import { cn } from '@/lib/utils';
 import type { Project, ProjectStatus } from '@/types';
 
 const ALL = 'Kaikki';
@@ -50,23 +60,23 @@ interface ProjectForm {
 }
 
 const EMPTY_FORM: ProjectForm = {
-  name: '', customer: '', location: '', startDate: '', endDate: '',
-  status: 'Suunniteltu', progress: '0', budget: '0', spent: '0', description: '',
+  name: '',
+  customer: '',
+  location: '',
+  startDate: '',
+  endDate: '',
+  status: 'Suunniteltu',
+  progress: '0',
+  budget: '0',
+  spent: '0',
+  description: '',
 };
-
-function statusBadge(status: ProjectStatus) {
-  const styles: Record<ProjectStatus, string> = {
-    Aktiivinen: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    Suunniteltu: 'border-blue-200 bg-blue-50 text-blue-700',
-    Valmis: 'border-slate-200 bg-slate-50 text-slate-600',
-    Myöhässä: 'border-red-200 bg-red-50 text-red-700',
-  };
-  return <Badge variant="outline" className={styles[status]}>{status}</Badge>;
-}
 
 function money(value: number) {
   return new Intl.NumberFormat('fi-FI', {
-    style: 'currency', currency: 'EUR', maximumFractionDigits: 0,
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
@@ -82,7 +92,18 @@ function initials(name: string) {
     : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
+function statusBadge(status: ProjectStatus) {
+  const styles: Record<ProjectStatus, string> = {
+    Aktiivinen: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    Suunniteltu: 'border-blue-200 bg-blue-50 text-blue-700',
+    Valmis: 'border-slate-200 bg-slate-50 text-slate-600',
+    Myöhässä: 'border-red-200 bg-red-50 text-red-700',
+  };
+  return <Badge variant="outline" className={styles[status]}>{status}</Badge>;
+}
+
 export default function Projektit() {
+  const navigate = useNavigate();
   const { currentOrg } = useOrganization();
   const {
     projects,
@@ -90,6 +111,7 @@ export default function Projektit() {
     updateProject,
     deleteProject,
     refresh: refreshDomain,
+    operationError: domainOperationError,
   } = useAppDataContext();
   const {
     people,
@@ -130,10 +152,12 @@ export default function Projektit() {
   const filteredProjects = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fi');
     return projects.filter((project) => {
+      if (project.archivedAt) return false;
       const matchesSearch = !query || [
         project.name,
         project.customer,
         project.location ?? '',
+        project.projectNumber ?? '',
       ].some((value) => value.toLocaleLowerCase('fi').includes(query));
       const matchesFilter = activeFilter === ALL
         || (activeFilter === 'Käynnissä' && project.status === 'Aktiivinen')
@@ -144,6 +168,7 @@ export default function Projektit() {
 
   const totalBudget = projects.reduce((sum, project) => sum + project.budget, 0);
   const totalSpent = projects.reduce((sum, project) => sum + project.spent, 0);
+  const visibleError = operationError ?? domainOperationError ?? workspaceError;
   const statusFilters = [
     { key: ALL, count: projects.length, icon: FolderKanban },
     { key: 'Käynnissä', count: projects.filter((project) => project.status === 'Aktiivinen').length, icon: Play },
@@ -180,11 +205,11 @@ export default function Projektit() {
 
   const saveProject = () => {
     const nextErrors: string[] = [];
-    if (!form.name.trim()) nextErrors.push('Projektin nimi on pakollinen.');
-    if (!form.customer.trim()) nextErrors.push('Asiakas on pakollinen.');
     const progress = Number(form.progress);
     const budget = Number(form.budget);
     const spent = Number(form.spent);
+    if (!form.name.trim()) nextErrors.push('Projektin nimi on pakollinen.');
+    if (!form.customer.trim()) nextErrors.push('Asiakas on pakollinen.');
     if (!Number.isFinite(progress) || progress < 0 || progress > 100) nextErrors.push('Edistymisen pitää olla 0–100 %.');
     if (!Number.isFinite(budget) || budget < 0) nextErrors.push('Budjetti ei voi olla negatiivinen.');
     if (!Number.isFinite(spent) || spent < 0) nextErrors.push('Toteutunut kustannus ei voi olla negatiivinen.');
@@ -240,12 +265,25 @@ export default function Projektit() {
     }
   };
 
+  const removeProject = () => {
+    if (!deleteTarget) return;
+    deleteProject(deleteTarget.id);
+    setDeleteTarget(null);
+  };
+
   const exportCsv = () => {
     const header = ['Nimi', 'Asiakas', 'Sijainti', 'Aloitus', 'Lopetus', 'Tila', 'Edistyminen %', 'Budjetti', 'Toteutunut', 'Tiimin koko'];
     const rows = projects.map((project) => [
-      project.name, project.customer, project.location ?? '', project.startDate,
-      project.endDate, project.status, project.progress, project.budget,
-      project.spent, (membersByProject.get(project.id) ?? []).length,
+      project.name,
+      project.customer,
+      project.location ?? '',
+      project.startDate,
+      project.endDate,
+      project.status,
+      project.progress,
+      project.budget,
+      project.spent,
+      (membersByProject.get(project.id) ?? []).length,
     ]);
     const csv = [header, ...rows].map((row) => row.map(csvCell).join(';')).join('\n');
     const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
@@ -263,7 +301,7 @@ export default function Projektit() {
           <div>
             <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300"><FolderKanban size={16} /> Työnjohdon työtila</div>
             <h1 className="text-3xl font-bold tracking-tight">Projektit ja työmaatiimit</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Projektitiimi määrittää, ketkä työntekijät näkevät kohteen tiedot, yhteiset työmääräykset ja aikataulun.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Avaa projektin työtila nähdäksesi tehtävät, tunnit, turvallisuuden, dokumentit, tapahtumat ja muutostyöt samassa kokonaisuudessa.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={openCreate} className="gap-2 bg-orange-500 text-white hover:bg-orange-600"><Plus size={16} /> Uusi projekti</Button>
@@ -272,50 +310,86 @@ export default function Projektit() {
         </div>
       </div>
 
-      {(workspaceError || operationError) && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={17} />{operationError ?? workspaceError}</div>}
+      {visibleError && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={17} />{visibleError}</div>}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { label: 'Projektit', value: projects.length, detail: 'kaikki kohteet', icon: FolderKanban, tone: 'bg-blue-50 text-blue-700' },
-          { label: 'Käynnissä', value: projects.filter((project) => project.status === 'Aktiivinen').length, detail: 'aktiivista kohdetta', icon: Play, tone: 'bg-orange-50 text-orange-700' },
-          { label: 'Budjetti', value: money(totalBudget), detail: `${money(totalSpent)} toteutunut`, icon: Calendar, tone: 'bg-emerald-50 text-emerald-700' },
-          { label: 'Tiimipaikat', value: projectMemberships.length, detail: 'käyttäjä–projekti-kohdistusta', icon: UsersRound, tone: 'bg-purple-50 text-purple-700' },
-        ].map((item) => (
-          <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 font-mono text-2xl font-bold text-slate-950">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.detail}</p></div><div className={cn('flex h-11 w-11 items-center justify-center rounded-xl', item.tone)}><item.icon size={21} /></div></div></CardContent></Card>
-        ))}
+          { label: 'Projektit', value: projects.length, detail: 'kaikki kohteet', icon: FolderKanban },
+          { label: 'Käynnissä', value: projects.filter((project) => project.status === 'Aktiivinen').length, detail: 'aktiivista kohdetta', icon: Play },
+          { label: 'Budjetti', value: money(totalBudget), detail: `${money(totalSpent)} toteutunut`, icon: Calendar },
+          { label: 'Tiimipaikat', value: projectMemberships.length, detail: 'käyttäjä–projekti-kohdistusta', icon: UsersRound },
+        ].map((item) => <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 break-words font-mono text-2xl font-bold">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.detail}</p></div><item.icon size={20} className="text-orange-600" /></div></CardContent></Card>)}
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:flex-row lg:items-center">
-        <div className="flex flex-wrap gap-2">{statusFilters.map((filter) => <button key={filter.key} type="button" onClick={() => setActiveFilter(filter.key)} className={cn('flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors', activeFilter === filter.key ? 'border-orange-300 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50')}><filter.icon size={15} />{filter.key}<span className="font-mono text-xs">{filter.count}</span></button>)}</div>
-        <div className="relative lg:ml-auto lg:w-80"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae projektia…" className="pl-9" /></div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full lg:max-w-md"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Hae projektia, asiakasta tai sijaintia…" /></div>
+        <div className="flex gap-2 overflow-x-auto pb-1">{statusFilters.map((filter) => <Button key={filter.key} variant={activeFilter === filter.key ? 'default' : 'outline'} size="sm" className="shrink-0 gap-2" onClick={() => setActiveFilter(filter.key)}><filter.icon size={14} />{filter.key}<Badge variant="secondary" className="ml-1">{filter.count}</Badge></Button>)}</div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {filteredProjects.map((project) => {
           const memberIds = membersByProject.get(project.id) ?? [];
-          const memberPeople = memberIds.map((id) => personById.get(id)).filter(Boolean);
-          const budgetUsage = project.budget > 0 ? Math.min(project.spent / project.budget * 100, 100) : 0;
+          const memberNames = memberIds.map((id) => personById.get(id)?.name).filter(Boolean) as string[];
+          const budgetUsage = project.budget > 0 ? Math.min(100, Math.round(project.spent / project.budget * 100)) : 0;
           return (
-            <Card key={project.id} className={cn('overflow-hidden border-slate-200 shadow-sm transition-shadow hover:shadow-md', project.status === 'Myöhässä' && 'border-l-4 border-l-red-500')}>
-              <CardContent className="space-y-5 p-5">
-                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="mb-2 flex flex-wrap gap-2">{statusBadge(project.status)}<Badge variant="outline" className="gap-1"><UsersRound size={12} /> {memberIds.length}</Badge></div><h2 className="text-lg font-semibold text-slate-950">{project.name}</h2><p className="mt-1 text-sm text-slate-500">{project.customer}</p></div><div className="flex gap-1"><Button variant="ghost" size="sm" onClick={() => openEdit(project)} aria-label={`Muokkaa ${project.name}`}><Pencil size={16} /></Button><Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteTarget(project)} aria-label={`Poista ${project.name}`}><Trash2 size={16} /></Button></div></div>
-                <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2"><div className="flex items-start gap-2"><MapPin size={16} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Kohde</p><p className="text-sm font-medium text-slate-700">{project.location || 'Ei sijaintia'}</p></div></div><div className="flex items-start gap-2"><Calendar size={16} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Aikataulu</p><p className="text-sm font-medium text-slate-700">{project.startDate || '—'} – {project.endDate || '—'}</p></div></div></div>
-                <div><div className="mb-2 flex justify-between text-xs text-slate-500"><span>Edistyminen</span><span className="font-mono font-semibold text-slate-700">{project.progress}%</span></div><Progress value={project.progress} className="h-2" /></div>
-                <div><div className="mb-2 flex justify-between text-xs text-slate-500"><span>Budjetin käyttö</span><span className="font-mono font-semibold text-slate-700">{budgetUsage.toFixed(1)} %</span></div><Progress value={budgetUsage} className="h-2" /><div className="mt-2 flex justify-between text-xs text-slate-500"><span>{money(project.spent)}</span><span>{money(project.budget)}</span></div></div>
-                <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-4"><div className="flex -space-x-2">{memberPeople.slice(0, 5).map((person) => <div key={person?.userId} title={person?.name} className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-slate-900 text-xs font-bold text-white">{initials(person?.name ?? '')}</div>)}{memberIds.length === 0 && <span className="text-sm text-amber-700">Tiimiä ei ole määritetty</span>}{memberIds.length > 5 && <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-bold text-slate-700">+{memberIds.length - 5}</div>}</div><Button variant="outline" size="sm" onClick={() => openTeam(project)} className="gap-2"><UsersRound size={15} /> Hallitse tiimiä</Button></div>
+            <Card key={project.id} className="group flex h-full flex-col overflow-hidden border-slate-200 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="flex flex-1 flex-col p-0">
+                <button type="button" className="flex-1 p-5 text-left" onClick={() => navigate(`/projektit/${project.id}`)}>
+                  <div className="flex items-start justify-between gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-orange-700"><FolderKanban size={20} /></div>{statusBadge(project.status)}</div>
+                  <h2 className="mt-4 text-lg font-bold text-slate-950 group-hover:text-orange-700">{project.name}</h2>
+                  <p className="mt-1 text-sm text-slate-600">{project.customer}</p>
+                  <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><MapPin size={13} />{project.location || 'Sijaintia ei määritetty'}</p>
+                  <div className="mt-5"><div className="mb-2 flex justify-between text-xs"><span className="text-slate-500">Eteneminen</span><strong>{project.progress}%</strong></div><Progress value={project.progress} className="h-2" /></div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs"><div><p className="text-slate-500">Budjetti</p><p className="font-mono font-semibold">{money(project.budget)}</p></div><div><p className="text-slate-500">Käytetty</p><p className="font-mono font-semibold">{budgetUsage}%</p></div></div>
+                  <div className="mt-4 flex items-center justify-between"><div className="flex -space-x-2">{memberNames.slice(0, 4).map((name) => <div key={name} title={name} className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-900 text-[10px] font-bold text-white">{initials(name)}</div>)}{memberNames.length === 0 && <span className="text-xs text-slate-500">Ei tiimiä</span>}{memberNames.length > 4 && <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-bold">+{memberNames.length - 4}</div>}</div><span className="flex items-center gap-1 text-sm font-semibold text-orange-700">Avaa työtila <ArrowRight size={15} /></span></div>
+                </button>
+                <div className="flex items-center justify-end gap-1 border-t border-slate-100 px-4 py-3">
+                  <Button variant="ghost" size="sm" onClick={() => openTeam(project)}><UsersRound size={15} className="mr-1" /> Tiimi</Button>
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(project)}><Pencil size={15} className="mr-1" /> Muokkaa</Button>
+                  <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteTarget(project)}><Trash2 size={15} /></Button>
+                </div>
               </CardContent>
             </Card>
           );
         })}
+        {!workspaceLoading && filteredProjects.length === 0 && <Card className="lg:col-span-2 xl:col-span-3"><CardContent className="p-12 text-center"><FolderKanban size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei projekteja</p><p className="mt-1 text-sm text-slate-500">Luo ensimmäinen projekti tai muuta hakuehtoja.</p><Button className="mt-5" onClick={openCreate}><Plus size={16} className="mr-2" /> Uusi projekti</Button></CardContent></Card>}
       </div>
 
-      {!workspaceLoading && filteredProjects.length === 0 && <Card className="border-dashed"><CardContent className="p-12 text-center"><FolderKanban size={46} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Projekteja ei löytynyt</p></CardContent></Card>}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader><DialogTitle>{editingProject ? 'Muokkaa projektia' : 'Uusi projekti'}</DialogTitle></DialogHeader>
+          {errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-name">Nimi *</Label><Input id="project-name" value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="project-customer">Asiakas *</Label><Input id="project-customer" value={form.customer} onChange={(event) => setForm((previous) => ({ ...previous, customer: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="project-location">Sijainti</Label><Input id="project-location" value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="project-start">Aloitus</Label><Input id="project-start" type="date" value={form.startDate} onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="project-end">Valmistuminen</Label><Input id="project-end" type="date" value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div>
+            <div className="space-y-2"><Label>Tila</Label><Select value={form.status} onValueChange={(status: ProjectStatus) => setForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PROJECT_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor="project-progress">Edistyminen %</Label><Input id="project-progress" type="number" min="0" max="100" value={form.progress} onChange={(event) => setForm((previous) => ({ ...previous, progress: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="project-budget">Budjetti €</Label><Input id="project-budget" type="number" min="0" step="0.01" value={form.budget} onChange={(event) => setForm((previous) => ({ ...previous, budget: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="project-spent">Toteutunut €</Label><Input id="project-spent" type="number" min="0" step="0.01" value={form.spent} onChange={(event) => setForm((previous) => ({ ...previous, spent: event.target.value }))} /></div>
+            <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-description">Kuvaus</Label><Textarea id="project-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} rows={4} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Peruuta</Button><Button onClick={saveProject}>Tallenna</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editingProject ? 'Muokkaa projektia' : 'Uusi projekti'}</DialogTitle></DialogHeader>{errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label htmlFor="project-name">Projektin nimi *</Label><Input id="project-name" value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="project-customer">Asiakas *</Label><Input id="project-customer" value={form.customer} onChange={(event) => setForm((previous) => ({ ...previous, customer: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="project-location">Sijainti</Label><Input id="project-location" value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="project-start">Aloitus</Label><Input id="project-start" type="date" value={form.startDate} onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="project-end">Valmistuminen</Label><Input id="project-end" type="date" value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div><div className="space-y-2"><Label>Tila</Label><Select value={form.status} onValueChange={(status: ProjectStatus) => setForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PROJECT_STATUSES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="project-progress">Edistyminen %</Label><Input id="project-progress" type="number" min="0" max="100" value={form.progress} onChange={(event) => setForm((previous) => ({ ...previous, progress: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="project-budget">Budjetti €</Label><Input id="project-budget" type="number" min="0" value={form.budget} onChange={(event) => setForm((previous) => ({ ...previous, budget: event.target.value }))} /></div><div className="space-y-2"><Label htmlFor="project-spent">Toteutunut €</Label><Input id="project-spent" type="number" min="0" value={form.spent} onChange={(event) => setForm((previous) => ({ ...previous, spent: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="project-description">Kuvaus</Label><Textarea id="project-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} rows={4} /></div></div><DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Peruuta</Button><Button onClick={saveProject}>Tallenna projekti</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={Boolean(teamProject)} onOpenChange={(open) => { if (!open) setTeamProject(null); }}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader><DialogTitle>Projektitiimi · {teamProject?.name}</DialogTitle></DialogHeader>
+          <p className="text-sm text-slate-600">Valitut käyttäjät näkevät projektitiimille osoitetut työmääräykset, vuorot ja projektin tiedot.</p>
+          <div className="max-h-[55vh] space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-2">
+            {people.map((person) => { const checked = teamUserIds.includes(person.userId); return <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-3 hover:bg-slate-50"><Checkbox checked={checked} onCheckedChange={(value) => toggleTeamUser(person.userId, value === true)} /><div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div><div><p className="font-medium">{person.name}</p><p className="text-xs text-slate-500">{person.role}</p></div></label>; })}
+            {people.length === 0 && <p className="p-8 text-center text-sm text-slate-500">Organisaatiossa ei ole kirjautuvia käyttäjiä.</p>}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setTeamProject(null)}>Peruuta</Button><Button onClick={() => void saveTeam()} disabled={savingTeam}>{savingTeam ? 'Tallennetaan…' : 'Tallenna tiimi'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Dialog open={Boolean(teamProject)} onOpenChange={(open) => !open && setTeamProject(null)}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Projektitiimi · {teamProject?.name}</DialogTitle></DialogHeader><p className="text-sm leading-6 text-slate-600">Valitut käyttäjät näkevät tämän projektin tiedot sekä projektitiimille kohdistetut työmääräykset.</p><div className="max-h-[420px] space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-3">{people.map((person) => <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-3 hover:bg-slate-50"><Checkbox checked={teamUserIds.includes(person.userId)} onCheckedChange={(checked) => toggleTeamUser(person.userId, checked === true)} /><span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-800">{person.name}</span><span className="block truncate text-xs text-slate-500">{person.email || person.role}</span></span><Badge variant="outline">{person.role === 'admin' ? 'Admin' : person.role === 'supervisor' ? 'Työnjohto' : 'Työntekijä'}</Badge></label>)}{people.length === 0 && <div className="p-6 text-center text-sm text-slate-500">Kutsu käyttäjät ensin organisaatioon Hallinta-näkymässä.</div>}</div><DialogFooter><Button variant="outline" onClick={() => setTeamProject(null)} disabled={savingTeam}>Peruuta</Button><Button onClick={() => void saveTeam()} disabled={savingTeam}>{savingTeam ? 'Tallennetaan…' : `Tallenna tiimi (${teamUserIds.length})`}</Button></DialogFooter></DialogContent></Dialog>
-
-      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Poista projekti</AlertDialogTitle><AlertDialogDescription>Poistetaanko <strong>{deleteTarget?.name}</strong>? Projektiin liittyvät työmääräykset poistuvat tietokannan viite-ehtojen mukaisesti.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction onClick={() => { if (deleteTarget) deleteProject(deleteTarget.id); setDeleteTarget(null); }} className="bg-red-600 hover:bg-red-700">Poista</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Poistetaanko projekti?</AlertDialogTitle><AlertDialogDescription>Projekti “{deleteTarget?.name}” poistetaan. Historialliset kirjaukset säilyvät, mutta niiden projektiviittaus irrotetaan.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={removeProject}>Poista projekti</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }
