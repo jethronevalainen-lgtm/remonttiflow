@@ -1,4 +1,5 @@
-import { loadDomainData, type DomainData } from './domainData';
+import { type DomainData } from './domainData';
+import { loadExtendedDomainData } from './extendedDomainData';
 import { supabase } from './client';
 import type {
   SafetyItem,
@@ -116,7 +117,7 @@ function mapSafetyItem(item: Row): SafetyItem {
 
 export async function loadNormalizedDomainData(organizationId: string): Promise<DomainData> {
   const [base, timeEntries, safetyItems] = await Promise.all([
-    loadDomainData(organizationId),
+    loadExtendedDomainData(organizationId),
     selectRows('time_entries', organizationId),
     selectRows('safety_items', organizationId),
   ]);

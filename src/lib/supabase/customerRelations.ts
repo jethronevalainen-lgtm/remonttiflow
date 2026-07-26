@@ -159,6 +159,13 @@ export async function createCrmActivity(input: {
   description?: string;
   dueAt?: string;
 }): Promise<void> {
+  if (!input.leadId && !input.customerId) {
+    throw new Error('Valitse aktiviteetille myyntimahdollisuus tai asiakas.');
+  }
+  if (!input.subject.trim()) {
+    throw new Error('Aktiviteetin otsikko on pakollinen.');
+  }
+
   const { error } = await supabase.from('crm_activities').insert({
     organization_id: input.organizationId,
     lead_id: input.leadId || null,
