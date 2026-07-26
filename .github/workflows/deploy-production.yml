@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: vakantti-production
@@ -23,7 +24,7 @@ env:
 
 jobs:
   deploy:
-    name: Build and verify Cloudflare Git deployment
+    name: Build, deploy and verify Cloudflare Pages
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -43,7 +44,26 @@ jobs:
       - name: Run production quality gate
         run: npm run ship:check
 
-      - name: Verify native Cloudflare Pages release
+      - name: Validate Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN repository secret"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID repository secret"; exit 1; }
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4 pages deploy dist \
+            --project-name=vakantti \
+            --branch=main \
+            --commit-hash="$GITHUB_SHA" \
+            --commit-dirty=false
+
+      - name: Verify production release
         env:
           EXPECTED_COMMIT: ${{ github.sha }}
         run: |
@@ -52,10 +72,7 @@ jobs:
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           let lastFailure = 'not checked';
 
-          // Cloudflare Pages receives the same main push through its native
-          // GitHub integration. Poll long enough to cover its build queue and
-          // edge propagation, then require exact immutable release metadata.
-          for (let attempt = 1; attempt <= 90; attempt += 1) {
+          for (let attempt = 1; attempt <= 60; attempt += 1) {
             try {
               const suffix = `${expected}-${attempt}-${Date.now()}`;
               const versionResponse = await fetch(
@@ -108,6 +125,5 @@ jobs:
           }
 
           console.error(`Production verification failed: ${lastFailure}`);
-          console.error('Confirm that Cloudflare Pages project "vakantti" is connected to this GitHub repository and production branch "main".');
           process.exit(1);
           NODE
