@@ -37,6 +37,8 @@ export interface Project {
   id: string;
   name: string;
   customer: string;
+  customerId?: string;
+  projectNumber?: string;
   status: ProjectStatus;
   startDate: string;
   endDate: string;
@@ -45,6 +47,13 @@ export interface Project {
   spent: number;
   description?: string;
   location?: string;
+  responsibleSupervisorId?: string;
+  projectManagerId?: string;
+  costCenter?: string;
+  siteLatitude?: number;
+  siteLongitude?: number;
+  siteRadiusM?: number;
+  archivedAt?: string;
   /** Auth users explicitly placed on this site/project. */
   memberUserIds?: string[];
   /** Resolved display names for memberUserIds. */
@@ -74,12 +83,22 @@ export interface WorkOrder {
 export interface TimeEntry {
   id: string;
   date: string;
+  userId?: string;
+  employeeId?: string;
   employee: string;
+  projectId?: string;
   project: string;
+  workOrderId?: string;
   hours: number;
   overtime: number;
+  breakMinutes?: number;
+  source?: string;
   description: string;
   status: TimeEntryStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  lockedAt?: string;
   /** View fields used by the Tuntikirjaukset page (not part of the core record). */
   dayName?: string;
   startTime?: string;
@@ -102,6 +121,11 @@ export interface Employee {
   email: string;
   startDate: string;
   status: EmployeeStatus;
+  hourlyCostCents?: number;
+  employmentType?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  archivedAt?: string;
   /** Legacy display-only metrics retained until project assignments are normalized. */
   projects: number;
   hours: number;
@@ -117,8 +141,15 @@ export interface Equipment {
   location: string;
   status: EquipmentStatus;
   lastMaintenance: string;
+  assetNumber?: string;
   model?: string;
   year?: number;
+  acquisitionCostCents?: number;
+  hourlyCostCents?: number;
+  nextMaintenance?: string;
+  currentProjectId?: string;
+  responsibleUserId?: string;
+  archivedAt?: string;
   lastService?: string;
   nextService?: string;
   hours?: number;
@@ -134,6 +165,9 @@ export interface Customer {
   phone: string;
   email: string;
   address: string;
+  businessId?: string;
+  notes?: string;
+  archivedAt?: string;
   projectCount: number;
   lastContact: string;
   status: CustomerStatus;
@@ -143,15 +177,23 @@ export interface CrmLead {
   id: string;
   name: string;
   company: string;
+  customerId?: string;
   value: number;
   stage: CrmLeadStage;
   assignee: string;
+  assigneeUserId?: string;
+  probability?: number;
+  source?: string;
+  lostReason?: string;
+  convertedProjectId?: string;
+  lastActivityAt?: string;
   date: string;
 }
 
 export interface DiaryEntry {
   id: string;
   date: string;
+  projectId?: string;
   project: string;
   author: string;
   weather: string;
@@ -162,6 +204,9 @@ export interface DiaryEntry {
   issues?: string;
   delays?: string;
   status?: DiaryStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  lockedBy?: string;
 }
 
 export interface SafetyItem {
@@ -169,13 +214,29 @@ export interface SafetyItem {
   type: SafetyItemType;
   title: string;
   date: string;
+  projectId?: string;
+  project?: string;
+  description?: string;
+  location?: string;
   severity?: SafetyItemSeverity;
   status: string;
+  assignee?: string;
+  assigneeUserId?: string;
+  dueDate?: string;
+  rootCause?: string;
+  correctiveAction?: string;
+  preventiveAction?: string;
+  resolvedAt?: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface WasteEntry {
   id: string;
   date: string;
+  projectId?: string;
   project: string;
   wasteType: string;
   amount: number;
@@ -183,28 +244,42 @@ export interface WasteEntry {
   cost: number;
   unit?: string;
   notes?: string;
+  destination?: string;
+  receiptNumber?: string;
+  hazardous?: boolean;
 }
 
 export interface DrivingLogEntry {
   id: string;
   date: string;
+  userId?: string;
   driver: string;
+  equipmentId?: string;
   vehicle: string;
   startAddress: string;
   endAddress: string;
   distance: number;
   purpose: string;
+  projectId?: string;
   project?: string;
+  startOdometerKm?: number;
+  endOdometerKm?: number;
 }
 
 export interface TravelExpense {
   id: string;
   date: string;
+  userId?: string;
   employee: string;
+  projectId?: string;
   type: string;
   description: string;
   amount: number;
   status: TravelExpenseStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  attachmentPath?: string;
 }
 
 export interface Announcement {
