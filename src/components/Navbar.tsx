@@ -11,6 +11,7 @@ import {
   ClipboardList,
   ClipboardSignature,
   Clock,
+  DatabaseBackup,
   Eye,
   FileQuestion,
   FileText,
@@ -19,6 +20,7 @@ import {
   LayoutDashboard,
   MessageCircle,
   MessageSquare,
+  QrCode,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -45,6 +47,7 @@ const workerGroups: NavGroup[] = [
       { label: 'Oma työtila', icon: LayoutDashboard, path: '/dashboard' },
       { label: 'Minun työni', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
+      { label: 'Omat henkilöstö- ja palkkatiedot', icon: UserCircle, path: '/henkilokortit' },
       { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
     ],
   },
@@ -89,6 +92,7 @@ const managementGroups: NavGroup[] = [
     title: 'Tuotanto',
     items: [
       { label: 'Projektit ja tiimit', icon: FolderKanban, path: '/projektit' },
+      { label: 'QR-kirjautumisen hallinta', icon: QrCode, path: '/qr-hallinta' },
       { label: 'Projektipyynnöt', icon: FileQuestion, path: '/projektipyynnot' },
       { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
       { label: 'Tarkastukset ja luovutukset', icon: ClipboardList, path: '/tarkastukset' },
@@ -106,6 +110,7 @@ const managementGroups: NavGroup[] = [
     title: 'Henkilöt ja kirjaukset',
     items: [
       { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto' },
+      { label: 'Henkilökortit ja palkat', icon: ShieldCheck, path: '/henkilokortit' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
       { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
       { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
@@ -173,6 +178,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
                 title: 'Admin',
                 items: [
                   { label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' },
+                  { label: 'Varmuuskopiot', icon: DatabaseBackup, path: '/varmuuskopiot' },
                   { label: 'Käyttäjänäkymän esikatselu', icon: Eye, path: '/kayttajaesikatselu' },
                 ],
               }]
