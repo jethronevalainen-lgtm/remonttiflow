@@ -5,6 +5,7 @@ export { default as ProjectRequests } from './ProjectRequests';
 export { default as ProjectDiscussions } from './ProjectDiscussions';
 export { default as ProjectConversation } from './ProjectConversation';
 export { default as CustomerProject } from './CustomerProject';
+export { default as CustomerCollaborationManager } from './CustomerCollaborationManager';
 export { default as Asiakkaat } from './Asiakkaat';
 export { default as Henkilosto } from './Henkilosto';
 export { default as Tyomaaraykset } from './Tyomaaraykset';
