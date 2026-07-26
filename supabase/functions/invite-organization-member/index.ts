@@ -11,6 +11,8 @@ const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
 };
 
+const DEFAULT_APP_ORIGIN = 'https://vakantti.pages.dev';
+
 type OrganizationRole = 'admin' | 'supervisor' | 'worker' | 'customer';
 
 interface InviteRequest {
@@ -29,10 +31,14 @@ function readNamedKey(variableName: string, legacyName: string): string | null {
   const named = Deno.env.get(variableName);
   if (named) {
     try {
-      const parsed = JSON.parse(named) as Record<string, string>;
-      if (parsed.default) return parsed.default;
-      const first = Object.values(parsed).find(Boolean);
-      if (first) return first;
+      const parsed = JSON.parse(named) as Record<string, unknown>;
+      for (const value of Object.values(parsed)) {
+        if (typeof value === 'string' && value.length > 20) return value;
+        if (value && typeof value === 'object' && 'key' in value) {
+          const key = (value as { key?: unknown }).key;
+          if (typeof key === 'string' && key.length > 20) return key;
+        }
+      }
     } catch {
       // Fall back to the legacy single-value environment variable below.
     }
@@ -42,6 +48,15 @@ function readNamedKey(variableName: string, legacyName: string): string | null {
 
 function isRole(value: unknown): value is OrganizationRole {
   return value === 'admin' || value === 'supervisor' || value === 'worker' || value === 'customer';
+}
+
+function activationUrl(): string {
+  const configured = Deno.env.get('VAKANTTI_APP_URL')?.trim() || DEFAULT_APP_ORIGIN;
+  const origin = new URL(configured);
+  if (origin.protocol !== 'https:') {
+    throw new Error('VaKantin kutsuosoitteen pitää käyttää HTTPS-yhteyttä.');
+  }
+  return new URL('/auth/callback', origin.origin).toString();
 }
 
 Deno.serve(async (request: Request) => {
@@ -143,9 +158,17 @@ Deno.serve(async (request: Request) => {
   let invited = false;
 
   if (!targetUserId) {
+    let redirectTo: string;
+    try {
+      redirectTo = activationUrl();
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : 'Kutsun palautusosoite on virheellinen.' }, 503);
+    }
+
     const { data: inviteData, error: inviteError } = await adminClient.auth.admin
       .inviteUserByEmail(email, {
         data: fullName ? { full_name: fullName } : undefined,
+        redirectTo,
       });
 
     if (inviteError || !inviteData.user) {
@@ -214,7 +237,13 @@ Deno.serve(async (request: Request) => {
     action: invited ? 'organization_member_invited' : 'organization_member_added_existing_user',
     table_name: 'organization_members',
     record_id: targetUserId,
-    metadata: { target_user_id: targetUserId, email, role, customer_id: customerId || null },
+    metadata: {
+      target_user_id: targetUserId,
+      email,
+      role,
+      customer_id: customerId || null,
+      activation_origin: DEFAULT_APP_ORIGIN,
+    },
   });
 
   return json({
@@ -222,7 +251,7 @@ Deno.serve(async (request: Request) => {
     invited,
     userId: targetUserId,
     message: invited
-      ? 'Kutsu lähetettiin ja jäsenyys luotiin.'
+      ? 'Kutsu lähetettiin VaKantin tuotanto-osoitteeseen.'
       : 'Olemassa oleva käyttäjä lisättiin organisaatioon.',
   });
 });
