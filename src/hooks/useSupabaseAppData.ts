@@ -60,7 +60,11 @@ export function useSupabaseAppData() {
 
   const refresh = useCallback(async () => {
     if (!organizationId) return;
-    await queryClient.invalidateQueries({ queryKey: domainQueryKey(organizationId) });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: domainQueryKey(organizationId) }),
+      queryClient.invalidateQueries({ queryKey: ['resource-management', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['customer-relations', organizationId] }),
+    ]);
   }, [organizationId, queryClient]);
 
   const runMutation = useCallback(
