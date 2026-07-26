@@ -1,59 +1,54 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Users,
-  ChevronRight,
+  AlertTriangle,
+  Building2,
+  Edit3,
+  Mail,
+  Phone,
   Plus,
   Search,
-  Pencil,
   Trash2,
   UserCheck,
-  FolderKanban,
-  Building2,
+  Users,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+
 import {
   AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '@/components/ui/table';
-import { EmptyState } from '@/components/states';
-import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
-import type { Customer, CustomerType, CustomerStatus } from '@/types';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useCustomerRelations } from '@/hooks/useCustomerRelations';
+import {
+  createCustomerContact,
+  deleteCustomerContact,
+  updateCustomerContact,
+  type CustomerContact,
+} from '@/lib/supabase/customerRelations';
+import type { Customer, CustomerStatus, CustomerType } from '@/types';
 
-/* ─── Lomakkeen tyyppi ─── */
+const CUSTOMER_TYPES: CustomerType[] = ['Yritys', 'Yksityinen', 'Taloyhtiö'];
+const CUSTOMER_STATUSES: CustomerStatus[] = ['Aktiivinen', 'Epäaktiivinen'];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 interface CustomerForm {
   name: string;
   type: CustomerType;
@@ -61,501 +56,159 @@ interface CustomerForm {
   phone: string;
   email: string;
   address: string;
+  businessId: string;
+  notes: string;
   status: CustomerStatus;
 }
 
-type FormErrors = Partial<Record<keyof CustomerForm, string>>;
-
-const emptyForm: CustomerForm = {
-  name: '',
-  type: 'Yritys',
-  contactPerson: '',
-  phone: '',
-  email: '',
-  address: '',
-  status: 'Aktiivinen',
+const emptyCustomer: CustomerForm = {
+  name: '', type: 'Yritys', contactPerson: '', phone: '', email: '', address: '',
+  businessId: '', notes: '', status: 'Aktiivinen',
 };
 
-const CUSTOMER_TYPES: CustomerType[] = ['Yritys', 'Yksityinen', 'Taloyhtiö'];
-const CUSTOMER_STATUSES: CustomerStatus[] = ['Aktiivinen', 'Epäaktiivinen'];
+interface ContactForm {
+  customerId: string;
+  name: string;
+  title: string;
+  email: string;
+  phone: string;
+  isPrimary: boolean;
+  notes: string;
+}
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/* ─── Merkit ─── */
-const getStatusBadge = (status: CustomerStatus) =>
-  status === 'Aktiivinen' ? (
-    <Badge className="bg-success-light text-success border-0 font-medium">Aktiivinen</Badge>
-  ) : (
-    <Badge className="bg-bg-light text-text-secondary border border-[#E2E8F0] font-medium">
-      Epäaktiivinen
-    </Badge>
-  );
-
-const getTypeBadge = (type: CustomerType) => {
-  switch (type) {
-    case 'Yritys':
-      return <Badge className="bg-primary-light text-primary border-0 font-medium">Yritys</Badge>;
-    case 'Taloyhtiö':
-      return <Badge className="bg-info-light text-info border-0 font-medium">Taloyhtiö</Badge>;
-    case 'Yksityinen':
-      return (
-        <Badge className="bg-warning-light text-warning border-0 font-medium">Yksityinen</Badge>
-      );
-    default:
-      return <Badge variant="secondary">{type}</Badge>;
-  }
+const emptyContact: ContactForm = {
+  customerId: '', name: '', title: '', email: '', phone: '', isPrimary: false, notes: '',
 };
 
-/* ─── Komponentti ─── */
+function statusBadge(status: CustomerStatus) {
+  return <Badge className={status === 'Aktiivinen' ? 'border-0 bg-emerald-50 text-emerald-700' : 'border-0 bg-slate-100 text-slate-600'}>{status}</Badge>;
+}
+
 export default function Asiakkaat() {
-  const { customers, addCustomer, updateCustomer, deleteCustomer } = useAppDataContext();
-
+  const { user } = useAuth();
+  const { currentOrg } = useOrganization();
+  const { customers, projects, addCustomer, updateCustomer, deleteCustomer, operationError: domainError } = useAppDataContext();
+  const relations = useCustomerRelations();
   const [search, setSearch] = useState('');
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [customerDialog, setCustomerDialog] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
-  const [form, setForm] = useState<CustomerForm>(emptyForm);
-  const [errors, setErrors] = useState<FormErrors>({});
+  const [deleteCustomerTarget, setDeleteCustomerTarget] = useState<Customer | null>(null);
+  const [customerForm, setCustomerForm] = useState<CustomerForm>(emptyCustomer);
+  const [contactDialog, setContactDialog] = useState(false);
+  const [editingContact, setEditingContact] = useState<CustomerContact | null>(null);
+  const [deleteContactTarget, setDeleteContactTarget] = useState<CustomerContact | null>(null);
+  const [contactForm, setContactForm] = useState<ContactForm>(emptyContact);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const filteredCustomers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter(
-      c =>
-        c.name.toLowerCase().includes(q) ||
-        c.contactPerson.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        c.address.toLowerCase().includes(q),
-    );
+    const query = search.trim().toLocaleLowerCase('fi');
+    return customers.filter((customer) => !query || [
+      customer.name,
+      customer.contactPerson,
+      customer.email,
+      customer.address,
+      customer.businessId ?? '',
+    ].some((value) => value.toLocaleLowerCase('fi').includes(query)));
   }, [customers, search]);
-
-  const activeCount = customers.filter(c => c.status === 'Aktiivinen').length;
-  const totalProjects = customers.reduce((sum, c) => sum + (c.projectCount || 0), 0);
-
-  const openCreateDialog = () => {
-    setEditingCustomer(null);
-    setForm(emptyForm);
-    setErrors({});
-    setDialogOpen(true);
-  };
-
-  const openEditDialog = (customer: Customer) => {
-    setEditingCustomer(customer);
-    setForm({
-      name: customer.name,
-      type: customer.type,
-      contactPerson: customer.contactPerson,
-      phone: customer.phone,
-      email: customer.email,
-      address: customer.address,
-      status: customer.status,
+  const customerById = useMemo(() => new Map(customers.map((item) => [item.id, item])), [customers]);
+  const projectsByCustomer = useMemo(() => {
+    const map = new Map<string, number>();
+    projects.forEach((project) => {
+      if (project.customerId) map.set(project.customerId, (map.get(project.customerId) ?? 0) + 1);
+      else {
+        const customer = customers.find((item) => item.name === project.customer);
+        if (customer) map.set(customer.id, (map.get(customer.id) ?? 0) + 1);
+      }
     });
-    setErrors({});
-    setDialogOpen(true);
+    return map;
+  }, [customers, projects]);
+  const visibleError = operationError ?? domainError ?? relations.error;
+
+  const openCustomerCreate = () => {
+    setEditingCustomer(null); setCustomerForm(emptyCustomer); setErrors([]); setOperationError(null); setCustomerDialog(true);
   };
 
-  const setField = <K extends keyof CustomerForm>(field: K, value: CustomerForm[K]) => {
-    setForm(prev => ({ ...prev, [field]: value }));
-    setErrors(prev => ({ ...prev, [field]: undefined }));
+  const openCustomerEdit = (customer: Customer) => {
+    setEditingCustomer(customer);
+    setCustomerForm({ name: customer.name, type: customer.type, contactPerson: customer.contactPerson, phone: customer.phone, email: customer.email, address: customer.address, businessId: customer.businessId ?? '', notes: customer.notes ?? '', status: customer.status });
+    setErrors([]); setOperationError(null); setCustomerDialog(true);
   };
 
-  const validate = (): boolean => {
-    const next: FormErrors = {};
-    if (!form.name.trim()) next.name = 'Nimi on pakollinen';
-    if (form.email.trim() && !EMAIL_RE.test(form.email.trim())) {
-      next.email = 'Tarkista sähköpostiosoitteen muoto';
-    }
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const handleSave = () => {
-    if (!validate()) return;
+  const saveCustomer = () => {
+    const nextErrors: string[] = [];
+    if (!customerForm.name.trim()) nextErrors.push('Asiakkaan nimi on pakollinen.');
+    if (customerForm.email.trim() && !EMAIL_RE.test(customerForm.email.trim())) nextErrors.push('Tarkista sähköpostiosoitteen muoto.');
+    setErrors(nextErrors);
+    if (nextErrors.length) return;
     const payload = {
-      name: form.name.trim(),
-      type: form.type,
-      contactPerson: form.contactPerson.trim(),
-      phone: form.phone.trim(),
-      email: form.email.trim(),
-      address: form.address.trim(),
-      status: form.status,
+      name: customerForm.name.trim(), type: customerForm.type, contactPerson: customerForm.contactPerson.trim(),
+      phone: customerForm.phone.trim(), email: customerForm.email.trim(), address: customerForm.address.trim(),
+      businessId: customerForm.businessId.trim() || undefined, notes: customerForm.notes.trim() || undefined,
+      status: customerForm.status,
     };
-    if (editingCustomer) {
-      updateCustomer(editingCustomer.id, payload);
-    } else {
-      addCustomer({
-        ...payload,
-        projectCount: 0,
-        lastContact: new Date().toLocaleDateString('fi-FI'),
-      });
-    }
-    setDialogOpen(false);
+    if (editingCustomer) updateCustomer(editingCustomer.id, payload);
+    else addCustomer({ ...payload, projectCount: 0, lastContact: new Date().toLocaleDateString('fi-FI') });
+    setCustomerDialog(false);
   };
 
-  const handleDelete = () => {
-    if (deleteTarget) {
-      deleteCustomer(deleteTarget.id);
-      setDeleteTarget(null);
-    }
+  const openContactCreate = (customerId = '') => {
+    setEditingContact(null); setContactForm({ ...emptyContact, customerId }); setErrors([]); setOperationError(null); setContactDialog(true);
+  };
+
+  const openContactEdit = (contact: CustomerContact) => {
+    setEditingContact(contact);
+    setContactForm({ customerId: contact.customerId, name: contact.name, title: contact.title ?? '', email: contact.email ?? '', phone: contact.phone ?? '', isPrimary: contact.isPrimary, notes: contact.notes ?? '' });
+    setErrors([]); setOperationError(null); setContactDialog(true);
+  };
+
+  const saveContact = async () => {
+    const nextErrors: string[] = [];
+    if (!contactForm.customerId) nextErrors.push('Valitse asiakas.');
+    if (!contactForm.name.trim()) nextErrors.push('Yhteyshenkilön nimi on pakollinen.');
+    if (contactForm.email.trim() && !EMAIL_RE.test(contactForm.email.trim())) nextErrors.push('Tarkista sähköpostiosoitteen muoto.');
+    setErrors(nextErrors);
+    if (nextErrors.length || !currentOrg) return;
+    setSaving(true); setOperationError(null);
+    try {
+      const input = { organizationId: currentOrg.id, name: contactForm.name, title: contactForm.title, email: contactForm.email, phone: contactForm.phone, isPrimary: contactForm.isPrimary, notes: contactForm.notes };
+      if (editingContact) await updateCustomerContact({ ...input, id: editingContact.id });
+      else await createCustomerContact({ ...input, customerId: contactForm.customerId, userId: user?.id });
+      await relations.refresh(); setContactDialog(false);
+    } catch (caught) { setOperationError(caught instanceof Error ? caught.message : 'Yhteyshenkilön tallennus epäonnistui.'); }
+    finally { setSaving(false); }
+  };
+
+  const removeContact = async () => {
+    if (!currentOrg || !deleteContactTarget) return;
+    setSaving(true); try { await deleteCustomerContact(currentOrg.id, deleteContactTarget.id); await relations.refresh(); setDeleteContactTarget(null); }
+    catch (caught) { setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.'); }
+    finally { setSaving(false); }
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-      className="space-y-6"
-    >
-      {/* ── Sivun otsikko ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-body-sm text-text-secondary mb-1">
-            <span>Dashboard</span>
-            <ChevronRight size={14} />
-            <span className="text-text-primary font-medium">Asiakkaat</span>
-          </div>
-          <h1 className="text-hero text-text-primary">Asiakkaat</h1>
-          <p className="text-body-sm text-text-secondary mt-1">
-            Asiakasrekisteri ja yhteystiedot
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            className="bg-primary hover:bg-primary-hover text-white gap-2"
-            onClick={openCreateDialog}
-          >
-            <Plus size={16} /> Uusi asiakas
-          </Button>
-        </div>
-      </div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-hero text-text-primary">Asiakkaat ja yhteyshenkilöt</h1><p className="mt-1 text-body-sm text-text-secondary">Asiakasrekisteri, useat yhteyshenkilöt ja projektihistoria</p></div><div className="flex flex-wrap gap-2"><Button onClick={openCustomerCreate}><Plus size={16} className="mr-2" /> Uusi asiakas</Button><Button variant="outline" onClick={() => openContactCreate()}><UserCheck size={16} className="mr-2" /> Uusi yhteyshenkilö</Button></div></div>
+      {visibleError && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} />{visibleError}</div>}
 
-      {/* ── Tilastot ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        {[
-          {
-            label: 'Asiakkaita yhteensä',
-            value: customers.length,
-            unit: 'asiakasta',
-            icon: Users,
-            color: 'text-primary',
-            bg: 'bg-primary-light',
-          },
-          {
-            label: 'Aktiiviset',
-            value: activeCount,
-            unit: 'asiakasta',
-            icon: UserCheck,
-            color: 'text-success',
-            bg: 'bg-success-light',
-          },
-          {
-            label: 'Projektit yhteensä',
-            value: totalProjects,
-            unit: 'projektia',
-            icon: FolderKanban,
-            color: 'text-warning',
-            bg: 'bg-warning-light',
-          },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.06, duration: 0.2 }}
-          >
-            <Card className="border border-[#E2E8F0] shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <span className="text-caption text-text-secondary uppercase tracking-wider">
-                    {stat.label}
-                  </span>
-                  <div
-                    className={cn(
-                      'w-10 h-10 rounded-lg flex items-center justify-center',
-                      stat.bg,
-                    )}
-                  >
-                    <stat.icon size={20} className={stat.color} />
-                  </div>
-                </div>
-                <p className="text-[28px] font-bold text-text-primary font-mono leading-none">
-                  {stat.value}
-                </p>
-                <p className="text-body-sm text-text-secondary mt-1">{stat.unit}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
+        { label: 'Asiakkaita', value: customers.length, icon: Building2 },
+        { label: 'Aktiivisia', value: customers.filter((item) => item.status === 'Aktiivinen').length, icon: UserCheck },
+        { label: 'Yhteyshenkilöitä', value: relations.contacts.length, icon: Users },
+        { label: 'Projekteja', value: projects.length, icon: Building2 },
+      ].map((item) => <Card key={item.label}><CardContent className="p-5"><div className="flex justify-between text-sm text-text-secondary"><span>{item.label}</span><item.icon size={18} className="text-primary" /></div><p className="mt-2 font-mono text-3xl font-bold">{item.value}</p></CardContent></Card>)}</div>
 
-      {/* ── Haku ── */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-          />
-          <Input
-            placeholder="Hae asiakkaita..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9 h-10 border-[#E2E8F0] focus:border-primary focus:ring-primary"
-          />
-        </div>
-      </div>
+      <Tabs defaultValue="customers" className="space-y-4"><TabsList><TabsTrigger value="customers">Asiakkaat</TabsTrigger><TabsTrigger value="contacts">Yhteyshenkilöt ({relations.contacts.length})</TabsTrigger></TabsList>
+        <TabsContent value="customers" className="space-y-4"><div className="relative max-w-md"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae asiakasta…" className="pl-9" /></div><div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{filteredCustomers.map((customer) => { const contacts = relations.contacts.filter((item) => item.customerId === customer.id); const primary = contacts.find((item) => item.isPrimary) ?? contacts[0]; return <Card key={customer.id}><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-light"><Building2 size={18} className="text-primary" /></div>{statusBadge(customer.status)}</div><h2 className="mt-4 font-bold">{customer.name}</h2><p className="mt-1 text-sm text-text-secondary">{customer.type}{customer.businessId ? ` · ${customer.businessId}` : ''}</p><p className="mt-2 text-sm">{customer.address || 'Ei osoitetta'}</p><div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm"><p className="font-medium">{primary?.name || customer.contactPerson || 'Ei yhteyshenkilöä'}</p>{primary?.email || customer.email ? <p className="mt-1 flex items-center gap-1 text-xs text-text-secondary"><Mail size={12} />{primary?.email || customer.email}</p> : null}{primary?.phone || customer.phone ? <p className="mt-1 flex items-center gap-1 text-xs text-text-secondary"><Phone size={12} />{primary?.phone || customer.phone}</p> : null}</div><div className="mt-4 flex items-center justify-between text-xs text-text-muted"><span>{contacts.length} yhteyshenkilöä</span><span>{projectsByCustomer.get(customer.id) ?? 0} projektia</span></div><div className="mt-4 flex justify-end gap-1"><Button variant="ghost" size="sm" onClick={() => openContactCreate(customer.id)}><UserCheck size={14} /></Button><Button variant="ghost" size="sm" onClick={() => openCustomerEdit(customer)}><Edit3 size={14} /></Button><Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteCustomerTarget(customer)}><Trash2 size={14} /></Button></div></CardContent></Card>; })}{!filteredCustomers.length && <Card className="lg:col-span-2 xl:col-span-3"><CardContent className="p-12 text-center"><Users size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei asiakkaita</p></CardContent></Card>}</div></TabsContent>
+        <TabsContent value="contacts" className="space-y-4"><div className="flex justify-end"><Button onClick={() => openContactCreate()}><Plus size={16} className="mr-2" /> Lisää yhteyshenkilö</Button></div><Card><CardContent className="p-0">{relations.contacts.map((contact) => <div key={contact.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_1fr_120px_100px] lg:items-center"><div><p className="font-semibold">{contact.name}</p><p className="text-xs text-text-secondary">{contact.title || 'Ei tehtävänimikettä'}</p></div><span className="text-sm">{customerById.get(contact.customerId)?.name ?? 'Tuntematon asiakas'}</span><div className="text-xs text-text-secondary">{contact.email && <p className="flex items-center gap-1"><Mail size={12} />{contact.email}</p>}{contact.phone && <p className="flex items-center gap-1"><Phone size={12} />{contact.phone}</p>}</div><div>{contact.isPrimary && <Badge className="border-0 bg-emerald-50 text-emerald-700">Ensisijainen</Badge>}</div><div className="flex justify-end gap-1"><Button variant="ghost" size="sm" onClick={() => openContactEdit(contact)}><Edit3 size={14} /></Button><Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteContactTarget(contact)}><Trash2 size={14} /></Button></div></div>)}{!relations.contacts.length && <div className="p-12 text-center"><UserCheck size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei yhteyshenkilöitä</p></div>}</CardContent></Card></TabsContent>
+      </Tabs>
 
-      {/* ── Asiakaslista ── */}
-      {customers.length === 0 ? (
-        <EmptyState
-          icon={<Users size={40} />}
-          title="Ei asiakkaita"
-          description="Asiakasrekisteri on tyhjä. Lisää ensimmäinen asiakas aloittaaksesi."
-          action={
-            <Button
-              className="bg-primary hover:bg-primary-hover text-white gap-2"
-              onClick={openCreateDialog}
-            >
-              <Plus size={16} /> Uusi asiakas
-            </Button>
-          }
-        />
-      ) : (
-        <Card className="border border-[#E2E8F0] shadow-card overflow-hidden">
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-bg-light hover:bg-bg-light">
-                  <TableHead className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                    Nimi
-                  </TableHead>
-                  <TableHead className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                    Tyyppi
-                  </TableHead>
-                  <TableHead className="text-caption text-text-muted uppercase tracking-wider font-semibold hidden lg:table-cell">
-                    Yhteyshenkilö
-                  </TableHead>
-                  <TableHead className="text-caption text-text-muted uppercase tracking-wider font-semibold hidden md:table-cell">
-                    Puhelin
-                  </TableHead>
-                  <TableHead className="text-caption text-text-muted uppercase tracking-wider font-semibold hidden xl:table-cell">
-                    Sähköposti
-                  </TableHead>
-                  <TableHead className="text-caption text-text-muted uppercase tracking-wider font-semibold text-center">
-                    Projektit
-                  </TableHead>
-                  <TableHead className="text-caption text-text-muted uppercase tracking-wider font-semibold">
-                    Tila
-                  </TableHead>
-                  <TableHead className="text-caption text-text-muted uppercase tracking-wider font-semibold text-right">
-                    Toiminnot
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredCustomers.map(customer => (
-                  <TableRow key={customer.id} className="hover:bg-bg-light">
-                    <TableCell>
-                      <p className="text-sm font-semibold text-text-primary">{customer.name}</p>
-                      <p className="text-body-sm text-text-secondary mt-0.5">
-                        {customer.address}
-                      </p>
-                    </TableCell>
-                    <TableCell>{getTypeBadge(customer.type)}</TableCell>
-                    <TableCell className="text-body-sm text-text-secondary hidden lg:table-cell">
-                      {customer.contactPerson || '—'}
-                    </TableCell>
-                    <TableCell className="text-body-sm text-text-secondary hidden md:table-cell">
-                      {customer.phone || '—'}
-                    </TableCell>
-                    <TableCell className="text-body-sm text-text-secondary hidden xl:table-cell">
-                      {customer.email || '—'}
-                    </TableCell>
-                    <TableCell className="text-mono text-body-sm text-text-primary text-center">
-                      {customer.projectCount}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(customer.status)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-text-secondary hover:text-primary"
-                          onClick={() => openEditDialog(customer)}
-                          aria-label={`Muokkaa asiakasta ${customer.name}`}
-                        >
-                          <Pencil size={16} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-text-secondary hover:text-danger"
-                          onClick={() => setDeleteTarget(customer)}
-                          aria-label={`Poista asiakas ${customer.name}`}
-                        >
-                          <Trash2 size={16} />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+      <Dialog open={customerDialog} onOpenChange={setCustomerDialog}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{editingCustomer ? 'Muokkaa asiakasta' : 'Uusi asiakas'}</DialogTitle></DialogHeader>{errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label>Nimi *</Label><Input value={customerForm.name} onChange={(event) => setCustomerForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-2"><Label>Tyyppi</Label><Select value={customerForm.type} onValueChange={(type: CustomerType) => setCustomerForm((previous) => ({ ...previous, type }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{CUSTOMER_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Tila</Label><Select value={customerForm.status} onValueChange={(status: CustomerStatus) => setCustomerForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{CUSTOMER_STATUSES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Y-tunnus</Label><Input value={customerForm.businessId} onChange={(event) => setCustomerForm((previous) => ({ ...previous, businessId: event.target.value }))} /></div><div className="space-y-2"><Label>Vanha pääyhteyshenkilö</Label><Input value={customerForm.contactPerson} onChange={(event) => setCustomerForm((previous) => ({ ...previous, contactPerson: event.target.value }))} /></div><div className="space-y-2"><Label>Puhelin</Label><Input value={customerForm.phone} onChange={(event) => setCustomerForm((previous) => ({ ...previous, phone: event.target.value }))} /></div><div className="space-y-2"><Label>Sähköposti</Label><Input value={customerForm.email} onChange={(event) => setCustomerForm((previous) => ({ ...previous, email: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Osoite</Label><Input value={customerForm.address} onChange={(event) => setCustomerForm((previous) => ({ ...previous, address: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Huomiot</Label><Textarea value={customerForm.notes} onChange={(event) => setCustomerForm((previous) => ({ ...previous, notes: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setCustomerDialog(false)}>Peruuta</Button><Button onClick={saveCustomer}>Tallenna</Button></DialogFooter></DialogContent></Dialog>
 
-            {filteredCustomers.length === 0 && (
-              <div className="p-12 text-center">
-                <Building2 size={48} className="mx-auto text-text-muted mb-4" />
-                <p className="text-h3 text-text-primary mb-1">Ei hakutuloksia</p>
-                <p className="text-body-sm text-text-secondary">
-                  Hakuehdoilla ei löytynyt asiakkaita
-                </p>
-              </div>
-            )}
+      <Dialog open={contactDialog} onOpenChange={setContactDialog}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{editingContact ? 'Muokkaa yhteyshenkilöä' : 'Uusi yhteyshenkilö'}</DialogTitle></DialogHeader>{errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((item) => <p key={item}>{item}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label>Asiakas *</Label><Select value={contactForm.customerId} onValueChange={(customerId) => setContactForm((previous) => ({ ...previous, customerId }))} disabled={Boolean(editingContact)}><SelectTrigger><SelectValue placeholder="Valitse asiakas" /></SelectTrigger><SelectContent>{customers.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2 sm:col-span-2"><Label>Nimi *</Label><Input value={contactForm.name} onChange={(event) => setContactForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-2"><Label>Tehtävänimike</Label><Input value={contactForm.title} onChange={(event) => setContactForm((previous) => ({ ...previous, title: event.target.value }))} /></div><div className="space-y-2"><Label>Puhelin</Label><Input value={contactForm.phone} onChange={(event) => setContactForm((previous) => ({ ...previous, phone: event.target.value }))} /></div><div className="space-y-2 sm:col-span-2"><Label>Sähköposti</Label><Input value={contactForm.email} onChange={(event) => setContactForm((previous) => ({ ...previous, email: event.target.value }))} /></div><label className="flex items-center gap-2 sm:col-span-2"><Checkbox checked={contactForm.isPrimary} onCheckedChange={(value) => setContactForm((previous) => ({ ...previous, isPrimary: value === true }))} /><span className="text-sm font-medium">Ensisijainen yhteyshenkilö</span></label><div className="space-y-2 sm:col-span-2"><Label>Huomiot</Label><Textarea value={contactForm.notes} onChange={(event) => setContactForm((previous) => ({ ...previous, notes: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setContactDialog(false)}>Peruuta</Button><Button onClick={() => void saveContact()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter></DialogContent></Dialog>
 
-            <div className="flex items-center justify-between px-6 py-3 border-t border-[#E2E8F0] bg-bg-light">
-              <span className="text-body-sm text-text-secondary">
-                Näytetään {filteredCustomers.length} / {customers.length}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Luonti-/muokkausdialogi ── */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-h2">
-              {editingCustomer ? 'Muokkaa asiakasta' : 'Uusi asiakas'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="customer-name">Nimi *</Label>
-              <Input
-                id="customer-name"
-                value={form.name}
-                onChange={e => setField('name', e.target.value)}
-                placeholder="esim. As Oy Tampereen Keskusta"
-                aria-invalid={!!errors.name}
-              />
-              {errors.name && <p className="text-sm text-danger">{errors.name}</p>}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Tyyppi</Label>
-                <Select
-                  value={form.type}
-                  onValueChange={v => setField('type', v as CustomerType)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Valitse tyyppi" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CUSTOMER_TYPES.map(t => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Tila</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={v => setField('status', v as CustomerStatus)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Valitse tila" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CUSTOMER_STATUSES.map(s => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="customer-contact">Yhteyshenkilö</Label>
-              <Input
-                id="customer-contact"
-                value={form.contactPerson}
-                onChange={e => setField('contactPerson', e.target.value)}
-                placeholder="esim. Matti Mäkinen"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="customer-phone">Puhelin</Label>
-                <Input
-                  id="customer-phone"
-                  value={form.phone}
-                  onChange={e => setField('phone', e.target.value)}
-                  placeholder="040-1234567"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customer-email">Sähköposti</Label>
-                <Input
-                  id="customer-email"
-                  type="email"
-                  value={form.email}
-                  onChange={e => setField('email', e.target.value)}
-                  placeholder="nimi@yritys.fi"
-                  aria-invalid={!!errors.email}
-                />
-                {errors.email && <p className="text-sm text-danger">{errors.email}</p>}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="customer-address">Osoite</Label>
-              <Input
-                id="customer-address"
-                value={form.address}
-                onChange={e => setField('address', e.target.value)}
-                placeholder="Katuosoite, postinumero ja kaupunki"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Peruuta
-            </Button>
-            <Button
-              className="bg-primary hover:bg-primary-hover text-white"
-              onClick={handleSave}
-            >
-              {editingCustomer ? 'Tallenna muutokset' : 'Lisää asiakas'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Poiston vahvistus ── */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Poista asiakas</AlertDialogTitle>
-            <AlertDialogDescription>
-              Haluatko varmasti poistaa asiakkaan{' '}
-              <span className="font-semibold">{deleteTarget?.name}</span>? Toimintoa ei voi
-              peruuttaa.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Peruuta</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-danger hover:bg-danger/90 text-white"
-              onClick={handleDelete}
-            >
-              Poista
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog open={Boolean(deleteCustomerTarget || deleteContactTarget)} onOpenChange={(open) => { if (!open) { setDeleteCustomerTarget(null); setDeleteContactTarget(null); } }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Poistetaanko tieto?</AlertDialogTitle><AlertDialogDescription>Poistoa ei voi perua. Asiakasta ei voi poistaa, jos siihen liittyy suojattuja tietoja.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => deleteCustomerTarget ? (deleteCustomer(deleteCustomerTarget.id), setDeleteCustomerTarget(null)) : void removeContact()}>Poista</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </motion.div>
   );
 }
