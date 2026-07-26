@@ -177,7 +177,7 @@ export async function loadRoleWorkspace(
     assigneesByOrder.set(orderId, [...(assigneesByOrder.get(orderId) ?? []), userId]);
   });
 
-  const workOrders = asRows(workOrderData).map((item): ManagedWorkOrder => {
+  const allWorkOrders = asRows(workOrderData).map((item): ManagedWorkOrder => {
     const id = text(item, 'id');
     const assigneeUserIds = assigneesByOrder.get(id) ?? [];
     return {
@@ -202,12 +202,33 @@ export async function loadRoleWorkspace(
     };
   });
 
+  const projectMemberships = membershipRows.map((item) => ({
+    projectId: text(item, 'project_id'),
+    userId: text(item, 'user_id'),
+  })).filter((item) => item.projectId && item.userId);
+
+  if (canManage) {
+    return {
+      people,
+      projectMemberships,
+      workOrders: allWorkOrders,
+    };
+  }
+
+  const ownProjectIds = new Set(
+    projectMemberships
+      .filter((membership) => membership.userId === currentUserId)
+      .map((membership) => membership.projectId),
+  );
+  const workOrders = allWorkOrders.filter((order) => (
+    order.assignmentScope === 'project_team'
+      ? ownProjectIds.has(order.projectId)
+      : order.assigneeUserIds.includes(currentUserId)
+  ));
+
   return {
-    people,
-    projectMemberships: membershipRows.map((item) => ({
-      projectId: text(item, 'project_id'),
-      userId: text(item, 'user_id'),
-    })).filter((item) => item.projectId && item.userId),
+    people: [],
+    projectMemberships: projectMemberships.filter((membership) => membership.userId === currentUserId),
     workOrders,
   };
 }
