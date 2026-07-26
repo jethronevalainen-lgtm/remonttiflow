@@ -1,7 +1,7 @@
 /**
  * Organization context fetch helpers (no React).
  *
- * These functions back a later OrganizationContext: they answer
+ * These functions back OrganizationContext: they answer
  * "which organizations can the current user see" and "what is the
  * current user's role in organization X". Errors are thrown as
  * OrgContextError with Finnish messages so UI layers can surface them
@@ -34,16 +34,31 @@ interface MembershipWithOrganization {
 }
 
 /**
- * Lists every organization the current user is a member of, via
- * organization_members, including the user's role in each.
+ * Lists every organization the signed-in user belongs to. The explicit
+ * user_id filter is required because management roles may otherwise be able
+ * to read other organization members through RLS and accidentally resolve the
+ * wrong workspace role.
  */
-export async function getMyOrganizations(): Promise<MyOrganization[]> {
-  const { data, error } = await supabase
+export async function getMyOrganizations(
+  userId: string,
+  signal?: AbortSignal,
+): Promise<MyOrganization[]> {
+  const query = supabase
     .from('organization_members')
-    .select('role, organizations(*)');
+    .select('role, organizations(*)')
+    .eq('user_id', userId);
+
+  if (signal) query.abortSignal(signal);
+
+  const { data, error } = await query;
 
   if (error) {
-    throw new OrgContextError(`Organisaatioiden haku epäonnistui: ${error.message}`);
+    const timedOut = /abort|timeout/i.test(error.message);
+    throw new OrgContextError(
+      timedOut
+        ? 'Työtilan lataus aikakatkaistiin. Tarkista verkkoyhteys ja yritä uudelleen.'
+        : `Organisaatioiden haku epäonnistui: ${error.message}`,
+    );
   }
 
   const rows = (data ?? []) as unknown as MembershipWithOrganization[];
