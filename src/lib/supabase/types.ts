@@ -14,7 +14,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type OrganizationRole = 'admin' | 'supervisor' | 'worker' | 'customer';
+export type OrganizationRole = 'admin' | 'supervisor' | 'project_coordinator' | 'worker' | 'customer';
 
 export interface OrganizationRow {
   id: string;

@@ -64,7 +64,14 @@ function optionalText(row: Row, key: string): string | undefined {
 }
 
 function role(value: unknown): OrganizationRole {
-  return value === 'admin' || value === 'supervisor' ? value : 'worker';
+  if (
+    value === 'admin'
+    || value === 'supervisor'
+    || value === 'project_coordinator'
+    || value === 'worker'
+    || value === 'customer'
+  ) return value;
+  return 'worker';
 }
 
 function priority(value: unknown): WorkOrderPriority {
@@ -126,48 +133,45 @@ export async function loadRoleWorkspace(
   membershipRows.forEach((item) => visibleUserIds.add(text(item, 'user_id')));
   assigneeRows.forEach((item) => visibleUserIds.add(text(item, 'user_id')));
 
-  let membershipRoles: Row[] = [];
+  let directoryRows: Row[] = [];
   if (canManage) {
-    const rows = await requireData(
-      supabase
-        .from('organization_members')
-        .select('user_id, role')
-        .eq('organization_id', organizationId),
-      'Organisaation käyttäjien haku',
-    );
-    membershipRoles = asRows(rows);
-    membershipRoles.forEach((item) => visibleUserIds.add(text(item, 'user_id')));
+    directoryRows = asRows(await requireData(
+      supabase.rpc('list_operational_directory', {
+        p_organization_id: organizationId,
+      }),
+      'Rajattujen projektihenkilöiden haku',
+    ));
+    directoryRows.forEach((item) => visibleUserIds.add(text(item, 'user_id')));
   }
 
   const ids = [...visibleUserIds].filter(Boolean);
-  const profileRows = ids.length > 0
-    ? asRows(await requireData(
-      supabase
-        .from('profiles')
-        .select('id, full_name, email, avatar_url')
-        .in('id', ids),
-      'Käyttäjäprofiilien haku',
-    ))
-    : [];
+  const profileRows = canManage
+    ? directoryRows.map((item) => ({
+        id: text(item, 'user_id'),
+        full_name: text(item, 'display_name'),
+        avatar_url: text(item, 'avatar_url'),
+        email: '',
+      }))
+    : ids.length > 0
+      ? asRows(await requireData(
+          supabase
+            .from('profiles')
+            .select('id, full_name, email, avatar_url')
+            .in('id', ids),
+          'Käyttäjäprofiilien haku',
+        ))
+      : [];
 
   const profiles = new Map(profileRows.map((item) => [text(item, 'id'), item]));
-  const roleByUser = new Map(membershipRoles.map((item) => [
-    text(item, 'user_id'),
-    role(item.role),
-  ]));
 
   const people = canManage
-    ? membershipRoles.map((membership): OrganizationPerson => {
-      const userId = text(membership, 'user_id');
-      const profile = profiles.get(userId) ?? {};
-      return {
-        userId,
-        name: text(profile, 'full_name') || text(profile, 'email') || 'Nimetön käyttäjä',
-        email: text(profile, 'email'),
-        role: roleByUser.get(userId) ?? 'worker',
-        avatarUrl: optionalText(profile, 'avatar_url'),
-      };
-    }).sort((a, b) => a.name.localeCompare(b.name, 'fi'))
+    ? directoryRows.map((item): OrganizationPerson => ({
+        userId: text(item, 'user_id'),
+        name: text(item, 'display_name') || 'Nimetön käyttäjä',
+        email: '',
+        role: role(item.role),
+        avatarUrl: optionalText(item, 'avatar_url'),
+      })).sort((a, b) => a.name.localeCompare(b.name, 'fi'))
     : [];
 
   const assigneesByOrder = new Map<string, string[]>();

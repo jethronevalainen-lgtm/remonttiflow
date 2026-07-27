@@ -13,7 +13,7 @@ const JSON_HEADERS = {
 
 const DEFAULT_APP_ORIGIN = 'https://vakantti.pages.dev';
 
-type OrganizationRole = 'admin' | 'supervisor' | 'worker' | 'customer';
+type OrganizationRole = 'admin' | 'supervisor' | 'project_coordinator' | 'worker' | 'customer';
 type CustomerAccessScope = 'all_projects' | 'selected_projects';
 
 interface CustomerAccessInput {
@@ -55,7 +55,11 @@ function readNamedKey(variableName: string, legacyName: string): string | null {
 }
 
 function isRole(value: unknown): value is OrganizationRole {
-  return value === 'admin' || value === 'supervisor' || value === 'worker' || value === 'customer';
+  return value === 'admin'
+    || value === 'supervisor'
+    || value === 'project_coordinator'
+    || value === 'worker'
+    || value === 'customer';
 }
 
 function isUuid(value: string): boolean {

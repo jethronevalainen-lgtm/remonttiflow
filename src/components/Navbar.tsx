@@ -36,7 +36,12 @@ import {
 } from 'lucide-react';
 
 import { BRAND } from '@/config/brand';
-import { ROLE_LABELS, useAuth, type UserRole } from '@/contexts/AuthContext';
+import {
+  ROLE_LABELS,
+  ROLE_ROUTES,
+  useAuth,
+  type UserRole,
+} from '@/contexts/AuthContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { cn } from '@/lib/utils';
 
@@ -45,9 +50,7 @@ interface NavGroup { key: string; title: string; items: NavItem[]; }
 
 const workerGroups: NavGroup[] = [
   {
-    key: 'own-work',
-    title: 'Oma työ',
-    items: [
+    key: 'own-work', title: 'Oma työ', items: [
       { label: 'Oma työtila', icon: LayoutDashboard, path: '/dashboard' },
       { label: 'Minun työni', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
@@ -57,9 +60,7 @@ const workerGroups: NavGroup[] = [
     ],
   },
   {
-    key: 'site-tools',
-    title: 'Työmaan työkalut',
-    items: [
+    key: 'site-tools', title: 'Työmaan työkalut', items: [
       { label: 'Turvallisuushavainnot', icon: ShieldCheck, path: '/tyoturvallisuus' },
       { label: 'Korjattavat puutteet', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
@@ -70,32 +71,24 @@ const workerGroups: NavGroup[] = [
   },
 ];
 
-const customerGroups: NavGroup[] = [
-  {
-    key: 'customer-portal',
-    title: 'Tilaajan työtila',
-    items: [
-      { label: 'Projektini', icon: FolderKanban, path: '/tilaajan-tyot' },
-      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
-      { label: 'Turvallisuushavainto', icon: ShieldCheck, path: '/tyoturvallisuus' },
-    ],
-  },
-];
+const customerGroups: NavGroup[] = [{
+  key: 'customer-portal', title: 'Tilaajan työtila', items: [
+    { label: 'Projektini', icon: FolderKanban, path: '/tilaajan-tyot' },
+    { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
+    { label: 'Turvallisuushavainto', icon: ShieldCheck, path: '/tyoturvallisuus' },
+  ],
+}];
 
 const managementGroups: NavGroup[] = [
   {
-    key: 'overview',
-    title: 'Tilannekuva',
-    items: [
+    key: 'overview', title: 'Tilannekuva', items: [
       { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
       { label: 'Työnjohto', icon: HardHat, path: '/tyonjohto' },
       { label: 'Raportit', icon: BarChart3, path: '/raportit' },
     ],
   },
   {
-    key: 'work-control',
-    title: 'Työn ohjaus',
-    items: [
+    key: 'work-control', title: 'Työn ohjaus', items: [
       { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Aikataulutus', icon: CalendarClock, path: '/aikataulutus' },
       { label: 'Työvuorot', icon: CalendarClock, path: '/tyovuorokalenteri' },
@@ -107,9 +100,7 @@ const managementGroups: NavGroup[] = [
     ],
   },
   {
-    key: 'projects',
-    title: 'Projektit ja yhteistyö',
-    items: [
+    key: 'projects', title: 'Projektit ja yhteistyö', items: [
       { label: 'Projektit ja tiimit', icon: FolderKanban, path: '/projektit' },
       { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
       { label: 'Projektipyynnöt', icon: FileQuestion, path: '/projektipyynnot' },
@@ -117,9 +108,7 @@ const managementGroups: NavGroup[] = [
     ],
   },
   {
-    key: 'people',
-    title: 'Henkilöt ja kirjaukset',
-    items: [
+    key: 'people', title: 'Henkilöt ja kirjaukset', items: [
       { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto' },
       { label: 'Henkilökortit ja palkat', icon: ShieldCheck, path: '/henkilokortit' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
@@ -130,9 +119,7 @@ const managementGroups: NavGroup[] = [
     ],
   },
   {
-    key: 'commercial',
-    title: 'Asiakkaat ja talous',
-    items: [
+    key: 'commercial', title: 'Asiakkaat ja talous', items: [
       { label: 'Asiakkaat', icon: Users, path: '/asiakkaat' },
       { label: 'CRM', icon: MessageSquare, path: '/crm' },
       { label: 'Toiminnanohjaus', icon: Gauge, path: '/toiminnanohjaus' },
@@ -141,9 +128,7 @@ const managementGroups: NavGroup[] = [
     ],
   },
   {
-    key: 'tools',
-    title: 'Työkalut',
-    items: [
+    key: 'tools', title: 'Työkalut', items: [
       { label: 'Kuittaukset', icon: ClipboardSignature, path: '/kuittaukset' },
       { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
       { label: 'Kalusto', icon: Wrench, path: '/kalusto' },
@@ -181,7 +166,8 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
 
   if (!user || !effectiveRole) return null;
   const role: UserRole = effectiveRole;
-  const groups = role === 'worker'
+  const allowedRoutes = new Set(ROLE_ROUTES[role]);
+  const baseGroups = role === 'worker'
     ? workerGroups
     : role === 'customer'
       ? customerGroups
@@ -199,6 +185,9 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
               }]
             : []),
         ];
+  const groups = baseGroups
+    .map((group) => ({ ...group, items: group.items.filter((item) => allowedRoutes.has(item.path)) }))
+    .filter((group) => group.items.length > 0);
   const displayName = effectiveDisplayName || user.email || '';
 
   const goTo = (path: string) => {

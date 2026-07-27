@@ -20,13 +20,19 @@ function text(item: Row, key: string) {
 }
 
 function role(value: unknown): OrganizationRole {
-  return value === 'admin' || value === 'supervisor' ? value : 'worker';
+  if (
+    value === 'admin'
+    || value === 'supervisor'
+    || value === 'project_coordinator'
+    || value === 'worker'
+    || value === 'customer'
+  ) return value;
+  return 'worker';
 }
 
-async function loadDirectory(
+async function loadWorkerDirectory(
   organizationId: string,
   currentUserId: string,
-  canManage: boolean,
   relevantUserIds: string[],
 ): Promise<OrganizationPerson[]> {
   const { data: membershipData, error: membershipError } = await supabase
@@ -35,17 +41,14 @@ async function loadDirectory(
     .eq('organization_id', organizationId);
   if (membershipError) throw new Error(`Viestihakemiston lataus epäonnistui: ${membershipError.message}`);
 
-  const memberships = rows(membershipData);
   const relevant = new Set(relevantUserIds);
   relevant.add(currentUserId);
-  const visibleMemberships = canManage
-    ? memberships
-    : memberships.filter((membership) => {
-      const membershipRole = role(membership.role);
-      return membershipRole === 'admin'
-        || membershipRole === 'supervisor'
-        || relevant.has(text(membership, 'user_id'));
-    });
+  const visibleMemberships = rows(membershipData).filter((membership) => {
+    const membershipRole = role(membership.role);
+    return membershipRole === 'admin'
+      || membershipRole === 'supervisor'
+      || relevant.has(text(membership, 'user_id'));
+  });
   const ids = visibleMemberships.map((item) => text(item, 'user_id')).filter(Boolean);
   if (!ids.length) return [];
 
@@ -73,30 +76,47 @@ async function loadDirectory(
 }
 
 export function useCommunicationDirectory() {
-  const { currentOrg, currentRole } = useOrganization();
+  const { currentOrg, actualRole } = useOrganization();
   const { effectiveUserId } = useViewAs();
-  const { projectMemberships, workOrders, canManage } = useRoleWorkspace();
+  const {
+    people: operationalPeople,
+    projectMemberships,
+    workOrders,
+    canManage,
+    loading: workspaceLoading,
+    error: workspaceError,
+  } = useRoleWorkspace();
   const relevantUserIds = [
     ...projectMemberships.map((item) => item.userId),
     ...workOrders.flatMap((item) => item.assigneeUserIds),
   ];
+
   const query = useQuery({
     queryKey: [
       'communication-directory',
       currentOrg?.id ?? 'none',
       effectiveUserId ?? 'none',
-      currentRole ?? 'none',
+      actualRole ?? 'none',
       [...new Set(relevantUserIds)].sort().join(','),
     ],
-    queryFn: () => loadDirectory(
+    queryFn: () => loadWorkerDirectory(
       currentOrg?.id as string,
       effectiveUserId as string,
-      canManage,
       relevantUserIds,
     ),
-    enabled: Boolean(currentOrg?.id && effectiveUserId && currentRole),
+    enabled: Boolean(!canManage && currentOrg?.id && effectiveUserId && actualRole),
     staleTime: 30_000,
   });
+
+  if (canManage) {
+    return {
+      people: operationalPeople
+        .filter((person) => person.userId !== effectiveUserId)
+        .sort((a, b) => a.name.localeCompare(b.name, 'fi')),
+      loading: workspaceLoading,
+      error: workspaceError,
+    };
+  }
 
   return {
     people: query.data ?? [],
