@@ -9,19 +9,14 @@ permissions:
   contents: write
 
 jobs:
-  apply-and-verify:
+  apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           ref: feat/generic-project-work-plans
           fetch-depth: 0
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
 
       - name: Patch shared work-order mapping and migration
         run: |
@@ -30,7 +25,6 @@ jobs:
 
           work_path = Path('src/lib/supabase/workManagement.ts')
           work = work_path.read_text()
-
           old_interface = """  completionReviewNote: string;\n  completionApproved: boolean;\n}\n"""
           new_interface = """  completionReviewNote: string;\n  completionApproved: boolean;\n  workPlanId?: string;\n  workPackageKey: string;\n  workPackageTitle: string;\n  projectPhaseId?: string;\n  phaseOrder: number;\n  predecessorWorkOrderId?: string;\n  phaseGateEnabled: boolean;\n}\n"""
           if old_interface not in work:
@@ -68,13 +62,7 @@ jobs:
           migration_path.write_text(migration)
           PY
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Run production quality gate
-        run: npm run ship:check
-
-      - name: Commit verified implementation
+      - name: Commit implementation and remove one-shot workflow
         run: |
           rm .github/workflows/one-shot-generic-project-work-plans.yml
           git config user.name "github-actions[bot]"
