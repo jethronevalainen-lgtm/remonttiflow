@@ -1,4 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import {
+  createClient,
+  type Session,
+  type SupabaseClient,
+} from '@supabase/supabase-js';
 
 /**
  * Public browser configuration for the hosted VaKantti backend.
@@ -22,19 +26,108 @@ if (!supabaseUrl.startsWith('https://')) {
   throw new Error('Supabase-osoitteen pitää käyttää HTTPS-yhteyttä.');
 }
 
+const browserAuthOptions = {
+  detectSessionInUrl: false,
+} as const;
+
 /**
- * The database schema is queried through an explicit repository/mapping
- * layer. Keeping the raw client untyped prevents stale hand-written database
- * types from silently describing columns that do not exist in production.
- *
- * Authentication callbacks are handled explicitly on /auth/callback. This is
- * required because the application uses HashRouter and Supabase's implicit
- * auth response also uses the URL fragment.
+ * The administrator client owns the normal, persisted browser session.
+ * Impersonation never replaces this session, so returning to the administrator
+ * does not require copying refresh tokens into another browser storage key.
  */
-export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: false,
+export const administratorSupabase = createClient(
+  supabaseUrl,
+  supabasePublishableKey,
+  {
+    auth: {
+      ...browserAuthOptions,
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  },
+);
+
+/**
+ * A separate memory-only client is used while an administrator acts as another
+ * user. Its JWT is the selected user's real Supabase session, so every query,
+ * mutation, Storage request and RPC is evaluated by RLS as that user.
+ * Reloading the page automatically ends impersonation and restores the normal
+ * administrator client.
+ */
+const impersonationSupabase = createClient(
+  supabaseUrl,
+  supabasePublishableKey,
+  {
+    auth: {
+      ...browserAuthOptions,
+      persistSession: false,
+      autoRefreshToken: true,
+      storageKey: 'vakantti-memory-impersonation',
+    },
+  },
+);
+
+type ActiveClientListener = (client: SupabaseClient) => void;
+
+let activeSupabase: SupabaseClient = administratorSupabase;
+let impersonationActive = false;
+const activeClientListeners = new Set<ActiveClientListener>();
+
+function publishActiveClient(client: SupabaseClient, impersonating: boolean): void {
+  activeSupabase = client;
+  impersonationActive = impersonating;
+  activeClientListeners.forEach((listener) => listener(client));
+}
+
+/**
+ * Existing repository modules import one shared `supabase` value. The proxy
+ * keeps that API stable while routing every operation to the currently active
+ * authenticated client.
+ */
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, property) {
+    const value = Reflect.get(activeSupabase as object, property, activeSupabase);
+    return typeof value === 'function' ? value.bind(activeSupabase) : value;
   },
 });
+
+export function getActiveSupabaseClient(): SupabaseClient {
+  return activeSupabase;
+}
+
+export function isImpersonationClientActive(): boolean {
+  return impersonationActive;
+}
+
+export function subscribeActiveSupabaseClient(listener: ActiveClientListener): () => void {
+  activeClientListeners.add(listener);
+  return () => activeClientListeners.delete(listener);
+}
+
+export async function activateImpersonationSession(tokenHash: string): Promise<Session> {
+  const normalizedTokenHash = tokenHash.trim();
+  if (!normalizedTokenHash) throw new Error('Käyttäjänä toimimisen kertakäyttöinen tunniste puuttuu.');
+
+  const { data, error } = await impersonationSupabase.auth.verifyOtp({
+    type: 'magiclink',
+    token_hash: normalizedTokenHash,
+  });
+  if (error || !data.session) {
+    throw new Error(error?.message || 'Käyttäjän istuntoa ei voitu avata.');
+  }
+
+  publishActiveClient(impersonationSupabase, true);
+  return data.session;
+}
+
+export async function deactivateImpersonationSession(): Promise<void> {
+  if (!impersonationActive) return;
+
+  publishActiveClient(administratorSupabase, false);
+  const { error } = await impersonationSupabase.auth.signOut({ scope: 'local' });
+  if (error) {
+    // The administrator session is already active. The short-lived target JWT
+    // expires independently even if local revocation happens to fail.
+    console.warn('Käyttäjänä toimimisen istunnon paikallinen sulkeminen epäonnistui.', error);
+  }
+}
