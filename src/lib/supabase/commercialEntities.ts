@@ -58,16 +58,26 @@ export async function deleteCustomerRecord(
 
 function leadPayload(lead: Omit<CrmLead, 'id'> | Partial<CrmLead>): Payload {
   const payload: Payload = {};
-  if (lead.name !== undefined) payload.name = lead.name;
-  if (lead.company !== undefined) payload.company = lead.company || null;
+  if (lead.name !== undefined) payload.name = lead.name.trim();
+  if (lead.company !== undefined) payload.company = lead.company.trim() || null;
   if (lead.customerId !== undefined) payload.customer_id = lead.customerId || null;
+  if (lead.siteId !== undefined) payload.site_id = lead.siteId || null;
   if (lead.value !== undefined) payload.value = lead.value;
+  if (lead.estimatedCost !== undefined) payload.estimated_cost = lead.estimatedCost ?? 0;
   if (lead.stage !== undefined) payload.stage = lead.stage;
-  if (lead.assignee !== undefined) payload.assignee = lead.assignee || null;
+  if (lead.assignee !== undefined) payload.assignee = lead.assignee.trim() || null;
   if (lead.assigneeUserId !== undefined) payload.assignee_user_id = lead.assigneeUserId || null;
   if (lead.probability !== undefined) payload.probability = lead.probability ?? null;
-  if (lead.source !== undefined) payload.source = lead.source || null;
-  if (lead.lostReason !== undefined) payload.lost_reason = lead.lostReason || null;
+  if (lead.source !== undefined) payload.source = lead.source.trim() || null;
+  if (lead.description !== undefined) payload.description = lead.description.trim() || null;
+  if (lead.nextAction !== undefined) payload.next_action = lead.nextAction.trim() || null;
+  if (lead.nextActionDueAt !== undefined) payload.next_action_due_at = lead.nextActionDueAt || null;
+  if (lead.expectedDecisionDate !== undefined) payload.expected_decision_date = lead.expectedDecisionDate || null;
+  if (lead.quotedAt !== undefined) payload.quoted_at = lead.quotedAt || null;
+  if (lead.wonAt !== undefined) payload.won_at = lead.wonAt || null;
+  if (lead.lostAt !== undefined) payload.lost_at = lead.lostAt || null;
+  if (lead.frozenUntil !== undefined) payload.frozen_until = lead.frozenUntil || null;
+  if (lead.lostReason !== undefined) payload.lost_reason = lead.lostReason.trim() || null;
   if (lead.convertedProjectId !== undefined) payload.converted_project_id = lead.convertedProjectId || null;
   if (lead.date !== undefined) payload.expected_date = lead.date || null;
   return payload;
