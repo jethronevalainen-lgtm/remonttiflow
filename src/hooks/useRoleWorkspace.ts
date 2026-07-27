@@ -18,7 +18,9 @@ export function useRoleWorkspace() {
   const { currentOrg } = useOrganization();
   const { effectiveRole, effectiveUserId } = useViewAs();
   const organizationId = currentOrg?.id;
-  const canManage = effectiveRole === 'admin' || effectiveRole === 'supervisor';
+  const canManage = effectiveRole === 'admin'
+    || effectiveRole === 'supervisor'
+    || effectiveRole === 'project_coordinator';
   const queryKey = [
     'role-workspace',
     organizationId ?? 'none',
