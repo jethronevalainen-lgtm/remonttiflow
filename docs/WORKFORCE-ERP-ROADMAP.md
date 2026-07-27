@@ -28,6 +28,8 @@ VaKantti rakennetaan suomalaiseksi rakennusalan toiminnanohjaus-, työajanseuran
 - kahdesti vuorokaudessa ajettava sovellustason varmuuskopio
 - varmuuskopioiden ajoloki ja säilytyskierto
 
+**Tila:** tuotantoperusta toteutettu. Palkkaehdot ja HR-tiedot ovat käytettävissä, mutta organisaation pitää syöttää todelliset työntekijäkohtaiset arvot ennen palkkakauden lukitusta.
+
 ### Vaihe 2 – suomalainen työaika- ja TES-moottori
 
 - työaikalajit ja yrityskohtaiset säännöt
@@ -38,6 +40,10 @@ VaKantti rakennetaan suomalaiseksi rakennusalan toiminnanohjaus-, työajanseuran
 - käyttäjä- ja ryhmäkohtaiset kirjausasetukset
 - palkkakauden lukitus, korjausketju ja audit trail
 - palkka-aineiston tarkistusnäkymä
+
+**Toteutettu perusta:** organisaatiokohtaiset säännöt, säännöllinen työ, lisätyö, vuorokautinen 50/100 % ylityö, viikoittainen 50 % ylityö, lauantai- ja sunnuntaerät, pyöristys, palkka-aineiston tarkistus, HR-tiimirajaus, muuttumaton palkkakausisnapshot ja audit-loki.
+
+**Seuraava osuus:** kellonaikapohjainen työvuoro, ilta- ja yötyölisät, automaattisen tauon käyttäminen laskennassa, matkakulujen yhdistäminen palkkakauteen, käyttäjä-/ryhmäkohtaiset sääntöprofiilit sekä lukitun kauden hallittu korjausketju.
 
 ### Vaihe 3 – taloushallinnon integraatiot
 
