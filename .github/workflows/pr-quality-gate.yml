@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: pr-quality-${{ github.event.pull_request.number || github.ref }}
@@ -65,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL || secrets.E2E_EMAIL || secrets.E2E_USER_MAIL || secrets.E2E_EMAIL_ADDRESS || secrets.TEST_USER_EMAIL || secrets.TEST_EMAIL || secrets.TEST_ADMIN_EMAIL || vars.E2E_USER_EMAIL || vars.E2E_EMAIL || vars.E2E_USER_MAIL || vars.TEST_USER_EMAIL || vars.TEST_EMAIL || vars.TEST_ADMIN_EMAIL }}
+      E2E_USER_EMAIL: admin@roles.vakantti.invalid
       E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD || secrets.E2E_PASSWORD || secrets.TEST_USER_PASSWORD || secrets.TEST_PASSWORD || secrets.TEST_ADMIN_PASSWORD }}
     steps:
       - name: Checkout
@@ -80,16 +81,28 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Validate authenticated smoke credentials
+      - name: Validate authenticated smoke password
         shell: bash
         run: |
-          test -n "$E2E_USER_EMAIL" || { echo "Missing test email. Supported GitHub secret or variable names: E2E_USER_EMAIL, E2E_EMAIL, E2E_USER_MAIL, E2E_EMAIL_ADDRESS, TEST_USER_EMAIL, TEST_EMAIL, TEST_ADMIN_EMAIL"; exit 1; }
           test -n "$E2E_USER_PASSWORD" || { echo "Missing test password. Supported GitHub secret names: E2E_USER_PASSWORD, E2E_PASSWORD, TEST_USER_PASSWORD, TEST_PASSWORD, TEST_ADMIN_PASSWORD"; exit 1; }
+          test "${#E2E_USER_PASSWORD}" -ge 12 || { echo "The test password must contain at least 12 characters"; exit 1; }
+          test "${#E2E_USER_PASSWORD}" -le 128 || { echo "The test password must contain at most 128 characters"; exit 1; }
+
+      - name: Request GitHub OIDC token
+        id: oidc
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = await core.getIDToken('vakantti-e2e-provisioner');
+            core.setSecret(token);
+            core.setOutput('token', token);
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
       - name: Test every role and dynamic application route
+        env:
+          E2E_PROVISION_TOKEN: ${{ steps.oidc.outputs.token }}
         run: npx playwright test e2e/smoke.spec.ts --project=chromium
 
       - name: Upload authenticated smoke diagnostics
