@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { getLeakedPasswordCount } from '@/lib/security/passwordBreach';
 import { supabase } from '@/lib/supabase/client';
 
 const SUPPORTED_OTP_TYPES = new Set<EmailOtpType>([
@@ -112,6 +113,12 @@ export default function AuthCallback() {
 
     setSaving(true);
     try {
+      const leakedCount = await getLeakedPasswordCount(password);
+      if (leakedCount > 0) {
+        setError('Tämä salasana tunnetaan aiemmista tietovuodoista. Valitse kokonaan uusi salasana, jota et käytä muissa palveluissa.');
+        return;
+      }
+
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) throw updateError;
       setStatus('complete');
@@ -165,7 +172,7 @@ export default function AuthCallback() {
             <form className="space-y-5" onSubmit={(event) => { event.preventDefault(); void savePassword(); }}>
               <div className="flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
                 <ShieldCheck className="mt-0.5 shrink-0" size={20} />
-                <p>Kutsu on vahvistettu. Salasana tallennetaan suojatun Supabase Auth -yhteyden kautta.</p>
+                <p>Kutsu on vahvistettu. Salasana tarkistetaan paikallisesti tietovuotoja vastaan ja tallennetaan suojatun Supabase Auth -yhteyden kautta.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="new-password">Uusi salasana</Label>
@@ -189,7 +196,7 @@ export default function AuthCallback() {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
-                <p className="text-xs text-slate-500">Vähintään 12 merkkiä.</p>
+                <p className="text-xs text-slate-500">Vähintään 12 merkkiä. Tunnettuja vuotaneita salasanoja ei hyväksytä.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="new-password-again">Salasana uudelleen</Label>
@@ -206,7 +213,7 @@ export default function AuthCallback() {
               {error && <p role="alert" className="text-sm font-medium text-red-700">{error}</p>}
               <Button type="submit" className="min-h-12 w-full gap-2" disabled={saving}>
                 {saving ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
-                {saving ? 'Tallennetaan…' : 'Aseta salasana ja avaa VaKantti'}
+                {saving ? 'Tarkistetaan ja tallennetaan…' : 'Aseta salasana ja avaa VaKantti'}
               </Button>
             </form>
           )}
