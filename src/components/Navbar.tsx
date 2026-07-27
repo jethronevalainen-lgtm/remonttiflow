@@ -17,6 +17,7 @@ import {
   FileQuestion,
   FileText,
   FolderKanban,
+  Gauge,
   HardHat,
   LayoutDashboard,
   MessageCircle,
@@ -126,6 +127,7 @@ const managementGroups: NavGroup[] = [
     items: [
       { label: 'Asiakkaat', icon: Users, path: '/asiakkaat' },
       { label: 'CRM', icon: MessageSquare, path: '/crm' },
+      { label: 'Toiminnanohjaus', icon: Gauge, path: '/toiminnanohjaus' },
       { label: 'Laskenta', icon: BarChart3, path: '/laskenta' },
       { label: 'Määrälaskenta', icon: Wrench, path: '/maaralaskenta' },
     ],
