@@ -41,6 +41,7 @@ import type { OrganizationRole } from '@/lib/supabase/types';
 const ROLE_DESCRIPTIONS: Record<OrganizationRole, string> = {
   admin: 'Hallitsee organisaatiota, käyttäjiä ja kaikkia toimintoja.',
   supervisor: 'Hallitsee työmaita, henkilöstöä, laskentaa ja hyväksyntöjä.',
+  project_coordinator: 'Hallitsee projektien operatiivista työtä ja näkee työaikahistorian. Ei näe henkilöstö-, palkka-, matka- tai poissaolotietoja eikä saa alaisia.',
   worker: 'Näkee ja käyttää työntekijälle kuuluvia päivittäisiä toimintoja.',
   customer: 'Näkee vain hänelle sallitut asiakkuudet, projektit ja tilaajaviestinnän.',
 };
@@ -48,6 +49,7 @@ const ROLE_DESCRIPTIONS: Record<OrganizationRole, string> = {
 const ROLE_BADGES: Record<OrganizationRole, string> = {
   admin: 'border-purple-200 bg-purple-50 text-purple-700',
   supervisor: 'border-orange-200 bg-orange-50 text-orange-700',
+  project_coordinator: 'border-indigo-200 bg-indigo-50 text-indigo-700',
   worker: 'border-blue-200 bg-blue-50 text-blue-700',
   customer: 'border-teal-200 bg-teal-50 text-teal-700',
 };
@@ -123,6 +125,7 @@ export default function HallintaV2() {
   const counts = useMemo(() => ({
     admin: members.filter((member) => member.role === 'admin').length,
     supervisor: members.filter((member) => member.role === 'supervisor').length,
+    projectCoordinator: members.filter((member) => member.role === 'project_coordinator').length,
     worker: members.filter((member) => member.role === 'worker').length,
     customer: members.filter((member) => member.role === 'customer').length,
   }), [members]);
@@ -266,10 +269,11 @@ export default function HallintaV2() {
       {(error || operationError) && <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} /> {operationError ?? error}</div>}
       {successMessage && <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"><CheckCircle2 size={16} /> {successMessage}</div>}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Käyttäjiä</p><p className="mt-1 text-2xl font-bold">{members.length}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Ylläpitäjiä</p><p className="mt-1 text-2xl font-bold text-purple-700">{counts.admin}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Työnjohtajia</p><p className="mt-1 text-2xl font-bold text-orange-700">{counts.supervisor}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Projektikoordinaattoreita</p><p className="mt-1 text-2xl font-bold text-indigo-700">{counts.projectCoordinator}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Työntekijöitä</p><p className="mt-1 text-2xl font-bold text-blue-700">{counts.worker}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-text-secondary">Tilaajia</p><p className="mt-1 text-2xl font-bold text-teal-700">{counts.customer}</p></CardContent></Card>
       </div>
@@ -296,7 +300,7 @@ export default function HallintaV2() {
                   {member.role === 'customer' ? (
                     <Button variant="outline" className="gap-2" disabled={saving} onClick={() => void openCustomerAccess(member)}><KeyRound size={15} /> Tilaajaoikeudet</Button>
                   ) : (
-                    <Select value={member.role} disabled={saving || isSelf} onValueChange={(role: OrganizationRole) => void changeRole(member, role)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Ylläpitäjä</SelectItem><SelectItem value="supervisor">Työnjohtaja</SelectItem><SelectItem value="worker">Työntekijä</SelectItem><SelectItem value="customer">Tilaaja</SelectItem></SelectContent></Select>
+                    <Select value={member.role} disabled={saving || isSelf} onValueChange={(role: OrganizationRole) => void changeRole(member, role)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="admin">Ylläpitäjä</SelectItem><SelectItem value="supervisor">Työnjohtaja</SelectItem><SelectItem value="project_coordinator">Projektikoordinaattori</SelectItem><SelectItem value="worker">Työntekijä</SelectItem><SelectItem value="customer">Tilaaja</SelectItem></SelectContent></Select>
                   )}
                   <Button variant="ghost" size="sm" className="text-danger" disabled={saving || isSelf} onClick={() => { clearMessages(); setDeleteTarget(member); }} aria-label={`Poista ${name}`}><Trash2 size={16} /></Button>
                 </div>
@@ -308,14 +312,14 @@ export default function HallintaV2() {
         </Card>
       </div>
 
-      <Card><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><ShieldCheck size={19} className="text-primary" /> Roolien oikeudet</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-4">{(Object.keys(ROLE_LABELS) as OrganizationRole[]).map((role) => <div key={role} className="rounded-lg border border-slate-200 p-4"><Badge variant="outline" className={ROLE_BADGES[role]}>{ROLE_LABELS[role]}</Badge><p className="mt-3 text-sm leading-6 text-text-secondary">{ROLE_DESCRIPTIONS[role]}</p></div>)}</CardContent></Card>
+      <Card><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><ShieldCheck size={19} className="text-primary" /> Roolien oikeudet</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-5">{(Object.keys(ROLE_LABELS) as OrganizationRole[]).map((role) => <div key={role} className="rounded-lg border border-slate-200 p-4"><Badge variant="outline" className={ROLE_BADGES[role]}>{ROLE_LABELS[role]}</Badge><p className="mt-3 text-sm leading-6 text-text-secondary">{ROLE_DESCRIPTIONS[role]}</p></div>)}</CardContent></Card>
 
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader><DialogTitle>Kutsu käyttäjä organisaatioon</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="invite-email">Sähköposti *</Label><Input id="invite-email" type="email" autoComplete="email" value={inviteDraft.email} onChange={(event) => setInviteDraft((previous) => ({ ...previous, email: event.target.value }))} placeholder="nimi@yritys.fi" /></div><div className="space-y-2"><Label htmlFor="invite-name">Nimi</Label><Input id="invite-name" value={inviteDraft.fullName} onChange={(event) => setInviteDraft((previous) => ({ ...previous, fullName: event.target.value }))} maxLength={120} /></div></div>
-            <div className="space-y-2"><Label>Rooli</Label><Select value={inviteDraft.role} onValueChange={(role: OrganizationRole) => setInviteDraft((previous) => ({ ...previous, role, customerAccess: role === 'customer' ? previous.customerAccess : [] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="worker">Työntekijä</SelectItem><SelectItem value="supervisor">Työnjohtaja</SelectItem><SelectItem value="admin">Ylläpitäjä</SelectItem><SelectItem value="customer">Tilaaja</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-text-secondary">{ROLE_DESCRIPTIONS[inviteDraft.role]}</p></div>
+            <div className="space-y-2"><Label>Rooli</Label><Select value={inviteDraft.role} onValueChange={(role: OrganizationRole) => setInviteDraft((previous) => ({ ...previous, role, customerAccess: role === 'customer' ? previous.customerAccess : [] }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="worker">Työntekijä</SelectItem><SelectItem value="supervisor">Työnjohtaja</SelectItem><SelectItem value="project_coordinator">Projektikoordinaattori</SelectItem><SelectItem value="admin">Ylläpitäjä</SelectItem><SelectItem value="customer">Tilaaja</SelectItem></SelectContent></Select><p className="text-xs leading-5 text-text-secondary">{ROLE_DESCRIPTIONS[inviteDraft.role]}</p></div>
             {inviteDraft.role === 'customer' && <CustomerAccessPicker catalog={catalog} value={inviteDraft.customerAccess} onChange={(customerAccess) => setInviteDraft((previous) => ({ ...previous, customerAccess }))} disabled={saving} />}
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setInviteOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void sendInvite()} disabled={saving} className="gap-2"><UserPlus size={15} /> {saving ? 'Lähetetään…' : 'Lähetä kutsu'}</Button></DialogFooter>
