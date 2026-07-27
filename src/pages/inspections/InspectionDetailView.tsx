@@ -4,7 +4,9 @@ import {
   Camera,
   CheckCircle2,
   ChevronLeft,
+  ClipboardCheck,
   FileUp,
+  Flag,
   Image as ImageIcon,
   Loader2,
   Printer,
@@ -50,6 +52,42 @@ function DetailValue({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{label}</p>
       <p className="mt-1 break-words font-medium text-text-primary">{value || '—'}</p>
+    </div>
+  );
+}
+
+function WorkflowStep({
+  number,
+  title,
+  description,
+  complete,
+  active,
+}: {
+  number: number;
+  title: string;
+  description: string;
+  complete: boolean;
+  active: boolean;
+}) {
+  return (
+    <div className={cn(
+      'relative rounded-xl border p-4 transition-colors',
+      complete && 'border-emerald-200 bg-emerald-50/70',
+      active && !complete && 'border-primary/35 bg-primary/5',
+      !active && !complete && 'border-slate-200 bg-slate-50/60',
+    )}>
+      <div className="flex items-start gap-3">
+        <span className={cn(
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold',
+          complete ? 'bg-emerald-600 text-white' : active ? 'bg-primary text-primary-foreground' : 'bg-slate-200 text-slate-600',
+        )}>
+          {complete ? <CheckCircle2 size={17} /> : number}
+        </span>
+        <div className="min-w-0">
+          <p className="font-semibold text-text-primary">{title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-text-secondary">{description}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -119,6 +157,7 @@ export default function InspectionDetailView({
 
   const refreshAll = async () => { await Promise.all([refresh(), onWorkspaceRefresh()]); };
   const fail = (caught: unknown, fallback: string) => setOperationError(caught instanceof Error ? caught.message : fallback);
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const saveStatus = async (result: InspectionResultDetail, status: InspectionResultStatus) => {
     if (!canManage) return;
@@ -144,9 +183,11 @@ export default function InspectionDetailView({
   };
 
   const markSectionOkay = async (results: InspectionResultDetail[]) => {
+    const uncheckedResults = results.filter((result) => result.status === 'Tarkastamatta');
+    if (uncheckedResults.length === 0) return;
     setSavingKey(`section-${results[0]?.sectionId ?? ''}`); setOperationError(null);
     try {
-      await Promise.all(results.map((result) => saveInspectionResult({
+      await Promise.all(uncheckedResults.map((result) => saveInspectionResult({
         inspectionId,
         itemId: result.itemId,
         status: 'Kunnossa',
@@ -208,16 +249,34 @@ export default function InspectionDetailView({
   const openFindings = detail.findings.filter(isFindingOpen);
   const blockingFindings = openFindings.filter((finding) => BLOCKING_SEVERITIES.includes(finding.severity));
   const locked = ['Hyväksytty', 'Mitätöity'].includes(detail.inspection.status);
+  const completedResults = detail.results.filter((result) => result.status !== 'Tarkastamatta').length;
   const hasHandoverPhoto = inspectionAttachments.some((attachment) =>
     ['Luovutuskuva', 'Yleiskuva'].includes(attachment.kind) && attachment.mimeType.startsWith('image/'));
   const hasHandwrittenSignature = detail.signatures.some((signature) => Boolean(signature.signatureData));
-  const approvalBlockers = [
-    detail.inspection.progress < 100 ? 'Kaikkia tarkastuskohtia ei ole käsitelty.' : null,
-    blockingFindings.length > 0 ? `${blockingFindings.length} luovutuksen estävää puutetta on avoinna.` : null,
+  const inspectionComplete = detail.inspection.progress === 100;
+  const findingsReady = inspectionComplete && blockingFindings.length === 0;
+  const preSignatureBlockers = [
+    !inspectionComplete ? 'Käsittele kaikki tarkastuskohdat.' : null,
+    blockingFindings.length > 0 ? `Sulje ${blockingFindings.length} luovutuksen estävää puutetta.` : null,
     !hasHandoverPhoto ? 'Lisää vähintään yksi luovutus- tai yleiskuva.' : null,
-    !hasHandwrittenSignature ? 'Lisää käsin tehty allekirjoitus.' : null,
   ].filter((item): item is string => Boolean(item));
+  const approvalBlockers = [
+    ...preSignatureBlockers,
+    !hasHandwrittenSignature ? 'Allekirjoita tarkastus.' : null,
+  ].filter((item): item is string => Boolean(item));
+  const signatureReady = canManage && !locked && preSignatureBlockers.length === 0;
   const canApprove = canManage && !locked && approvalBlockers.length === 0;
+  const workflowActiveStep = !inspectionComplete ? 1 : blockingFindings.length > 0 ? 2 : !hasHandoverPhoto ? 3 : 4;
+
+  const nextAction = !inspectionComplete
+    ? { title: 'Jatka tarkastusta', description: `${completedResults}/${detail.results.length} tarkastuskohtaa käsitelty.`, action: () => scrollTo('inspection-sections'), icon: ClipboardCheck }
+    : blockingFindings.length > 0
+      ? { title: 'Käsittele avoimet puutteet', description: `${blockingFindings.length} puutetta estää luovutuksen.`, action: () => scrollTo('inspection-findings'), icon: AlertTriangle }
+      : !hasHandoverPhoto
+        ? { title: 'Lisää luovutuskuva', description: 'Dokumentoi valmis kohde ennen allekirjoitusta.', action: () => scrollTo('inspection-attachments'), icon: Camera }
+        : !hasHandwrittenSignature
+          ? { title: 'Allekirjoita tarkastus', description: 'Tarkastustyö on valmis. Tee allekirjoitus ennen hyväksyntää.', action: () => setSignatureOpen(true), icon: Signature }
+          : { title: 'Hyväksy tarkastus', description: 'Kaikki luovutuksen vaatimukset täyttyvät.', action: () => setApprovalOpen(true), icon: ShieldCheck };
 
   return (
     <div className="space-y-5 print:space-y-3">
@@ -225,23 +284,24 @@ export default function InspectionDetailView({
         <Button variant="ghost" onClick={onBack} className="w-fit"><ChevronLeft size={17} className="mr-1" />Kaikki tarkastukset</Button>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => window.print()}><Printer size={16} className="mr-2" />Tulosta / PDF</Button>
-          {canManage && !locked && <Button variant="outline" onClick={() => setSignatureOpen(true)}><Signature size={16} className="mr-2" />Allekirjoita</Button>}
-          {canManage && !locked && <Button disabled={!canApprove} onClick={() => setApprovalOpen(true)}><ShieldCheck size={16} className="mr-2" />Hyväksy tarkastus</Button>}
           {currentRole === 'admin' && detail.inspection.status === 'Hyväksytty' && <Button variant="destructive" onClick={() => setVoidOpen(true)}>Mitätöi</Button>}
         </div>
       </div>
 
       {operationError && <div className="flex gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 print:hidden"><AlertTriangle size={17} className="mt-0.5 shrink-0" />{operationError}</div>}
 
-      <Card className="print:border-0 print:shadow-none"><CardContent className="p-5 sm:p-6 print:p-0">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <Card className="overflow-hidden print:border-0 print:shadow-none"><CardContent className="p-5 sm:p-6 print:p-0">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2"><Badge className={cn('border-0', inspectionStatusClasses(detail.inspection.status))}>{detail.inspection.status}</Badge><Badge variant="outline">Raporttiversio {detail.inspection.reportVersion || '—'}</Badge></div>
             <h1 className="text-2xl font-bold sm:text-3xl">{detail.inspection.title}</h1>
             <p className="mt-1 text-sm text-text-secondary">{projectName(projects, detail.inspection.projectId)} · {unitLabel(units, detail.inspection.unitId)}</p>
             <p className="mt-1 text-sm text-text-secondary">{detail.inspection.inspectionType}</p>
           </div>
-          <div className="w-full sm:w-56"><div className="mb-1 flex justify-between text-sm"><span>Eteneminen</span><strong>{detail.inspection.progress}%</strong></div><Progress value={detail.inspection.progress} /></div>
+          <div className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:w-72">
+            <div className="mb-2 flex items-end justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Tarkastustyö</p><p className="mt-1 text-sm text-text-secondary">{completedResults}/{detail.results.length} kohtaa käsitelty</p></div><strong className="text-2xl">{detail.inspection.progress}%</strong></div>
+            <Progress value={detail.inspection.progress} />
+          </div>
         </div>
 
         <div className="mt-6 border-t border-slate-200 pt-5">
@@ -262,18 +322,39 @@ export default function InspectionDetailView({
         {detail.inspection.summary && <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm"><strong>Yhteenveto:</strong> {detail.inspection.summary}</div>}
       </CardContent></Card>
 
-      {canManage && !locked && approvalBlockers.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 print:hidden">
-          <div className="flex gap-2"><AlertTriangle size={18} className="mt-0.5 shrink-0" /><div><strong>Hyväksyntä ei ole vielä mahdollinen.</strong><ul className="mt-2 space-y-1">{approvalBlockers.map((blocker) => <li key={blocker}>• {blocker}</li>)}</ul></div></div>
-        </div>
+      {!locked && (
+        <Card className="border-slate-200 print:hidden">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div><CardTitle className="flex items-center gap-2"><Flag size={19} />Tarkastuksen eteneminen</CardTitle><p className="mt-1 text-sm text-text-secondary">Allekirjoitus avautuu vasta, kun tarkastus, puutteet ja luovutuskuvat ovat kunnossa.</p></div>
+              {canManage && <Button onClick={nextAction.action}><nextAction.icon size={16} className="mr-2" />{nextAction.title}</Button>}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 md:grid-cols-4">
+              <WorkflowStep number={1} title="Tarkasta työ" description={`${completedResults}/${detail.results.length} kohtaa käsitelty`} complete={inspectionComplete} active={workflowActiveStep === 1} />
+              <WorkflowStep number={2} title="Käsittele puutteet" description={blockingFindings.length > 0 ? `${blockingFindings.length} luovutuksen estävää puutetta` : inspectionComplete ? 'Ei avoimia estäviä puutteita' : 'Valmistuu tarkastuksen jälkeen'} complete={findingsReady} active={workflowActiveStep === 2} />
+              <WorkflowStep number={3} title="Dokumentoi luovutus" description={hasHandoverPhoto ? 'Luovutuskuva lisätty' : 'Lisää vähintään yksi valmis kuva'} complete={hasHandoverPhoto} active={workflowActiveStep === 3} />
+              <WorkflowStep number={4} title="Allekirjoita ja hyväksy" description={hasHandwrittenSignature ? 'Allekirjoitettu – valmis hyväksyttäväksi' : 'Viimeinen vaihe tehdään tarkastuksen lopussa'} complete={hasHandwrittenSignature && canApprove} active={workflowActiveStep === 4} />
+            </div>
+            <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm"><strong>Seuraavaksi:</strong> {nextAction.description}</div>
+          </CardContent>
+        </Card>
       )}
 
-      {sections.map((results) => <InspectionSectionCard key={results[0].sectionId} results={results} attachments={detail.attachments} canManage={canManage} locked={locked} savingKey={savingKey} comments={comments} onCommentChange={(id, value) => setComments((previous) => ({ ...previous, [id]: value }))} onStatus={saveStatus} onSaveComment={saveComment} onMarkSection={markSectionOkay} onUpload={uploadResult} onOpenAttachment={openAttachment} />)}
+      <div id="inspection-sections" className="scroll-mt-6 space-y-5">
+        {sections.map((results) => <InspectionSectionCard key={results[0].sectionId} results={results} attachments={detail.attachments} canManage={canManage} locked={locked} savingKey={savingKey} comments={comments} onCommentChange={(id, value) => setComments((previous) => ({ ...previous, [id]: value }))} onStatus={saveStatus} onSaveComment={saveComment} onMarkSection={markSectionOkay} onUpload={uploadResult} onOpenAttachment={openAttachment} />)}
+      </div>
 
-      <Card className="print:shadow-none">
+      <Card id="inspection-findings" className="scroll-mt-6 print:shadow-none"><CardHeader><CardTitle>Puutteet ja korjaukset</CardTitle><p className="text-sm text-text-secondary">Luovutuksen estävät puutteet on suljettava ennen loppudokumentointia ja allekirjoitusta.</p></CardHeader><CardContent className="space-y-3">
+        {detail.findings.map((finding) => <div key={finding.id} className="rounded-xl border p-4"><div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{finding.title}</h3><Badge className={cn('border-0', severityClasses(finding.severity))}>{finding.severity}</Badge><Badge className={cn('border-0', findingStatusClasses(finding.status))}>{finding.status}</Badge></div><p className="mt-1 text-sm text-text-secondary">{finding.location || 'Sijaintia ei kirjattu'} · määräaika {formatDate(finding.dueDate)}</p>{finding.description && <p className="mt-2 whitespace-pre-wrap text-sm">{finding.description}</p>}{finding.correctionNote && <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Korjaajan ilmoitus: {finding.correctionNote}</p>}{finding.rejectionReason && <p className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-900">Hylkäyksen syy: {finding.rejectionReason}</p>}</div><div className="text-sm sm:text-right"><p className="text-text-muted">Vastuuhenkilö</p><p className="font-medium">{finding.contractorName || personName(people, finding.assigneeUserId)}</p></div></div><div className="mt-3 flex flex-wrap gap-2">{detail.attachments.filter((attachment) => attachment.findingId === finding.id).map((attachment) => <button key={attachment.id} type="button" onClick={() => void openAttachment(attachment.objectPath)} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs hover:bg-slate-50"><ImageIcon size={14} />{attachment.kind}: {attachment.fileName}</button>)}</div></div>)}
+        {detail.findings.length === 0 && <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 size={18} />Tarkastuksessa ei ole kirjattuja puutteita.</div>}
+      </CardContent></Card>
+
+      <Card id="inspection-attachments" className="scroll-mt-6 print:shadow-none">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Camera size={19} />Valokuvat ja dokumentit</CardTitle>
-          <p className="text-sm text-text-secondary">Lisää tarkastuksen loppuun vähintään yksi luovutuskuva kohteesta. Voit liittää myös muita yleiskuvia ja tarkastusasiakirjoja.</p>
+          <CardTitle className="flex items-center gap-2"><Camera size={19} />Luovutuskuvat ja dokumentit</CardTitle>
+          <p className="text-sm text-text-secondary">Kun tarkastuskohdat ja puutteet on käsitelty, dokumentoi valmis kohde vähintään yhdellä luovutus- tai yleiskuvalla.</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 print:hidden">
@@ -292,19 +373,38 @@ export default function InspectionDetailView({
           </div>
           {inspectionAttachments.length > 0
             ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{inspectionAttachments.map((attachment) => <AttachmentPreview key={attachment.id} attachment={attachment} onOpen={(path) => void openAttachment(path)} />)}</div>
-            : <div className="rounded-xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-text-secondary">Tarkastukseen ei ole vielä lisätty yleiskuvia tai asiakirjoja.</div>}
+            : <div className="rounded-xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-text-secondary">Tarkastukseen ei ole vielä lisätty luovutuskuvia tai asiakirjoja.</div>}
         </CardContent>
       </Card>
 
-      <Card className="print:shadow-none"><CardHeader><CardTitle>Puutteet ja korjaukset</CardTitle></CardHeader><CardContent className="space-y-3">
-        {detail.findings.map((finding) => <div key={finding.id} className="rounded-xl border p-4"><div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{finding.title}</h3><Badge className={cn('border-0', severityClasses(finding.severity))}>{finding.severity}</Badge><Badge className={cn('border-0', findingStatusClasses(finding.status))}>{finding.status}</Badge></div><p className="mt-1 text-sm text-text-secondary">{finding.location || 'Sijaintia ei kirjattu'} · määräaika {formatDate(finding.dueDate)}</p>{finding.description && <p className="mt-2 whitespace-pre-wrap text-sm">{finding.description}</p>}{finding.correctionNote && <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Korjaajan ilmoitus: {finding.correctionNote}</p>}{finding.rejectionReason && <p className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-900">Hylkäyksen syy: {finding.rejectionReason}</p>}</div><div className="text-sm sm:text-right"><p className="text-text-muted">Vastuuhenkilö</p><p className="font-medium">{finding.contractorName || personName(people, finding.assigneeUserId)}</p></div></div><div className="mt-3 flex flex-wrap gap-2">{detail.attachments.filter((attachment) => attachment.findingId === finding.id).map((attachment) => <button key={attachment.id} type="button" onClick={() => void openAttachment(attachment.objectPath)} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs hover:bg-slate-50"><ImageIcon size={14} />{attachment.kind}: {attachment.fileName}</button>)}</div></div>)}
-        {detail.findings.length === 0 && <p className="text-sm text-text-secondary">Tarkastuksessa ei ole kirjattuja puutteita.</p>}
-      </CardContent></Card>
+      <Card id="inspection-signatures" className="scroll-mt-6 overflow-hidden border-slate-200 print:shadow-none">
+        <CardHeader className="bg-slate-50/70">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div><CardTitle className="flex items-center gap-2"><Signature size={18} />Luovutus, allekirjoitus ja hyväksyntä</CardTitle><p className="mt-1 text-sm text-text-secondary">Tämä on tarkastuksen viimeinen vaihe. Allekirjoita vasta, kun työ on tarkastettu, puutteet käsitelty ja luovutuskuvat lisätty.</p></div>
+            {hasHandwrittenSignature && <Badge className="w-fit border-0 bg-emerald-50 text-emerald-800"><CheckCircle2 size={14} className="mr-1" />Allekirjoitettu</Badge>}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 p-5 sm:p-6">
+          {detail.signatures.map((signature) => <div key={signature.id} className="rounded-xl border p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold">{signature.signerName}</p><p className="text-sm text-text-secondary">{signature.signerRole}{signature.signerCompany ? ` · ${signature.signerCompany}` : ''}</p>{signature.note && <p className="mt-2 text-sm">{signature.note}</p>}</div><div className="w-full sm:w-72">{signature.signatureData ? <img src={signature.signatureData} alt={`${signature.signerName}, allekirjoitus`} className="h-24 w-full rounded-lg border bg-white object-contain p-2" /> : <div className="flex h-24 items-center justify-center rounded-lg border border-dashed text-xs text-text-muted">Ei piirrettyä allekirjoitusta</div>}<p className="mt-1 text-right text-xs text-text-muted">{formatDateTime(signature.signedAt)}</p></div></div></div>)}
 
-      <Card className="print:shadow-none"><CardHeader><CardTitle className="flex items-center gap-2"><Signature size={18} />Allekirjoitukset</CardTitle><p className="text-sm text-text-secondary">Käsin tehty allekirjoitus vaaditaan ennen tarkastuksen hyväksymistä.</p></CardHeader><CardContent className="space-y-3">
-        {detail.signatures.map((signature) => <div key={signature.id} className="rounded-xl border p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold">{signature.signerName}</p><p className="text-sm text-text-secondary">{signature.signerRole}{signature.signerCompany ? ` · ${signature.signerCompany}` : ''}</p>{signature.note && <p className="mt-2 text-sm">{signature.note}</p>}</div><div className="w-full sm:w-72">{signature.signatureData ? <img src={signature.signatureData} alt={`${signature.signerName}, allekirjoitus`} className="h-24 w-full rounded-lg border bg-white object-contain p-2" /> : <div className="flex h-24 items-center justify-center rounded-lg border border-dashed text-xs text-text-muted">Ei piirrettyä allekirjoitusta</div>}<p className="mt-1 text-right text-xs text-text-muted">{formatDateTime(signature.signedAt)}</p></div></div></div>)}
-        {detail.signatures.length === 0 && <p className="text-sm text-text-secondary">Tarkastusta ei ole vielä allekirjoitettu.</p>}
-      </CardContent></Card>
+          {!locked && canManage && (
+            <div className={cn('rounded-xl border p-4 print:hidden', preSignatureBlockers.length === 0 ? 'border-emerald-200 bg-emerald-50/60' : 'border-amber-200 bg-amber-50/70')}>
+              {preSignatureBlockers.length > 0 ? (
+                <div className="flex gap-3"><AlertTriangle size={19} className="mt-0.5 shrink-0 text-amber-700" /><div><p className="font-semibold text-amber-950">Viimeinen vaihe ei ole vielä valmis.</p><ul className="mt-2 space-y-1 text-sm text-amber-950">{preSignatureBlockers.map((blocker) => <li key={blocker}>• {blocker}</li>)}</ul></div></div>
+              ) : (
+                <div className="flex gap-3"><CheckCircle2 size={19} className="mt-0.5 shrink-0 text-emerald-700" /><div><p className="font-semibold text-emerald-950">Tarkastus on valmis allekirjoitettavaksi.</p><p className="mt-1 text-sm text-emerald-900">Allekirjoituksen jälkeen tarkastus voidaan hyväksyä ja raporttiversio lukitaan.</p></div></div>
+              )}
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" disabled={!signatureReady || Boolean(savingKey)} onClick={() => setSignatureOpen(true)}><Signature size={16} className="mr-2" />{hasHandwrittenSignature ? 'Lisää allekirjoitus' : 'Allekirjoita tarkastus'}</Button>
+                <Button disabled={!canApprove || Boolean(savingKey)} onClick={() => setApprovalOpen(true)}><ShieldCheck size={16} className="mr-2" />Hyväksy ja lukitse tarkastus</Button>
+              </div>
+            </div>
+          )}
+
+          {detail.signatures.length === 0 && locked && <p className="text-sm text-text-secondary">Tarkastukselle ei ole tallennettu allekirjoitusta.</p>}
+          {locked && <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm"><ShieldCheck size={18} />Tarkastus on {detail.inspection.status.toLowerCase()} eikä sen sisältöä voi enää muuttaa.</div>}
+        </CardContent>
+      </Card>
 
       <FindingDialog result={findingResult} people={people} busy={savingKey === 'finding'} onClose={() => setFindingResult(null)} onSubmit={submitFinding} />
       <SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === 'signature'} onClose={() => setSignatureOpen(false)} onSubmit={async (draft) => { setSavingKey('signature'); setOperationError(null); try { await addHandwrittenInspectionSignature({ organizationId, inspectionId, signerName: draft.name, signerRole: draft.role, signerCompany: draft.company, signatureData: draft.signatureData, note: draft.note, userId }); setSignatureOpen(false); await refreshAll(); } catch (caught) { fail(caught, 'Allekirjoituksen tallennus epäonnistui.'); } finally { setSavingKey(null); } }} />
