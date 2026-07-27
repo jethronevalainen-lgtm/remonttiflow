@@ -23,6 +23,7 @@ import {
 } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
+import { useAppNotifications } from '@/hooks/useAppNotifications';
 import { BRAND } from '@/config/brand';
 import {
   buildHeaderAlerts,
@@ -30,6 +31,7 @@ import {
   type HeaderAlert,
   type HeaderRoute,
 } from '@/lib/headerInsights';
+import type { AppNotification, AppNotificationSeverity } from '@/lib/supabase/appNotifications';
 
 const routes: HeaderRoute[] = [
   { path: '/dashboard', label: 'Dashboard' },
@@ -67,7 +69,7 @@ function initialsOf(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function alertIcon(alert: HeaderAlert) {
+function alertIcon(alert: { severity: AppNotificationSeverity }) {
   if (alert.severity === 'danger') {
     return <ShieldAlert size={17} className="text-red-600" />;
   }
@@ -77,7 +79,7 @@ function alertIcon(alert: HeaderAlert) {
   return <CircleAlert size={17} className="text-blue-600" />;
 }
 
-function alertTone(alert: HeaderAlert) {
+function alertTone(alert: { severity: AppNotificationSeverity }) {
   if (alert.severity === 'danger') return 'border-red-100 bg-red-50/60';
   if (alert.severity === 'warning') return 'border-amber-100 bg-amber-50/60';
   return 'border-blue-100 bg-blue-50/60';
@@ -98,6 +100,13 @@ export default function Header({ onMenuClick }: HeaderProps) {
   } = useOrganization();
   const { effectiveRole, effectiveDisplayName } = useViewAs();
   const { workOrders, timeEntries, safetyItems, projects } = useAppDataContext();
+  const {
+    notifications,
+    unreadCount,
+    error: notificationError,
+    markRead,
+    markAllRead,
+  } = useAppNotifications();
 
   const [showAlerts, setShowAlerts] = useState(false);
   const [showOrgMenu, setShowOrgMenu] = useState(false);
@@ -122,6 +131,13 @@ export default function Header({ onMenuClick }: HeaderProps) {
     }).filter((alert) => allowed.has(alert.path));
   }, [allowedPaths, projects, safetyItems, timeEntries, workOrders]);
 
+  const visibleNotifications = useMemo(() => {
+    const allowed = new Set(allowedPaths);
+    return notifications.filter((notification) => allowed.has(notification.path));
+  }, [allowedPaths, notifications]);
+
+  const badgeCount = alerts.length + visibleNotifications.filter((notification) => !notification.readAt).length;
+
   const searchResults = useMemo(
     () => filterHeaderRoutes(routes, allowedPaths, searchValue),
     [allowedPaths, searchValue],
@@ -132,6 +148,13 @@ export default function Header({ onMenuClick }: HeaderProps) {
     setSearchValue('');
     setSearchFocused(false);
     setShowAlerts(false);
+  };
+
+  const openNotification = (notification: AppNotification) => {
+    if (!notification.readAt) {
+      void markRead(notification.id).catch(() => undefined);
+    }
+    goTo(notification.path);
   };
 
   const handleSearchKey = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -296,12 +319,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
             type="button"
             onClick={() => setShowAlerts(!showAlerts)}
             className="relative flex h-10 w-10 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100"
-            aria-label="Avaa ajankohtaiset huomiot"
+            aria-label="Avaa ilmoitukset ja ajankohtaiset huomiot"
           >
             <Bell size={18} />
-            {alerts.length > 0 && (
+            {badgeCount > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                {alerts.length}
+                {badgeCount > 99 ? '99+' : badgeCount}
               </span>
             )}
           </button>
@@ -312,24 +335,62 @@ export default function Header({ onMenuClick }: HeaderProps) {
                   type="button"
                   className="fixed inset-0 z-40 cursor-default"
                   onClick={() => setShowAlerts(false)}
-                  aria-label="Sulje ajankohtaiset huomiot"
+                  aria-label="Sulje ilmoitukset"
                 />
                 <motion.div
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className="absolute right-0 top-full z-50 mt-1 w-[min(360px,calc(100vw-16px))] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+                  className="absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,640px)] w-[min(390px,calc(100vw-16px))] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl"
                 >
-                  <div className="border-b border-gray-100 px-4 py-3">
-                    <p className="text-sm font-semibold">Ajankohtaiset huomiot</p>
-                    <p className="mt-0.5 text-xs text-gray-400">
-                      Johdettu organisaation tämänhetkisistä tiedoista
-                    </p>
+                  <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-100 bg-white px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold">Ilmoitukset ja huomiot</p>
+                      <p className="mt-0.5 text-xs text-gray-400">
+                        {unreadCount > 0 ? `${unreadCount} lukematonta ilmoitusta` : 'Ei lukemattomia ilmoituksia'}
+                      </p>
+                    </div>
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => { void markAllRead().catch(() => undefined); }}
+                        className="min-h-9 rounded-lg px-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                      >
+                        Merkitse luetuiksi
+                      </button>
+                    )}
                   </div>
-                  {alerts.map((alert) => (
+
+                  {notificationError && (
+                    <div className="border-b border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+                      {notificationError}
+                    </div>
+                  )}
+
+                  {visibleNotifications.map((notification) => (
                     <button
                       type="button"
-                      key={alert.id}
+                      key={notification.id}
+                      onClick={() => openNotification(notification)}
+                      className={`relative flex min-h-11 w-full gap-3 border-b px-4 py-3 text-left transition-colors hover:brightness-[0.98] ${alertTone(notification)} ${notification.readAt ? 'opacity-75' : ''}`}
+                    >
+                      <span className="mt-0.5 flex-shrink-0">{alertIcon(notification)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-gray-900">
+                          {notification.title}
+                        </span>
+                        <span className="mt-0.5 block text-xs leading-5 text-gray-600">
+                          {notification.body}
+                        </span>
+                      </span>
+                      {!notification.readAt && <span className="mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full bg-orange-500" />}
+                    </button>
+                  ))}
+
+                  {alerts.map((alert: HeaderAlert) => (
+                    <button
+                      type="button"
+                      key={`derived-${alert.id}`}
                       onClick={() => goTo(alert.path)}
                       className={`flex min-h-11 w-full gap-3 border-b px-4 py-3 text-left transition-colors hover:brightness-[0.98] ${alertTone(alert)}`}
                     >
@@ -344,11 +405,12 @@ export default function Header({ onMenuClick }: HeaderProps) {
                       </span>
                     </button>
                   ))}
-                  {alerts.length === 0 && (
+
+                  {visibleNotifications.length === 0 && alerts.length === 0 && !notificationError && (
                     <div className="px-4 py-8 text-center">
                       <Check size={24} className="mx-auto mb-2 text-emerald-600" />
                       <p className="text-sm font-medium text-gray-800">
-                        Ei avoimia huomioita
+                        Ei avoimia ilmoituksia
                       </p>
                     </div>
                   )}
