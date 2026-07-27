@@ -1,0 +1,42 @@
+name: One-shot supervisor copy cleanup
+
+on:
+  push:
+    branches:
+      - fix/simplify-supervisor-helper-text
+
+permissions:
+  contents: write
+
+jobs:
+  update-copy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: fix/simplify-supervisor-helper-text
+
+      - name: Simplify helper text
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('src/pages/HenkilostoIntegrated.tsx')
+          old = 'Valitse henkilölle vastuullinen työnjohtaja. Projektikoordinaattoreita ei voi nimetä esihenkilöksi.'
+          new = 'Valitse henkilölle vastuullinen työnjohtaja.'
+          content = path.read_text(encoding='utf-8')
+          count = content.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one helper text occurrence, found {count}')
+          path.write_text(content.replace(old, new), encoding='utf-8')
+          PY
+
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/one-shot-simplify-supervisor-copy.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/pages/HenkilostoIntegrated.tsx .github/workflows/one-shot-simplify-supervisor-copy.yml
+          git commit -m "fix: simplify supervisor helper text"
+          git push origin HEAD:fix/simplify-supervisor-helper-text
