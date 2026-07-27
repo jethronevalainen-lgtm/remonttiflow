@@ -13,9 +13,15 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Session, User } from '@supabase/supabase-js';
+import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
 
-import { supabase } from '@/lib/supabase/client';
+import {
+  administratorSupabase,
+  deactivateImpersonationSession,
+  getActiveSupabaseClient,
+  isImpersonationClientActive,
+  subscribeActiveSupabaseClient,
+} from '@/lib/supabase/client';
 import type { ProfileRow } from '@/lib/supabase/types';
 
 export type { Session, User };
@@ -31,7 +37,7 @@ export type { Permission, UserRole } from '@/auth/permissions';
 
 const SIGN_IN_GENERIC_ERROR = 'Kirjautuminen epäonnistui. Yritä uudelleen myöhemmin.';
 const SIGN_IN_INVALID_CREDENTIALS_ERROR = 'Virheellinen sähköposti tai salasana';
-const VIEW_AS_STORAGE_KEY = 'vakantti-v1-view-as';
+const LEGACY_VIEW_AS_STORAGE_KEY = 'vakantti-v1-view-as';
 
 interface AuthContextType {
   session: Session | null;
@@ -44,9 +50,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function clearPreviewState(): void {
+function clearLegacyPreviewState(): void {
   try {
-    window.sessionStorage.removeItem(VIEW_AS_STORAGE_KEY);
+    window.sessionStorage.removeItem(LEGACY_VIEW_AS_STORAGE_KEY);
   } catch {
     // Storage can be unavailable in strict privacy modes.
   }
@@ -59,65 +65,103 @@ function mapSignInError(message: string | undefined): string {
   return SIGN_IN_GENERIC_ERROR;
 }
 
+async function fetchProfile(
+  client: SupabaseClient,
+  userId: string,
+): Promise<ProfileRow | null> {
+  const query = () => client.from('profiles').select('*').eq('id', userId).maybeSingle();
+  let { data, error } = await query();
+  if (error) {
+    await new Promise((resolve) => window.setTimeout(resolve, 800));
+    ({ data, error } = await query());
+  }
+  return error ? null : data as ProfileRow | null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (userId: string) => {
-    const query = () => supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-    let { data, error } = await query();
-    if (error) {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      ({ data, error } = await query());
-    }
-    return error ? null : data;
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
+    let revision = 0;
+    let unsubscribeAuth: (() => void) | null = null;
 
-    const resolveInitialSession = async () => {
-      const {
-        data: { session: initialSession },
-      } = await supabase.auth.getSession();
-      if (cancelled) return;
-      setSession(initialSession);
-      if (initialSession?.user) {
-        const initialProfile = await fetchProfile(initialSession.user.id);
-        if (cancelled) return;
-        setProfile(initialProfile);
+    const hydrateSession = async (
+      client: SupabaseClient,
+      nextSession: Session | null,
+      expectedRevision: number,
+    ) => {
+      if (
+        cancelled
+        || expectedRevision !== revision
+        || client !== getActiveSupabaseClient()
+      ) return;
+
+      setSession(nextSession);
+      setProfile(null);
+      if (!nextSession?.user) {
+        setLoading(false);
+        return;
       }
+
+      const nextProfile = await fetchProfile(client, nextSession.user.id);
+      if (
+        cancelled
+        || expectedRevision !== revision
+        || client !== getActiveSupabaseClient()
+      ) return;
+      setProfile(nextProfile);
       setLoading(false);
     };
 
-    void resolveInitialSession();
+    const bindClient = async (client: SupabaseClient) => {
+      revision += 1;
+      const expectedRevision = revision;
+      unsubscribeAuth?.();
+      unsubscribeAuth = null;
+      setLoading(true);
+      setSession(null);
+      setProfile(null);
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      if (nextSession?.user) {
-        void fetchProfile(nextSession.user.id).then((nextProfile) => {
-          if (!cancelled) setProfile(nextProfile);
-        });
-      } else {
-        setProfile(null);
-        clearPreviewState();
-      }
+      const {
+        data: { subscription },
+      } = client.auth.onAuthStateChange((_event, nextSession) => {
+        if (client !== getActiveSupabaseClient()) return;
+        if (!nextSession && isImpersonationClientActive()) {
+          void deactivateImpersonationSession();
+          return;
+        }
+        void hydrateSession(client, nextSession, expectedRevision);
+      });
+      unsubscribeAuth = () => subscription.unsubscribe();
+
+      const {
+        data: { session: initialSession },
+      } = await client.auth.getSession();
+      await hydrateSession(client, initialSession, expectedRevision);
+    };
+
+    void bindClient(getActiveSupabaseClient());
+    const unsubscribeClient = subscribeActiveSupabaseClient((client) => {
+      void bindClient(client);
     });
 
     return () => {
       cancelled = true;
-      subscription.unsubscribe();
+      revision += 1;
+      unsubscribeClient();
+      unsubscribeAuth?.();
     };
-  }, [fetchProfile]);
+  }, []);
 
   const signIn = useCallback(
     async (email: string, password: string): Promise<{ error: string | null }> => {
       try {
-        clearPreviewState();
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        clearLegacyPreviewState();
+        if (isImpersonationClientActive()) await deactivateImpersonationSession();
+        const { error } = await administratorSupabase.auth.signInWithPassword({ email, password });
         if (error) return { error: mapSignInError(error.message) };
         return { error: null };
       } catch {
@@ -128,8 +172,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    clearPreviewState();
-    await supabase.auth.signOut();
+    clearLegacyPreviewState();
+    if (isImpersonationClientActive()) await deactivateImpersonationSession();
+    await administratorSupabase.auth.signOut();
     setSession(null);
     setProfile(null);
   }, []);
