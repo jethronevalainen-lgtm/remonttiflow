@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
-  ClipboardList,
   FileText,
   FolderKanban,
   Layers3,

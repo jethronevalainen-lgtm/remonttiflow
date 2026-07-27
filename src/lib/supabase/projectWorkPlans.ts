@@ -43,7 +43,9 @@ export async function loadProjectWorkPlans(values: {
     .order('created_at', { ascending: false });
 
   if (error) throw new Error(`Työkokonaisuuksien haku epäonnistui: ${error.message}`);
-  const rows = Array.isArray(data) ? data.filter((item): item is Row => Boolean(item) && typeof item === 'object') : [];
+  const rows: Row[] = Array.isArray(data)
+    ? data.map((item) => item as unknown as Row)
+    : [];
   return rows.map((row) => ({
     id: text(row, 'id'),
     projectId: text(row, 'project_id'),
