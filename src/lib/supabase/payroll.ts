@@ -11,6 +11,10 @@ export interface OrganizationTimeRules {
   roundingMode: 'nearest' | 'floor' | 'ceil';
   automaticBreakAfterMinutes: number;
   automaticBreakMinutes: number;
+  eveningStartTime: string;
+  eveningEndTime: string;
+  nightStartTime: string;
+  nightEndTime: string;
   monthlySalaryHourDivisor: number;
   sundayMultiplier: number;
   maximumAverageWeeklyHours: number;
@@ -39,8 +43,14 @@ export interface PayrollPreviewLine {
   overtime50Minutes: number;
   overtime100Minutes: number;
   weeklyOvertime50Minutes: number;
+  eveningMinutes: number;
+  nightMinutes: number;
   saturdayMinutes: number;
   sundayMinutes: number;
+  breakMinutes: number;
+  breakSource: string;
+  startTime?: string;
+  endTime?: string;
   hourlyBasePayCents: number;
   overtimePremiumCents: number;
   allowancePayCents: number;
@@ -77,6 +87,10 @@ const DEFAULT_RULES: Omit<OrganizationTimeRules, 'organizationId'> = {
   roundingMode: 'nearest',
   automaticBreakAfterMinutes: 360,
   automaticBreakMinutes: 30,
+  eveningStartTime: '18:00:00',
+  eveningEndTime: '23:00:00',
+  nightStartTime: '23:00:00',
+  nightEndTime: '06:00:00',
   monthlySalaryHourDivisor: 162.5,
   sundayMultiplier: 2,
   maximumAverageWeeklyHours: 48,
@@ -120,6 +134,11 @@ function stringArray(row: Row, key: string): string[] {
     : [];
 }
 
+function clockValue(row: Row, key: string, fallback: string): string {
+  const value = text(row, key);
+  return value || fallback;
+}
+
 export async function getOrganizationTimeRules(organizationId: string): Promise<OrganizationTimeRules> {
   const { data, error } = await supabase
     .from('organization_time_rules')
@@ -142,6 +161,10 @@ export async function getOrganizationTimeRules(organizationId: string): Promise<
     roundingMode: roundingMode === 'floor' || roundingMode === 'ceil' ? roundingMode : 'nearest',
     automaticBreakAfterMinutes: optionalNumber(row, 'automatic_break_after_minutes') ?? DEFAULT_RULES.automaticBreakAfterMinutes,
     automaticBreakMinutes: optionalNumber(row, 'automatic_break_minutes') ?? DEFAULT_RULES.automaticBreakMinutes,
+    eveningStartTime: clockValue(row, 'evening_start_time', DEFAULT_RULES.eveningStartTime),
+    eveningEndTime: clockValue(row, 'evening_end_time', DEFAULT_RULES.eveningEndTime),
+    nightStartTime: clockValue(row, 'night_start_time', DEFAULT_RULES.nightStartTime),
+    nightEndTime: clockValue(row, 'night_end_time', DEFAULT_RULES.nightEndTime),
     monthlySalaryHourDivisor: optionalNumber(row, 'monthly_salary_hour_divisor') ?? DEFAULT_RULES.monthlySalaryHourDivisor,
     sundayMultiplier: optionalNumber(row, 'sunday_multiplier') ?? DEFAULT_RULES.sundayMultiplier,
     maximumAverageWeeklyHours: optionalNumber(row, 'maximum_average_weekly_hours') ?? DEFAULT_RULES.maximumAverageWeeklyHours,
@@ -169,6 +192,10 @@ export async function saveOrganizationTimeRules(
     rounding_mode: rules.roundingMode,
     automatic_break_after_minutes: rules.automaticBreakAfterMinutes,
     automatic_break_minutes: rules.automaticBreakMinutes,
+    evening_start_time: rules.eveningStartTime,
+    evening_end_time: rules.eveningEndTime,
+    night_start_time: rules.nightStartTime,
+    night_end_time: rules.nightEndTime,
     monthly_salary_hour_divisor: rules.monthlySalaryHourDivisor,
     sunday_multiplier: rules.sundayMultiplier,
     maximum_average_weekly_hours: rules.maximumAverageWeeklyHours,
@@ -190,7 +217,7 @@ export async function listPayrollPreview(
   periodStart: string,
   periodEnd: string,
 ): Promise<PayrollPreviewLine[]> {
-  const { data, error } = await supabase.rpc('list_payroll_preview', {
+  const { data, error } = await supabase.rpc('list_payroll_preview_v2', {
     p_organization_id: organizationId,
     p_period_start: periodStart,
     p_period_end: periodEnd,
@@ -214,8 +241,14 @@ export async function listPayrollPreview(
     overtime50Minutes: numberValue(row, 'overtime_50_minutes'),
     overtime100Minutes: numberValue(row, 'overtime_100_minutes'),
     weeklyOvertime50Minutes: numberValue(row, 'weekly_overtime_50_minutes'),
+    eveningMinutes: numberValue(row, 'evening_minutes'),
+    nightMinutes: numberValue(row, 'night_minutes'),
     saturdayMinutes: numberValue(row, 'saturday_minutes'),
     sundayMinutes: numberValue(row, 'sunday_minutes'),
+    breakMinutes: numberValue(row, 'break_minutes'),
+    breakSource: text(row, 'break_source'),
+    startTime: optionalText(row, 'start_time'),
+    endTime: optionalText(row, 'end_time'),
     hourlyBasePayCents: numberValue(row, 'hourly_base_pay_cents'),
     overtimePremiumCents: numberValue(row, 'overtime_premium_cents'),
     allowancePayCents: numberValue(row, 'allowance_pay_cents'),
