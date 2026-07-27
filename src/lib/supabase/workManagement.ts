@@ -7,6 +7,7 @@ import type {
 import type { OrganizationRole } from '@/lib/supabase/types';
 
 export type WorkOrderOccupancyStatus = 'unknown' | 'occupied' | 'vacant' | 'partly_occupied';
+export type WorkOrderFinishAction = 'submit_time_entry' | 'request_completion' | 'blocked';
 
 export interface OrganizationPerson {
   userId: string;
@@ -49,6 +50,17 @@ export interface ManagedWorkOrder {
   workerNote: string;
   startedAt?: string;
   completedAt?: string;
+  activeSessionId?: string;
+  activeSessionStartedAt?: string;
+  completionRequestedAt?: string;
+  completionRequestedBy?: string;
+  completionRequesterName?: string;
+  completionRequestNote: string;
+  completionRequestTimeEntryId?: string;
+  completionReviewedAt?: string;
+  completionReviewedBy?: string;
+  completionReviewNote: string;
+  completionApproved: boolean;
 }
 
 export interface RoleWorkspaceData {
@@ -138,7 +150,7 @@ export async function loadRoleWorkspace(
   canManage: boolean,
   currentUserId: string,
 ): Promise<RoleWorkspaceData> {
-  const [workOrderData, membershipData, assigneeData] = await Promise.all([
+  const [workOrderData, membershipData, assigneeData, activeSessionData] = await Promise.all([
     requireData(
       supabase
         .from('work_orders')
@@ -162,13 +174,30 @@ export async function loadRoleWorkspace(
         .eq('organization_id', organizationId),
       'Työmääräysvastuiden haku',
     ),
+    requireData(
+      supabase
+        .from('work_order_time_sessions')
+        .select('id, work_order_id, started_at')
+        .eq('organization_id', organizationId)
+        .eq('user_id', currentUserId)
+        .is('ended_at', null),
+      'Käynnissä olevan työajan haku',
+    ),
   ]);
 
+  const workOrderRows = asRows(workOrderData);
   const membershipRows = asRows(membershipData);
   const assigneeRows = asRows(assigneeData);
+  const activeSessionRows = asRows(activeSessionData);
   const visibleUserIds = new Set<string>([currentUserId]);
   membershipRows.forEach((item) => visibleUserIds.add(text(item, 'user_id')));
   assigneeRows.forEach((item) => visibleUserIds.add(text(item, 'user_id')));
+  workOrderRows.forEach((item) => {
+    const requesterId = text(item, 'completion_requested_by');
+    const reviewerId = text(item, 'completion_reviewed_by');
+    if (requesterId) visibleUserIds.add(requesterId);
+    if (reviewerId) visibleUserIds.add(reviewerId);
+  });
 
   let directoryRows: Row[] = [];
   if (canManage) {
@@ -182,23 +211,23 @@ export async function loadRoleWorkspace(
   }
 
   const ids = [...visibleUserIds].filter(Boolean);
-  const profileRows = canManage
-    ? directoryRows.map((item) => ({
-        id: text(item, 'user_id'),
-        full_name: text(item, 'display_name'),
-        avatar_url: text(item, 'avatar_url'),
-        email: '',
-      }))
-    : ids.length > 0
-      ? asRows(await requireData(
-          supabase
-            .from('profiles')
-            .select('id, full_name, email, avatar_url')
-            .in('id', ids),
-          'Käyttäjäprofiilien haku',
-        ))
-      : [];
-
+  const directoryProfiles = directoryRows.map((item) => ({
+    id: text(item, 'user_id'),
+    full_name: text(item, 'display_name'),
+    avatar_url: text(item, 'avatar_url'),
+    email: '',
+  }));
+  const missingProfileIds = ids.filter((id) => !directoryProfiles.some((profile) => profile.id === id));
+  const fallbackProfiles = missingProfileIds.length > 0
+    ? asRows(await requireData(
+        supabase
+          .from('profiles')
+          .select('id, full_name, email, avatar_url')
+          .in('id', missingProfileIds),
+        'Käyttäjäprofiilien haku',
+      ))
+    : [];
+  const profileRows = [...directoryProfiles, ...fallbackProfiles];
   const profiles = new Map(profileRows.map((item) => [text(item, 'id'), item]));
 
   const people = canManage
@@ -219,10 +248,17 @@ export async function loadRoleWorkspace(
     assigneesByOrder.set(orderId, [...(assigneesByOrder.get(orderId) ?? []), userId]);
   });
 
-  const allWorkOrders = asRows(workOrderData).map((item): ManagedWorkOrder => {
+  const activeSessionByOrder = new Map(
+    activeSessionRows.map((item) => [text(item, 'work_order_id'), item]),
+  );
+
+  const allWorkOrders = workOrderRows.map((item): ManagedWorkOrder => {
     const id = text(item, 'id');
     const assigneeUserIds = assigneesByOrder.get(id) ?? [];
     const projectId = optionalText(item, 'project_id');
+    const requesterId = optionalText(item, 'completion_requested_by');
+    const requesterProfile = requesterId ? profiles.get(requesterId) ?? {} : {};
+    const activeSession = activeSessionByOrder.get(id) ?? {};
     return {
       id,
       projectId,
@@ -254,6 +290,19 @@ export async function loadRoleWorkspace(
       workerNote: text(item, 'worker_note'),
       startedAt: optionalText(item, 'started_at'),
       completedAt: optionalText(item, 'completed_at'),
+      activeSessionId: optionalText(activeSession, 'id'),
+      activeSessionStartedAt: optionalText(activeSession, 'started_at'),
+      completionRequestedAt: optionalText(item, 'completion_requested_at'),
+      completionRequestedBy: requesterId,
+      completionRequesterName: requesterId
+        ? text(requesterProfile, 'full_name') || text(requesterProfile, 'email') || 'Työntekijä'
+        : undefined,
+      completionRequestNote: text(item, 'completion_request_note'),
+      completionRequestTimeEntryId: optionalText(item, 'completion_request_time_entry_id'),
+      completionReviewedAt: optionalText(item, 'completion_reviewed_at'),
+      completionReviewedBy: optionalText(item, 'completion_reviewed_by'),
+      completionReviewNote: text(item, 'completion_review_note'),
+      completionApproved: booleanValue(item, 'completion_approved'),
     };
   });
 
@@ -380,4 +429,31 @@ export async function transitionMyWorkOrder(values: {
     p_worker_note: values.workerNote || null,
   });
   if (error) throw new Error(`Työn tilan päivitys epäonnistui: ${error.message}`);
+}
+
+export async function finishMyWorkOrderSession(values: {
+  workOrderId: string;
+  action: WorkOrderFinishAction;
+  workDescription: string;
+}): Promise<string | undefined> {
+  const { data, error } = await supabase.rpc('finish_my_work_order_session', {
+    p_work_order_id: values.workOrderId,
+    p_action: values.action,
+    p_work_description: values.workDescription,
+  });
+  if (error) throw new Error(`Työajan päättäminen epäonnistui: ${error.message}`);
+  return typeof data === 'string' ? data : undefined;
+}
+
+export async function reviewWorkOrderCompletion(values: {
+  workOrderId: string;
+  approved: boolean;
+  reviewNote?: string;
+}): Promise<void> {
+  const { error } = await supabase.rpc('review_work_order_completion', {
+    p_work_order_id: values.workOrderId,
+    p_approved: values.approved,
+    p_review_note: values.reviewNote || null,
+  });
+  if (error) throw new Error(`Valmistumispyynnön käsittely epäonnistui: ${error.message}`);
 }
