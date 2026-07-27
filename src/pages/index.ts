@@ -1,4 +1,4 @@
-export { default as Dashboard } from './Dashboard';
+export { default as Dashboard } from './DashboardV2';
 export { default as Projektit } from './Projektit';
 export { default as ProjectWorkspace } from './ProjectWorkspace';
 export { default as ProjectRequests } from './ProjectRequests';
