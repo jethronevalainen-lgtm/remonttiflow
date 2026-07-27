@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { useInspectionDetail } from '@/hooks/useInspectionData';
 import {
-  approveInspection, createAttachmentUrl, createInspectionFinding,
+  approveInspection, createAttachmentUrl, createInspectionFinding, downloadInspectionAttachment,
   saveInspectionResult, uploadInspectionAttachment, voidInspection,
   type InspectionAttachment, type InspectionResultDetail, type InspectionResultStatus, type ProjectUnit,
 } from '@/lib/supabase/inspectionEntities';
@@ -97,14 +97,36 @@ function AttachmentPreview({ attachment, onOpen }: {
   onOpen: (path: string) => void;
 }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewState, setPreviewState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
     let active = true;
-    if (!attachment.mimeType.startsWith('image/')) return () => { active = false; };
-    void createAttachmentUrl(attachment.objectPath)
-      .then((url) => { if (active) setPreviewUrl(url); })
-      .catch(() => { if (active) setPreviewUrl(null); });
-    return () => { active = false; };
+    let objectUrl: string | null = null;
+    setPreviewUrl(null);
+    setPreviewState('loading');
+
+    if (!attachment.mimeType.startsWith('image/')) {
+      setPreviewState('error');
+      return () => { active = false; };
+    }
+
+    void downloadInspectionAttachment(attachment.objectPath)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+        setPreviewState('ready');
+      })
+      .catch(() => {
+        if (!active) return;
+        setPreviewUrl(null);
+        setPreviewState('error');
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [attachment.mimeType, attachment.objectPath]);
 
   return (
@@ -114,9 +136,24 @@ function AttachmentPreview({ attachment, onOpen }: {
       className="group overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-primary/40 hover:shadow-sm"
     >
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-slate-100">
-        {previewUrl
-          ? <img src={previewUrl} alt={attachment.caption || attachment.fileName} className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
-          : <FileUp size={28} className="text-slate-400" />}
+        {previewState === 'loading' && <Loader2 size={26} className="animate-spin text-slate-400" />}
+        {previewState === 'ready' && previewUrl && (
+          <img
+            src={previewUrl}
+            alt={attachment.caption || attachment.fileName}
+            className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+            onError={() => {
+              setPreviewUrl(null);
+              setPreviewState('error');
+            }}
+          />
+        )}
+        {previewState === 'error' && (
+          <div className="flex flex-col items-center gap-2 px-3 text-center text-xs text-slate-500">
+            <ImageIcon size={28} className="text-slate-400" />
+            <span>Esikatselua ei voitu ladata. Avaa tiedosto napsauttamalla.</span>
+          </div>
+        )}
       </div>
       <div className="p-3">
         <p className="text-xs font-semibold text-primary">{attachment.kind}</p>
@@ -158,6 +195,7 @@ export default function InspectionDetailView({
   const refreshAll = async () => { await Promise.all([refresh(), onWorkspaceRefresh()]); };
   const fail = (caught: unknown, fallback: string) => setOperationError(caught instanceof Error ? caught.message : fallback);
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const openSignature = () => { setOperationError(null); setSignatureOpen(true); };
 
   const saveStatus = async (result: InspectionResultDetail, status: InspectionResultStatus) => {
     if (!canManage) return;
@@ -275,7 +313,7 @@ export default function InspectionDetailView({
       : !hasHandoverPhoto
         ? { title: 'Lisää luovutuskuva', description: 'Dokumentoi valmis kohde ennen allekirjoitusta.', action: () => scrollTo('inspection-attachments'), icon: Camera }
         : !hasHandwrittenSignature
-          ? { title: 'Allekirjoita tarkastus', description: 'Tarkastustyö on valmis. Tee allekirjoitus ennen hyväksyntää.', action: () => setSignatureOpen(true), icon: Signature }
+          ? { title: 'Allekirjoita tarkastus', description: 'Tarkastustyö on valmis. Tee allekirjoitus ennen hyväksyntää.', action: openSignature, icon: Signature }
           : { title: 'Hyväksy tarkastus', description: 'Kaikki luovutuksen vaatimukset täyttyvät.', action: () => setApprovalOpen(true), icon: ShieldCheck };
 
   return (
@@ -395,7 +433,7 @@ export default function InspectionDetailView({
                 <div className="flex gap-3"><CheckCircle2 size={19} className="mt-0.5 shrink-0 text-emerald-700" /><div><p className="font-semibold text-emerald-950">Tarkastus on valmis allekirjoitettavaksi.</p><p className="mt-1 text-sm text-emerald-900">Allekirjoituksen jälkeen tarkastus voidaan hyväksyä ja raporttiversio lukitaan.</p></div></div>
               )}
               <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-                <Button variant="outline" disabled={!signatureReady || Boolean(savingKey)} onClick={() => setSignatureOpen(true)}><Signature size={16} className="mr-2" />{hasHandwrittenSignature ? 'Lisää allekirjoitus' : 'Allekirjoita tarkastus'}</Button>
+                <Button variant="outline" disabled={!signatureReady || Boolean(savingKey)} onClick={openSignature}><Signature size={16} className="mr-2" />{hasHandwrittenSignature ? 'Lisää allekirjoitus' : 'Allekirjoita tarkastus'}</Button>
                 <Button disabled={!canApprove || Boolean(savingKey)} onClick={() => setApprovalOpen(true)}><ShieldCheck size={16} className="mr-2" />Hyväksy ja lukitse tarkastus</Button>
               </div>
             </div>
@@ -407,7 +445,7 @@ export default function InspectionDetailView({
       </Card>
 
       <FindingDialog result={findingResult} people={people} busy={savingKey === 'finding'} onClose={() => setFindingResult(null)} onSubmit={submitFinding} />
-      <SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === 'signature'} onClose={() => setSignatureOpen(false)} onSubmit={async (draft) => { setSavingKey('signature'); setOperationError(null); try { await addHandwrittenInspectionSignature({ organizationId, inspectionId, signerName: draft.name, signerRole: draft.role, signerCompany: draft.company, signatureData: draft.signatureData, note: draft.note, userId }); setSignatureOpen(false); await refreshAll(); } catch (caught) { fail(caught, 'Allekirjoituksen tallennus epäonnistui.'); } finally { setSavingKey(null); } }} />
+      <SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === 'signature'} error={signatureOpen ? operationError : null} onClose={() => setSignatureOpen(false)} onSubmit={async (draft) => { setSavingKey('signature'); setOperationError(null); try { await addHandwrittenInspectionSignature({ organizationId, inspectionId, signerName: draft.name, signerRole: draft.role, signerCompany: draft.company, signatureData: draft.signatureData, note: draft.note, userId }); setSignatureOpen(false); await refreshAll(); } catch (caught) { fail(caught, 'Allekirjoituksen tallennus epäonnistui.'); } finally { setSavingKey(null); } }} />
       <ApprovalDialog open={approvalOpen} busy={savingKey === 'approve'} onClose={() => setApprovalOpen(false)} onSubmit={async (summary) => { setSavingKey('approve'); setOperationError(null); try { await approveInspection(inspectionId, summary); setApprovalOpen(false); await refreshAll(); } catch (caught) { fail(caught, 'Hyväksyntä epäonnistui.'); } finally { setSavingKey(null); } }} />
       <VoidDialog open={voidOpen} busy={savingKey === 'void'} onClose={() => setVoidOpen(false)} onSubmit={async (reason) => { setSavingKey('void'); setOperationError(null); try { await voidInspection(inspectionId, reason); setVoidOpen(false); await refreshAll(); } catch (caught) { fail(caught, 'Mitätöinti epäonnistui.'); } finally { setSavingKey(null); } }} />
     </div>

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { inspectionReadMappers } from '../inspectionRead';
 
-const { asRow, num, mapInspection, mapFinding, mapAttachment } = inspectionReadMappers;
+const { asRow, num, mapInspection, mapFinding, mapAttachment, mapSignature } = inspectionReadMappers;
 
 describe('inspection Supabase row mappings', () => {
   it('rejects non-record database values', () => {
@@ -85,4 +85,23 @@ describe('inspection Supabase row mappings', () => {
     expect(attachment.sizeBytes).toBe(2048);
     expect(num({ value: 'not-a-number' }, 'value')).toBe(0);
   });
+
+  it('maps handwritten signature image data for approval readiness and rendering', () => {
+    const signature = mapSignature({
+      id: 'signature-1',
+      inspection_id: 'inspection-1',
+      signer_name: 'Jethro Nevalainen',
+      signer_role: 'Työnjohtaja',
+      signer_company: null,
+      signature_type: 'Piirretty allekirjoitus',
+      signature_data: 'data:image/png;base64,abc123',
+      note: null,
+      signed_at: '2026-07-27T11:00:00Z',
+    });
+
+    expect(signature.signatureData).toBe('data:image/png;base64,abc123');
+    expect(signature.signerCompany).toBe('');
+    expect(signature.note).toBe('');
+  });
+
 });

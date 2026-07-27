@@ -1,6 +1,6 @@
 import { supabase } from './client';
 import type {
-  FindingAction, InspectionAttachment, InspectionDetail, InspectionFinding,
+  FindingAction, InspectionAttachment, InspectionDetail, InspectionFinding, InspectionSignature,
   InspectionReport, InspectionResultDetail, InspectionResultStatus, InspectionStatus,
   InspectionSummary, InspectionTemplateSummary, InspectionWorkspace, OrganizationPerson,
   ProjectBuilding, ProjectStairwell, ProjectUnit, TemplateEditorSection, FindingSeverity, FindingStatus,
@@ -98,6 +98,15 @@ function mapAttachment(row: Row): InspectionAttachment {
     findingId: optionalText(row, 'finding_id'), objectPath: text(row, 'object_path'), fileName: text(row, 'file_name'),
     mimeType: text(row, 'mime_type'), sizeBytes: num(row, 'size_bytes'), kind: text(row, 'kind'),
     caption: text(row, 'caption'), createdAt: text(row, 'created_at'),
+  };
+}
+
+function mapSignature(row: Row): InspectionSignature {
+  return {
+    id: text(row, 'id'), inspectionId: text(row, 'inspection_id'), signerName: text(row, 'signer_name'),
+    signerRole: text(row, 'signer_role'), signerCompany: text(row, 'signer_company'),
+    signatureType: text(row, 'signature_type'), signatureData: optionalText(row, 'signature_data'),
+    note: text(row, 'note'), signedAt: text(row, 'signed_at'),
   };
 }
 
@@ -253,11 +262,7 @@ export async function loadInspectionDetail(inspectionId: string): Promise<Inspec
       createdBy: optionalText(action, 'created_by'), createdAt: text(action, 'created_at'),
     })),
     attachments,
-    signatures: rows(signatureResponse.data).map((signature) => ({
-      id: text(signature, 'id'), inspectionId: text(signature, 'inspection_id'), signerName: text(signature, 'signer_name'),
-      signerRole: text(signature, 'signer_role'), signerCompany: text(signature, 'signer_company'),
-      signatureType: text(signature, 'signature_type'), note: text(signature, 'note'), signedAt: text(signature, 'signed_at'),
-    })),
+    signatures: rows(signatureResponse.data).map(mapSignature),
     reports: rows(reportResponse.data).map(mapReport),
   };
 }
@@ -268,6 +273,7 @@ export const inspectionReadMappers = {
   mapInspection,
   mapFinding,
   mapAttachment,
+  mapSignature,
 };
 
 export async function loadTemplateEditor(templateVersionId: string): Promise<TemplateEditorSection[]> {
