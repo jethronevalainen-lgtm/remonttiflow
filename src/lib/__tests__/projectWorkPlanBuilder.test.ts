@@ -32,9 +32,9 @@ describe('project work plan builder', () => {
   it('creates a genuinely generic five-phase template', () => {
     const phases = createGenericProjectPhases({ startDate: '2026-08-03', endDate: '2026-08-28' });
     expect(phases).toHaveLength(5);
-    expect(phases[0].title).toContain('Valmistelu');
-    expect(phases[2].title).toContain('toteutus');
-    expect(phases[4].title).toContain('luovutus');
+    expect(phases[0].title.toLocaleLowerCase('fi')).toContain('valmistelu');
+    expect(phases[2].title.toLocaleLowerCase('fi')).toContain('toteutus');
+    expect(phases[4].title.toLocaleLowerCase('fi')).toContain('luovutus');
     expect(phases.every((phase) => phase.assigneeUserIds.length === 0)).toBe(true);
   });
 
