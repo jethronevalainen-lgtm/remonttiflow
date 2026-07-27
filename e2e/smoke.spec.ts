@@ -33,6 +33,51 @@ async function clickSidebarItem(page: Page, label: string) {
     .click();
 }
 
+const supervisorSectionRoutes = [
+  '/dashboard',
+  '/tyonjohto',
+  '/tarkastukset',
+  '/projektit',
+  '/projektipyynnot',
+  '/projektikeskustelut',
+  '/aikataulutus',
+  '/paivakirjat',
+  '/kuittaukset',
+  '/laskenta',
+  '/maaralaskenta',
+  '/jatehuolto',
+  '/tyomaaraykset',
+  '/tilaukset',
+  '/tyovuorokalenteri',
+  '/tuntikirjaukset',
+  '/kirjaukset',
+  '/palkka-aineisto',
+  '/qr-kirjautuminen',
+  '/qr-hallinta',
+  '/matkakulut',
+  '/tyoturvallisuus',
+  '/crm',
+  '/asiakkaat',
+  '/toiminnanohjaus',
+  '/ai',
+  '/viestinta',
+  '/kalusto',
+  '/henkilosto',
+  '/henkilokortit',
+  '/lomakkeet',
+  '/raportit',
+] as const;
+
+async function expectApplicationSection(page: Page, route: string) {
+  await page.goto(`/#${route}`);
+  await expect(page).toHaveURL(new RegExp(`#${route.replaceAll('/', '\\/')}(?:[/?]|$)`));
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Ladataan osiota…', { exact: true })).toBeHidden({ timeout: 30_000 });
+  await expect(page.getByText('Jokin meni pieleen', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Sivua ei löytynyt', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Kirjaudu sisään' })).toHaveCount(0);
+}
+
 test.describe('smoke: public authentication shell', () => {
   test.beforeEach(async ({ context }) => {
     await context.addInitScript(() => {
@@ -116,6 +161,19 @@ test.describe('smoke: authenticated critical paths', () => {
     await expect(
       page.getByRole('button', { name: 'Uusi kuittaus' }),
     ).toBeVisible();
+  });
+
+  test('every supervisor section loads without a route or render failure', async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await login(page);
+
+    for (const route of supervisorSectionRoutes) {
+      await test.step(route, async () => {
+        await expectApplicationSection(page, route);
+      });
+    }
   });
 
   test('unknown route while authenticated renders the 404 page', async ({
