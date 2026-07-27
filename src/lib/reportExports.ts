@@ -1,0 +1,376 @@
+import type { ReportCenterColumn, ReportCenterDataset, ReportCenterRow } from '@/lib/supabase/reportCenter';
+
+function safeFilePart(value: string): string {
+  return value
+    .toLocaleLowerCase('fi')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9åäö]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'raportti';
+}
+
+function datePart(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function formatValue(value: unknown, column?: ReportCenterColumn): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (column?.type === 'boolean') return value === true || value === 'true' ? 'Kyllä' : 'Ei';
+  if (column?.type === 'money') {
+    const amount = Number(value);
+    return Number.isFinite(amount)
+      ? new Intl.NumberFormat('fi-FI', { style: 'currency', currency: 'EUR' }).format(amount)
+      : String(value);
+  }
+  if (column?.type === 'number') {
+    const amount = Number(value);
+    return Number.isFinite(amount)
+      ? new Intl.NumberFormat('fi-FI', { maximumFractionDigits: 2 }).format(amount)
+      : String(value);
+  }
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toLocaleString('fi-FI', { dateStyle: 'short', timeStyle: 'short' });
+  }
+  return String(value);
+}
+
+function csvCell(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+function datasetRows(dataset: ReportCenterDataset): string[][] {
+  return [
+    dataset.columns.map((column) => column.label),
+    ...dataset.rows.map((row) => dataset.columns.map((column) => formatValue(row[column.key], column))),
+  ];
+}
+
+export function downloadReportCsv(dataset: ReportCenterDataset): void {
+  const lines: string[][] = [
+    [dataset.title],
+    [`Aikaväli ${dataset.dateFrom || '—'}–${dataset.dateTo || '—'}`],
+    [`Muodostettu ${new Date(dataset.generatedAt).toLocaleString('fi-FI')}`],
+    [],
+    ...datasetRows(dataset),
+  ];
+  const csv = lines.map((row) => row.map((cell) => csvCell(cell)).join(';')).join('\r\n');
+  downloadBlob(
+    new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }),
+    `${safeFilePart(dataset.title)}-${datePart()}.csv`,
+  );
+}
+
+function xmlEscape(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function excelColumn(index: number): string {
+  let value = index + 1;
+  let result = '';
+  while (value > 0) {
+    value -= 1;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+  return result;
+}
+
+function numericCell(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sheetXml(dataset: ReportCenterDataset): string {
+  const headings: ReportCenterRow = Object.fromEntries(dataset.columns.map((column) => [column.key, column.label]));
+  const allRows = [headings, ...dataset.rows];
+  const rows = allRows.map((row, rowIndex) => {
+    const cells = dataset.columns.map((column, columnIndex) => {
+      const reference = `${excelColumn(columnIndex)}${rowIndex + 1}`;
+      const value = row[column.key];
+      if (rowIndex > 0 && (column.type === 'number' || column.type === 'money')) {
+        const number = numericCell(value);
+        if (number !== null) return `<c r="${reference}" s="${column.type === 'money' ? 1 : 0}"><v>${number}</v></c>`;
+      }
+      if (rowIndex > 0 && column.type === 'boolean') {
+        const bool = value === true || value === 'true' ? 1 : 0;
+        return `<c r="${reference}" t="b"><v>${bool}</v></c>`;
+      }
+      const text = rowIndex === 0 ? column.label : formatValue(value, column);
+      return `<c r="${reference}" t="inlineStr"${rowIndex === 0 ? ' s="2"' : ''}><is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>`;
+    }).join('');
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
+  }).join('');
+  const widths = dataset.columns.map((column, index) => {
+    const contentWidth = Math.min(45, Math.max(column.label.length + 2, ...dataset.rows.slice(0, 200).map((row) => formatValue(row[column.key], column).length + 2)));
+    return `<col min="${index + 1}" max="${index + 1}" width="${Math.max(10, contentWidth)}" customWidth="1"/>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <cols>${widths}</cols>
+  <sheetData>${rows}</sheetData>
+  <autoFilter ref="A1:${excelColumn(Math.max(0, dataset.columns.length - 1))}${Math.max(1, allRows.length)}"/>
+</worksheet>`;
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes: Uint8Array): number {
+  let value = 0xffffffff;
+  for (const byte of bytes) value = CRC_TABLE[(value ^ byte) & 0xff] ^ (value >>> 8);
+  return (value ^ 0xffffffff) >>> 0;
+}
+
+function u16(value: number): Uint8Array {
+  return new Uint8Array([value & 0xff, (value >>> 8) & 0xff]);
+}
+
+function u32(value: number): Uint8Array {
+  return new Uint8Array([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]);
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const length = parts.reduce((sum, part) => sum + part.length, 0);
+  const result = new Uint8Array(length);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+interface ZipEntry { name: string; data: Uint8Array; crc: number; offset: number; }
+
+function zipStore(files: Array<{ name: string; content: string }>): Uint8Array {
+  const encoder = new TextEncoder();
+  const entries: ZipEntry[] = [];
+  const localParts: Uint8Array[] = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const data = encoder.encode(file.content);
+    const crc = crc32(data);
+    const header = concatBytes([
+      u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
+      u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), name,
+    ]);
+    localParts.push(header, data);
+    entries.push({ name: file.name, data, crc, offset });
+    offset += header.length + data.length;
+  }
+  const centralParts: Uint8Array[] = [];
+  for (const entry of entries) {
+    const name = encoder.encode(entry.name);
+    centralParts.push(concatBytes([
+      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
+      u32(entry.crc), u32(entry.data.length), u32(entry.data.length), u16(name.length),
+      u16(0), u16(0), u16(0), u16(0), u32(0), u32(entry.offset), name,
+    ]));
+  }
+  const central = concatBytes(centralParts);
+  const locals = concatBytes(localParts);
+  const end = concatBytes([
+    u32(0x06054b50), u16(0), u16(0), u16(entries.length), u16(entries.length),
+    u32(central.length), u32(locals.length), u16(0),
+  ]);
+  return concatBytes([locals, central, end]);
+}
+
+export function downloadReportXlsx(dataset: ReportCenterDataset): void {
+  const files = [
+    {
+      name: '[Content_Types].xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    },
+    {
+      name: 'xl/workbook.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Raportti" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    },
+    {
+      name: 'xl/styles.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`,
+    },
+    { name: 'xl/worksheets/sheet1.xml', content: sheetXml(dataset) },
+  ];
+  const archive = zipStore(files);
+  downloadBlob(
+    new Blob([archive], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    `${safeFilePart(dataset.title)}-${datePart()}.xlsx`,
+  );
+}
+
+function pdfCharCode(char: string): number {
+  const code = char.charCodeAt(0);
+  if (code <= 255) return code;
+  const winAnsi: Record<string, number> = { '€': 128, '–': 150, '—': 151, '“': 147, '”': 148, '’': 146, '…': 133 };
+  return winAnsi[char] ?? 63;
+}
+
+function latin1Bytes(value: string): Uint8Array {
+  const result = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) result[index] = pdfCharCode(value[index]);
+  return result;
+}
+
+function pdfEscape(value: string): string {
+  return value.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
+}
+
+function wrapText(value: string, maxLength = 105): string[] {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  if (!clean) return [''];
+  const words = clean.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxLength) current = candidate;
+    else {
+      if (current) lines.push(current);
+      current = word.length > maxLength ? `${word.slice(0, maxLength - 1)}…` : word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function reportPdfLines(dataset: ReportCenterDataset): string[] {
+  const lines = [
+    dataset.title,
+    `Aikaväli: ${dataset.dateFrom || '—'}–${dataset.dateTo || '—'}`,
+    `Muodostettu: ${new Date(dataset.generatedAt).toLocaleString('fi-FI')}`,
+    `Rivejä: ${dataset.rows.length}`,
+    '',
+  ];
+  for (const row of dataset.rows) {
+    const content = dataset.columns
+      .map((column) => `${column.label}: ${formatValue(row[column.key], column) || '—'}`)
+      .join(' | ');
+    lines.push(...wrapText(content));
+    lines.push('');
+  }
+  return lines;
+}
+
+function makePdf(lines: string[]): Uint8Array {
+  const maxLines = 49;
+  const pages: string[][] = [];
+  for (let index = 0; index < lines.length; index += maxLines) pages.push(lines.slice(index, index + maxLines));
+  if (!pages.length) pages.push(['Raportti on tyhjä.']);
+
+  const objectStrings: string[] = [];
+  const pageObjectNumbers: number[] = [];
+  const contentObjectNumbers: number[] = [];
+  const catalogObject = 1;
+  const pagesObject = 2;
+  const fontObject = 3;
+  let nextObject = 4;
+  for (let index = 0; index < pages.length; index += 1) {
+    pageObjectNumbers.push(nextObject++);
+    contentObjectNumbers.push(nextObject++);
+  }
+
+  objectStrings[catalogObject] = `<< /Type /Catalog /Pages ${pagesObject} 0 R >>`;
+  objectStrings[pagesObject] = `<< /Type /Pages /Kids [${pageObjectNumbers.map((number) => `${number} 0 R`).join(' ')}] /Count ${pages.length} >>`;
+  objectStrings[fontObject] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+
+  pages.forEach((pageLines, pageIndex) => {
+    const pageNumber = pageObjectNumbers[pageIndex];
+    const contentNumber = contentObjectNumbers[pageIndex];
+    const body = [
+      'BT',
+      '/F1 9 Tf',
+      '40 800 Td',
+      ...pageLines.flatMap((line, lineIndex) => [
+        lineIndex === 0 ? '' : '0 -15 Td',
+        `(${pdfEscape(line)}) Tj`,
+      ]).filter(Boolean),
+      'ET',
+    ].join('\n');
+    const bodyBytes = latin1Bytes(body);
+    objectStrings[contentNumber] = `<< /Length ${bodyBytes.length} >>\nstream\n${body}\nendstream`;
+    objectStrings[pageNumber] = `<< /Type /Page /Parent ${pagesObject} 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObject} 0 R >> >> /Contents ${contentNumber} 0 R >>`;
+  });
+
+  const parts: Uint8Array[] = [latin1Bytes('%PDF-1.4\n%âãÏÓ\n')];
+  const offsets: number[] = [0];
+  let offset = parts[0].length;
+  for (let number = 1; number < objectStrings.length; number += 1) {
+    const objectBytes = latin1Bytes(`${number} 0 obj\n${objectStrings[number]}\nendobj\n`);
+    offsets[number] = offset;
+    parts.push(objectBytes);
+    offset += objectBytes.length;
+  }
+  const xrefOffset = offset;
+  const xref = [
+    `xref\n0 ${objectStrings.length}\n`,
+    '0000000000 65535 f \n',
+    ...offsets.slice(1).map((entry) => `${String(entry).padStart(10, '0')} 00000 n \n`),
+    `trailer\n<< /Size ${objectStrings.length} /Root ${catalogObject} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`,
+  ].join('');
+  parts.push(latin1Bytes(xref));
+  return concatBytes(parts);
+}
+
+export function downloadReportPdf(dataset: ReportCenterDataset): void {
+  const pdf = makePdf(reportPdfLines(dataset));
+  downloadBlob(new Blob([pdf], { type: 'application/pdf' }), `${safeFilePart(dataset.title)}-${datePart()}.pdf`);
+}
+
+function htmlEscape(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+export function printReport(dataset: ReportCenterDataset): void {
+  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  if (!popup) throw new Error('Tulostusikkunaa ei voitu avata. Salli ponnahdusikkunat ja yritä uudelleen.');
+  const header = dataset.columns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join('');
+  const body = dataset.rows.map((row) => `<tr>${dataset.columns.map((column) => `<td>${htmlEscape(formatValue(row[column.key], column))}</td>`).join('')}</tr>`).join('');
+  popup.document.write(`<!doctype html><html lang="fi"><head><meta charset="utf-8"><title>${htmlEscape(dataset.title)}</title><style>body{font-family:Arial,sans-serif;color:#0f172a;margin:28px}h1{font-size:24px;margin:0 0 8px}.meta{color:#475569;font-size:12px;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px;vertical-align:top;text-align:left}th{background:#f1f5f9}tr:nth-child(even){background:#f8fafc}@page{size:landscape;margin:12mm}@media print{body{margin:0}}</style></head><body><h1>${htmlEscape(dataset.title)}</h1><div class="meta">Aikaväli ${htmlEscape(dataset.dateFrom)}–${htmlEscape(dataset.dateTo)} · muodostettu ${htmlEscape(new Date(dataset.generatedAt).toLocaleString('fi-FI'))} · ${dataset.rows.length} riviä</div><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`);
+  popup.document.close();
+}
