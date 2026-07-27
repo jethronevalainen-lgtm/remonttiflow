@@ -6,7 +6,7 @@ import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
 import { ErrorState, LoadingState } from '@/components/states';
 import {
-  Dashboard, Tyonjohto, Tarkastukset, Projektit, ProjectWorkspace, Aikataulutus,
+  Dashboard, Tyonjohto, Tarkastukset, Projektit, ProjectWorks, ProjectWorkspace, Aikataulutus,
   Paivakirjat, Kuittaukset, Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset,
   Tyovuorokalenteri, Tuntikirjaukset, CoordinatorTimeEntries, Kirjaukset, Matkakulut,
   CRM, Asiakkaat, AIPage, Viestinta, Kalusto, Henkilosto, Henkilokortit,
@@ -112,7 +112,8 @@ function AppRoutes() {
         <Route path="/tyonjohto" element={<RoleGuard allowedRoles={operationalManagers}><Tyonjohto /></RoleGuard>} />
         <Route path="/tarkastukset" element={<RoleGuard allowedRoles={internalRoles}><Tarkastukset /></RoleGuard>} />
         <Route path="/projektit" element={<RoleGuard allowedRoles={operationalManagers}><Projektit /></RoleGuard>} />
-        <Route path="/projektit/:projectId" element={<RoleGuard allowedRoles={operationalManagers}><ProjectWorkspace /></RoleGuard>} />
+        <Route path="/projektit/:projectId" element={<RoleGuard allowedRoles={operationalManagers}><ProjectWorks /></RoleGuard>} />
+        <Route path="/projektit/:projectId/tyotila" element={<RoleGuard allowedRoles={operationalManagers}><ProjectWorkspace /></RoleGuard>} />
         <Route path="/projektit/:projectId/tilaajayhteistyo" element={<RoleGuard allowedRoles={operationalManagers}><CustomerCollaborationManager /></RoleGuard>} />
         <Route path="/projektipyynnot" element={<RoleGuard allowedRoles={operationalManagers}><ProjectRequests /></RoleGuard>} />
         <Route path="/projektikeskustelut" element={<RoleGuard allowedRoles={allRoles}><CustomerPreviewBoundary><ProjectDiscussions /></CustomerPreviewBoundary></RoleGuard>} />
