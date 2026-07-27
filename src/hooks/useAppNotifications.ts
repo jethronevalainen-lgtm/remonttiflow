@@ -16,7 +16,10 @@ export function useAppNotifications() {
   const queryClient = useQueryClient();
   const organizationId = currentOrg?.id;
   const userId = user?.id;
-  const queryKey = ['app-notifications', organizationId ?? 'none', userId ?? 'anonymous'] as const;
+  const queryKey = useMemo(
+    () => ['app-notifications', organizationId ?? 'none', userId ?? 'anonymous'] as const,
+    [organizationId, userId],
+  );
 
   const query = useQuery({
     queryKey,
