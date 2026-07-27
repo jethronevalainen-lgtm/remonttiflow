@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -133,21 +133,22 @@ export default function ProjectWorks() {
   const [operationError, setOperationError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const reloadPlans = async () => {
-    if (!currentOrg || !projectId) return;
+  const organizationId = currentOrg?.id;
+  const reloadPlans = useCallback(async () => {
+    if (!organizationId || !projectId) return;
     setPlansLoading(true);
     try {
-      setPlans(await loadProjectWorkPlans({ organizationId: currentOrg.id, projectId }));
+      setPlans(await loadProjectWorkPlans({ organizationId, projectId }));
     } catch (caught) {
       setOperationError(caught instanceof Error ? caught.message : 'Työkokonaisuuksien haku epäonnistui.');
     } finally {
       setPlansLoading(false);
     }
-  };
+  }, [organizationId, projectId]);
 
   useEffect(() => {
     void reloadPlans();
-  }, [currentOrg?.id, projectId]);
+  }, [reloadPlans]);
 
   const orderStatusById = useMemo(
     () => new Map(projectOrders.map((order) => [order.id, order.status])),
