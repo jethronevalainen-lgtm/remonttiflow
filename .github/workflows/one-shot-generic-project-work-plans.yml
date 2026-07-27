@@ -1,0 +1,84 @@
+name: One-shot generic project work plans
+
+on:
+  push:
+    branches:
+      - feat/generic-project-work-plans
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/generic-project-work-plans
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Patch shared work-order mapping and migration
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          work_path = Path('src/lib/supabase/workManagement.ts')
+          work = work_path.read_text()
+
+          old_interface = """  completionReviewNote: string;\n  completionApproved: boolean;\n}\n"""
+          new_interface = """  completionReviewNote: string;\n  completionApproved: boolean;\n  workPlanId?: string;\n  workPackageKey: string;\n  workPackageTitle: string;\n  projectPhaseId?: string;\n  phaseOrder: number;\n  predecessorWorkOrderId?: string;\n  phaseGateEnabled: boolean;\n}\n"""
+          if old_interface not in work:
+              raise SystemExit('ManagedWorkOrder interface anchor missing')
+          work = work.replace(old_interface, new_interface, 1)
+
+          old_mapping = """      assignmentScope: scope(item.assignment_scope),\n      assigneeUserIds,\n      assigneeNames: assigneeUserIds.map((userId) => {\n"""
+          new_mapping = """      assignmentScope: scope(item.assignment_scope),\n      workPlanId: optionalText(item, 'work_plan_id'),\n      workPackageKey: text(item, 'work_package_key'),\n      workPackageTitle: text(item, 'work_package_title'),\n      projectPhaseId: optionalText(item, 'project_phase_id'),\n      phaseOrder: Number.isFinite(Number(item.phase_order)) ? Number(item.phase_order) : 0,\n      predecessorWorkOrderId: optionalText(item, 'predecessor_work_order_id'),\n      phaseGateEnabled: booleanValue(item, 'phase_gate_enabled', true),\n      assigneeUserIds,\n      assigneeNames: assigneeUserIds.map((userId) => {\n"""
+          if old_mapping not in work:
+              raise SystemExit('ManagedWorkOrder mapper anchor missing')
+          work = work.replace(old_mapping, new_mapping, 1)
+          work_path.write_text(work)
+
+          migration_path = Path('supabase/migrations/20260727233000_generic_project_work_plans.sql')
+          migration = migration_path.read_text()
+          replacements = [
+              ('  work_plan_id uuid;\n', '  v_work_plan_id uuid;\n'),
+              ('  ) returning id into work_plan_id;\n', '  ) returning id into v_work_plan_id;\n'),
+              ('      work_plan_id,\n      phase_index,\n', '      v_work_plan_id,\n      phase_index,\n'),
+              ('      set work_plan_id = work_plan_id,\n', '      set work_plan_id = v_work_plan_id,\n'),
+              ('  perform private.refresh_project_work_plan(work_plan_id);\n', '  perform private.refresh_project_work_plan(v_work_plan_id);\n'),
+              ("    work_plan_id,\n    jsonb_build_object(\n", "    v_work_plan_id,\n    jsonb_build_object(\n"),
+              ("    'plan_id', work_plan_id,\n", "    'plan_id', v_work_plan_id,\n"),
+          ]
+          for old, new in replacements:
+              if old not in migration:
+                  raise SystemExit(f'migration anchor missing: {old!r}')
+              migration = migration.replace(old, new, 1)
+
+          index_anchor = """create index if not exists work_orders_project_phase_idx\n  on public.work_orders (project_phase_id, status)\n  where project_phase_id is not null;\n"""
+          unique_index = """create unique index if not exists work_orders_plan_package_phase_unique_idx\n  on public.work_orders (work_plan_id, work_package_key, project_phase_id)\n  where work_plan_id is not null;\n"""
+          if index_anchor not in migration:
+              raise SystemExit('migration index anchor missing')
+          migration = migration.replace(index_anchor, unique_index + index_anchor, 1)
+          migration_path.write_text(migration)
+          PY
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run production quality gate
+        run: npm run ship:check
+
+      - name: Commit verified implementation
+        run: |
+          rm .github/workflows/one-shot-generic-project-work-plans.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/supabase/workManagement.ts supabase/migrations/20260727233000_generic_project_work_plans.sql .github/workflows/one-shot-generic-project-work-plans.yml
+          git commit -m "feat: connect generic work plans to work orders"
+          git push origin HEAD:feat/generic-project-work-plans
