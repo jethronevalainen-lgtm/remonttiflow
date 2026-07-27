@@ -1,4 +1,4 @@
-export { default as Dashboard } from './Dashboard';
+export { default as Dashboard } from './DashboardV2';
 export { default as Projektit } from './Projektit';
 export { default as ProjectWorkspace } from './ProjectWorkspace';
 export { default as ProjectRequests } from './ProjectRequests';
@@ -38,3 +38,4 @@ export { default as CRM } from './CRM';
 export { default as AIPage } from './AI';
 export { default as Hallinta } from './HallintaV2';
 export { default as KayttajaEsikatselu } from './KayttajaEsikatseluV2';
+export { default as Toiminnanohjaus } from './Toiminnanohjaus';
