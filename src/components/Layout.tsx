@@ -55,6 +55,7 @@ export default function Layout() {
   const { effectiveRole, isPreviewing, previewTarget, stopPreview } = useViewAs();
   const { loading, refreshing, error, operationError, refresh } = useAppDataContext();
   const visibleError = operationError ?? error;
+  const lockPreviewContent = isPreviewing && effectiveRole !== 'customer';
   const bottomItems = effectiveRole === 'customer'
     ? isPreviewing ? customerPreviewBottomItems : customerBottomItems
     : effectiveRole === 'worker'
@@ -64,13 +65,13 @@ export default function Layout() {
   useEffect(() => {
     const node = previewContentRef.current;
     if (!node) return;
-    if (isPreviewing) {
+    if (lockPreviewContent) {
       node.setAttribute('inert', '');
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     } else {
       node.removeAttribute('inert');
     }
-  }, [isPreviewing, location.pathname]);
+  }, [lockPreviewContent, location.pathname]);
 
   return (
     <div className="flex h-[100dvh] min-h-[100dvh] w-full max-w-full overflow-hidden bg-slate-50">
@@ -106,7 +107,16 @@ export default function Layout() {
 
         <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 pb-24 sm:px-4 sm:py-5 md:px-6 md:py-6 md:pb-8">
           <AnimatePresence mode="wait">
-            <motion.div ref={previewContentRef} key={location.pathname} className={`min-w-0 max-w-full ${isPreviewing ? 'pointer-events-none select-text' : ''}`} aria-disabled={isPreviewing || undefined} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
+            <motion.div
+              ref={previewContentRef}
+              key={location.pathname}
+              className={`min-w-0 max-w-full ${lockPreviewContent ? 'pointer-events-none select-text' : ''}`}
+              aria-disabled={lockPreviewContent || undefined}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+            >
               <Outlet />
             </motion.div>
           </AnimatePresence>
