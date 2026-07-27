@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent } from 'react';
-import { Camera, CheckCircle2, Image as ImageIcon, Loader2, MessageSquarePlus, Save } from 'lucide-react';
+import { Camera, CheckCircle2, FileUp, Image as ImageIcon, Loader2, MessageSquarePlus, Save } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -113,7 +113,11 @@ export default function InspectionSectionCard({
                         <MessageSquarePlus size={15} className="mr-2" />{noteOpen ? 'Piilota huomio' : 'Lisää huomio'}
                       </Button>
                       <Label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md px-3 text-sm font-medium hover:bg-accent">
-                        <Camera size={15} className="mr-2" />Lisää kuva
+                        <Camera size={15} className="mr-2" />Ota kuva
+                        <Input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => void onUpload(event, result)} />
+                      </Label>
+                      <Label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md px-3 text-sm font-medium hover:bg-accent">
+                        <FileUp size={15} className="mr-2" />Valitse kuva tai PDF
                         <Input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={(event) => void onUpload(event, result)} />
                       </Label>
                       {savingKey === `upload-${result.id}` && <span className="inline-flex items-center text-xs text-text-secondary"><Loader2 size={14} className="mr-1 animate-spin" />Lähetetään…</span>}
