@@ -9,6 +9,8 @@ export type ReportCenterType =
   | 'equipment';
 
 export type ReportColumnType = 'text' | 'number' | 'money' | 'boolean';
+export type ReportMetricFormat = 'number' | 'hours' | 'money' | 'percent';
+export type ReportInsightSeverity = 'critical' | 'warning' | 'info' | 'success';
 
 export interface ReportCenterColumn {
   key: string;
@@ -17,6 +19,40 @@ export interface ReportCenterColumn {
 }
 
 export type ReportCenterRow = Record<string, unknown>;
+
+export interface ReportCenterContext {
+  organizationName: string;
+  periodLabel: string;
+  projectLabel: string;
+  peopleLabel: string;
+  statusLabel: string;
+}
+
+export interface ReportCenterInsight {
+  id: string;
+  severity: ReportInsightSeverity;
+  title: string;
+  description: string;
+  value?: number | string;
+  format?: ReportMetricFormat;
+}
+
+export interface ReportCenterBreakdownRow {
+  label: string;
+  value: number;
+  secondaryValue?: number;
+}
+
+export interface ReportCenterBreakdown {
+  id: string;
+  title: string;
+  description: string;
+  format: ReportMetricFormat;
+  secondaryFormat?: ReportMetricFormat;
+  valueLabel?: string;
+  secondaryValueLabel?: string;
+  rows: ReportCenterBreakdownRow[];
+}
 
 export interface ReportCenterDataset {
   reportType: ReportCenterType;
@@ -29,6 +65,9 @@ export interface ReportCenterDataset {
   columns: ReportCenterColumn[];
   rows: ReportCenterRow[];
   summary: Record<string, number | string | boolean | null>;
+  context?: ReportCenterContext;
+  insights?: ReportCenterInsight[];
+  breakdowns?: ReportCenterBreakdown[];
 }
 
 export interface ReportCenterFilters {
