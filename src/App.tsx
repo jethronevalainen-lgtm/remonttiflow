@@ -155,5 +155,6 @@ function AppRoutes() {
 }
 
 export default function App() {
-  return <AppDataProvider><AppRoutes /></AppDataProvider>;
+  const { user } = useAuth();
+  return <AppDataProvider key={user?.id ?? 'signed-out'}><AppRoutes /></AppDataProvider>;
 }
