@@ -129,23 +129,49 @@ function mapCustomer(row: Row): Customer {
   };
 }
 
+const CRM_STAGES: readonly CrmLeadStage[] = [
+  'Uusi',
+  'Kartoitus sovittu',
+  'Kartoitettu',
+  'Tarjous laskennassa',
+  'Tarjous lähetetty',
+  'Neuvottelu',
+  'Voitettu',
+  'Hävitty',
+  'Jäissä',
+];
+
 function mapCrmLead(row: Row): CrmLead {
+  const storedStage = text(row, 'stage');
+  const normalizedStage = storedStage === 'Tarjous tehty'
+    ? 'Tarjous lähetetty'
+    : storedStage === 'Sopimus'
+      ? 'Voitettu'
+      : storedStage;
+
   return {
     id: text(row, 'id'),
     name: text(row, 'name'),
     company: text(row, 'company'),
     customerId: optionalText(row, 'customer_id'),
+    siteId: optionalText(row, 'site_id'),
     value: numberValue(row, 'value'),
-    stage: enumValue<CrmLeadStage>(
-      row,
-      'stage',
-      ['Uusi', 'Tarjous tehty', 'Neuvottelu', 'Sopimus'],
-      'Uusi',
-    ),
+    estimatedCost: optionalNumber(row, 'estimated_cost'),
+    stage: CRM_STAGES.includes(normalizedStage as CrmLeadStage)
+      ? normalizedStage as CrmLeadStage
+      : 'Uusi',
     assignee: text(row, 'assignee'),
     assigneeUserId: optionalText(row, 'assignee_user_id'),
     probability: optionalNumber(row, 'probability'),
     source: optionalText(row, 'source'),
+    description: optionalText(row, 'description'),
+    nextAction: optionalText(row, 'next_action'),
+    nextActionDueAt: optionalText(row, 'next_action_due_at'),
+    expectedDecisionDate: optionalText(row, 'expected_decision_date'),
+    quotedAt: optionalText(row, 'quoted_at'),
+    wonAt: optionalText(row, 'won_at'),
+    lostAt: optionalText(row, 'lost_at'),
+    frozenUntil: optionalText(row, 'frozen_until'),
     lostReason: optionalText(row, 'lost_reason'),
     convertedProjectId: optionalText(row, 'converted_project_id'),
     lastActivityAt: optionalText(row, 'last_activity_at'),
