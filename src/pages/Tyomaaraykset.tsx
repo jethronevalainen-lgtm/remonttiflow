@@ -40,6 +40,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,6 +49,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
+import { deleteManagedWorkOrders } from '@/lib/supabase/workOrderBulkDelete';
 import {
   saveManagedWorkOrder,
   transitionMyWorkOrder,
@@ -128,11 +130,15 @@ function contextLabel(order: ManagedWorkOrder) {
   return order.projectId ? order.project : 'Yksittäinen työ';
 }
 
+function canSelectForDeletion(order: ManagedWorkOrder) {
+  return order.status !== 'Käynnissä';
+}
+
 export default function Tyomaaraykset() {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentOrg, currentRole } = useOrganization();
-  const { projects, deleteWorkOrder, refresh: refreshDomain } = useAppDataContext();
+  const { projects, refresh: refreshDomain } = useAppDataContext();
   const {
     people,
     projectMemberships,
@@ -149,6 +155,8 @@ export default function Tyomaaraykset() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedWorkOrder | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagedWorkOrder | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [transitionTarget, setTransitionTarget] = useState<ManagedWorkOrder | null>(null);
   const [transitionStatus, setTransitionStatus] = useState<'Odottaa' | 'Valmis'>('Valmis');
   const [workerNote, setWorkerNote] = useState('');
@@ -157,6 +165,7 @@ export default function Tyomaaraykset() {
   const [operationError, setOperationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const canDelete = canManage && (currentRole === 'admin' || currentRole === 'supervisor');
   const projectFilterId = new URLSearchParams(location.search).get('project') ?? '';
   const selectedProject = projects.find((project) => project.id === projectFilterId);
   const standaloneCount = workOrders.filter((order) => !order.projectId).length;
@@ -184,6 +193,18 @@ export default function Tyomaaraykset() {
     });
   }, [projectFilterId, scopeFilter, search, statusFilter, workOrders]);
 
+  const selectableVisibleOrders = useMemo(
+    () => filteredOrders.filter(canSelectForDeletion),
+    [filteredOrders],
+  );
+  const selectedOrders = useMemo(
+    () => workOrders.filter((order) => selectedOrderIds.has(order.id)),
+    [selectedOrderIds, workOrders],
+  );
+  const allVisibleSelected = selectableVisibleOrders.length > 0
+    && selectableVisibleOrders.every((order) => selectedOrderIds.has(order.id));
+  const someVisibleSelected = selectableVisibleOrders.some((order) => selectedOrderIds.has(order.id));
+
   const activeOrders = workOrders.filter((order) => order.status === 'Käynnissä');
   const openOrders = workOrders.filter((order) => order.status === 'Avoin');
   const waitingOrders = workOrders.filter((order) => order.status === 'Odottaa');
@@ -208,6 +229,14 @@ export default function Tyomaaraykset() {
     setDialogOpen(true);
     navigate(`/tyomaaraykset?project=${encodeURIComponent(projectId)}`, { replace: true });
   }, [canManage, location.search, navigate, projects]);
+
+  useEffect(() => {
+    const existingIds = new Set(workOrders.map((order) => order.id));
+    setSelectedOrderIds((current) => {
+      const next = new Set([...current].filter((id) => existingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [workOrders]);
 
   const openCreate = () => {
     setEditing(null);
@@ -328,20 +357,48 @@ export default function Tyomaaraykset() {
     }
   };
 
-  const remove = async () => {
-    if (!deleteTarget || !canManage) return;
+  const removeOrders = async (ids: string[]) => {
+    if (!currentOrg || !canDelete || ids.length === 0) return;
     setSaving(true);
     setOperationError(null);
     try {
-      const removed = await deleteWorkOrder(deleteTarget.id);
-      if (!removed) throw new Error('Työmääräyksen poistaminen epäonnistui.');
+      await deleteManagedWorkOrders({
+        organizationId: currentOrg.id,
+        workOrderIds: ids,
+      });
+      setSelectedOrderIds((current) => {
+        const next = new Set(current);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
       setDeleteTarget(null);
-      await refresh();
+      setBulkDeleteOpen(false);
+      await Promise.all([refresh(), refreshDomain()]);
     } catch (caught) {
       setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleOrderSelection = (orderId: string, selected: boolean) => {
+    setSelectedOrderIds((current) => {
+      const next = new Set(current);
+      if (selected) next.add(orderId);
+      else next.delete(orderId);
+      return next;
+    });
+  };
+
+  const toggleVisibleSelection = (selected: boolean) => {
+    setSelectedOrderIds((current) => {
+      const next = new Set(current);
+      selectableVisibleOrders.forEach((order) => {
+        if (selected) next.add(order.id);
+        else next.delete(order.id);
+      });
+      return next;
+    });
   };
 
   const runTransition = async (
@@ -464,6 +521,47 @@ export default function Tyomaaraykset() {
         </div>
       </div>
 
+      {canDelete && !loading && filteredOrders.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="select-visible-work-orders"
+                checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
+                disabled={selectableVisibleOrders.length === 0 || saving}
+                onCheckedChange={(checked) => toggleVisibleSelection(checked === true)}
+              />
+              <Label htmlFor="select-visible-work-orders" className="cursor-pointer text-sm font-medium text-slate-700">
+                Valitse poistettavat näkyvät
+              </Label>
+            </div>
+            <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-700">
+              {selectedOrderIds.size} valittu
+            </Badge>
+            {filteredOrders.length !== selectableVisibleOrders.length && (
+              <span className="text-xs text-slate-500">Käynnissä olevia töitä ei voi valita poistettavaksi.</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setSelectedOrderIds(new Set())}
+              disabled={selectedOrderIds.size === 0 || saving}
+            >
+              Tyhjennä valinta
+            </Button>
+            <Button
+              variant="destructive"
+              className="gap-2"
+              onClick={() => setBulkDeleteOpen(true)}
+              disabled={selectedOrderIds.size === 0 || saving}
+            >
+              <Trash2 size={16} /> Poista valitut ({selectedOrderIds.size})
+            </Button>
+          </div>
+        </div>
+      )}
+
       {selectedProject && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
           <span>Projektin <strong>{selectedProject.name}</strong> työmääräykset</span>
@@ -479,108 +577,138 @@ export default function Tyomaaraykset() {
 
       {!loading && (
         <div className="grid gap-4 xl:grid-cols-2">
-          {filteredOrders.map((order) => (
-            <Card
-              key={order.id}
-              className={cn(
-                'overflow-hidden border-slate-200 shadow-sm transition-shadow hover:shadow-md',
-                order.priority === 'Korkea' && !['Valmis', 'Peruttu'].includes(order.status) && 'border-l-4 border-l-red-500',
-              )}
-            >
-              <CardContent className="p-0">
-                <div className="space-y-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="mb-2 flex flex-wrap gap-2">
-                        {statusBadge(order.status)}
-                        {priorityBadge(order.priority)}
-                        <Badge variant="outline" className={order.projectId ? 'border-slate-200 bg-white text-slate-600' : 'border-violet-200 bg-violet-50 text-violet-700'}>
-                          {order.projectId ? <FolderKanban size={13} className="mr-1" /> : <BriefcaseBusiness size={13} className="mr-1" />}
-                          {contextLabel(order)}
-                        </Badge>
-                        {order.plannedStartDate && order.calendarSyncEnabled && (
-                          <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
-                            <CalendarClock size={13} className="mr-1" /> Kalenterissa
-                          </Badge>
+          {filteredOrders.map((order) => {
+            const selected = selectedOrderIds.has(order.id);
+            const deletionBlocked = !canSelectForDeletion(order);
+            return (
+              <Card
+                key={order.id}
+                className={cn(
+                  'overflow-hidden border-slate-200 shadow-sm transition-shadow hover:shadow-md',
+                  order.priority === 'Korkea' && !['Valmis', 'Peruttu'].includes(order.status) && 'border-l-4 border-l-red-500',
+                  selected && 'ring-2 ring-red-300 ring-offset-1',
+                )}
+              >
+                <CardContent className="p-0">
+                  <div className="space-y-4 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        {canDelete && (
+                          <Checkbox
+                            checked={selected}
+                            disabled={deletionBlocked || saving}
+                            onCheckedChange={(checked) => toggleOrderSelection(order.id, checked === true)}
+                            aria-label={deletionBlocked
+                              ? `Työmääräystä ${order.title} ei voi poistaa aktiivisen työn aikana`
+                              : `Valitse työmääräys ${order.title} poistettavaksi`}
+                            className="mt-1"
+                          />
                         )}
+                        <div className="min-w-0">
+                          <div className="mb-2 flex flex-wrap gap-2">
+                            {statusBadge(order.status)}
+                            {priorityBadge(order.priority)}
+                            <Badge variant="outline" className={order.projectId ? 'border-slate-200 bg-white text-slate-600' : 'border-violet-200 bg-violet-50 text-violet-700'}>
+                              {order.projectId ? <FolderKanban size={13} className="mr-1" /> : <BriefcaseBusiness size={13} className="mr-1" />}
+                              {contextLabel(order)}
+                            </Badge>
+                            {order.plannedStartDate && order.calendarSyncEnabled && (
+                              <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                                <CalendarClock size={13} className="mr-1" /> Kalenterissa
+                              </Badge>
+                            )}
+                          </div>
+                          <h2 className="text-lg font-semibold text-slate-950">{order.title}</h2>
+                          {order.type && <p className="mt-1 text-sm text-slate-500">{order.type}</p>}
+                        </div>
                       </div>
-                      <h2 className="text-lg font-semibold text-slate-950">{order.title}</h2>
-                      {order.type && <p className="mt-1 text-sm text-slate-500">{order.type}</p>}
-                    </div>
-                    {canManage && (
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(order)} aria-label={`Muokkaa ${order.title}`}><Pencil size={16} /></Button>
-                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteTarget(order)} aria-label={`Poista ${order.title}`}><Trash2 size={16} /></Button>
-                      </div>
-                    )}
-                  </div>
-
-                  {order.description && <p className="text-sm leading-6 text-slate-600">{order.description}</p>}
-
-                  <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
-                    <div className="flex items-start gap-2 sm:col-span-2">
-                      <CalendarClock size={16} className="mt-0.5 text-slate-400" />
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-slate-400">Suunniteltu työjakso</p>
-                        <p className="text-sm font-medium text-slate-700">{formatSchedule(order)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <CalendarDays size={16} className="mt-0.5 text-slate-400" />
-                      <div><p className="text-xs uppercase tracking-wide text-slate-400">Viimeistään valmis</p><p className="text-sm font-medium text-slate-700">{formatDate(order.dueDate, 'Ei takarajaa')}</p></div>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      {order.assignmentScope === 'project_team'
-                        ? <UsersRound size={16} className="mt-0.5 text-slate-400" />
-                        : <UserRound size={16} className="mt-0.5 text-slate-400" />}
-                      <div><p className="text-xs uppercase tracking-wide text-slate-400">Vastuu</p><p className="text-sm font-medium text-slate-700">{assignmentLabel(order)}</p></div>
-                    </div>
-                    {order.location && (
-                      <div className="flex items-start gap-2 sm:col-span-2">
-                        <MapPin size={16} className="mt-0.5 text-slate-400" />
-                        <div><p className="text-xs uppercase tracking-wide text-slate-400">Kohde tai sijainti</p><p className="text-sm font-medium text-slate-700">{order.location}</p></div>
-                      </div>
-                    )}
-                    <div className="flex items-start gap-2">
-                      <Home size={16} className="mt-0.5 text-slate-400" />
-                      <div><p className="text-xs uppercase tracking-wide text-slate-400">Kohteen käyttö</p><p className="text-sm font-medium text-slate-700">{occupancyLabel(order)}</p></div>
-                    </div>
-                    {order.workReference && (
-                      <div className="flex items-start gap-2">
-                        <Link2 size={16} className="mt-0.5 text-slate-400" />
-                        <div><p className="text-xs uppercase tracking-wide text-slate-400">Työn viite</p><p className="text-sm font-medium text-slate-700">{order.workReference}</p></div>
-                      </div>
-                    )}
-                  </div>
-
-                  {(order.residentNotificationRequired || order.startConstraints || order.accessNotes) && (
-                    <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-                      {order.residentNotificationRequired && (
-                        <p className="flex items-start gap-2 font-semibold"><BellRing size={16} className="mt-0.5 shrink-0" /> Ilmoita asukkaalle tai tilan käyttäjälle ennen aloitusta.</p>
+                      {canManage && (
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(order)} aria-label={`Muokkaa ${order.title}`}><Pencil size={16} /></Button>
+                          {canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600"
+                              onClick={() => setDeleteTarget(order)}
+                              disabled={deletionBlocked || saving}
+                              title={deletionBlocked ? 'Päätä aktiivinen työ ennen poistamista.' : undefined}
+                              aria-label={`Poista ${order.title}`}
+                            >
+                              <Trash2 size={16} />
+                            </Button>
+                          )}
+                        </div>
                       )}
-                      {order.startConstraints && <p><strong>Aloitusehdot:</strong> {order.startConstraints}</p>}
-                      {order.accessNotes && <p className="flex items-start gap-2"><KeyRound size={16} className="mt-0.5 shrink-0" /><span><strong>Pääsy ja avaimet:</strong> {order.accessNotes}</span></p>}
                     </div>
-                  )}
 
-                  {order.workerNote && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                      <strong>Työhuomio:</strong> {order.workerNote}
-                    </div>
-                  )}
+                    {order.description && <p className="text-sm leading-6 text-slate-600">{order.description}</p>}
 
-                  {!canManage && !['Valmis', 'Peruttu'].includes(order.status) && (
-                    <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-                      {order.status === 'Avoin' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Aloita työ</Button>}
-                      {order.status === 'Odottaa' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Jatka työtä</Button>}
-                      {order.status === 'Käynnissä' && <Button variant="outline" onClick={() => openTransition(order, 'Odottaa')} disabled={saving} className="gap-2"><PauseCircle size={16} /> Keskeytä</Button>}
-                      {['Käynnissä', 'Odottaa'].includes(order.status) && <Button onClick={() => openTransition(order, 'Valmis')} disabled={saving} className="gap-2 bg-emerald-600 hover:bg-emerald-700"><CheckCircle2 size={16} /> Merkitse valmiiksi</Button>}
+                    <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
+                      <div className="flex items-start gap-2 sm:col-span-2">
+                        <CalendarClock size={16} className="mt-0.5 text-slate-400" />
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-400">Suunniteltu työjakso</p>
+                          <p className="text-sm font-medium text-slate-700">{formatSchedule(order)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <CalendarDays size={16} className="mt-0.5 text-slate-400" />
+                        <div><p className="text-xs uppercase tracking-wide text-slate-400">Viimeistään valmis</p><p className="text-sm font-medium text-slate-700">{formatDate(order.dueDate, 'Ei takarajaa')}</p></div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        {order.assignmentScope === 'project_team'
+                          ? <UsersRound size={16} className="mt-0.5 text-slate-400" />
+                          : <UserRound size={16} className="mt-0.5 text-slate-400" />}
+                        <div><p className="text-xs uppercase tracking-wide text-slate-400">Vastuu</p><p className="text-sm font-medium text-slate-700">{assignmentLabel(order)}</p></div>
+                      </div>
+                      {order.location && (
+                        <div className="flex items-start gap-2 sm:col-span-2">
+                          <MapPin size={16} className="mt-0.5 text-slate-400" />
+                          <div><p className="text-xs uppercase tracking-wide text-slate-400">Kohde tai sijainti</p><p className="text-sm font-medium text-slate-700">{order.location}</p></div>
+                        </div>
+                      )}
+                      <div className="flex items-start gap-2">
+                        <Home size={16} className="mt-0.5 text-slate-400" />
+                        <div><p className="text-xs uppercase tracking-wide text-slate-400">Kohteen käyttö</p><p className="text-sm font-medium text-slate-700">{occupancyLabel(order)}</p></div>
+                      </div>
+                      {order.workReference && (
+                        <div className="flex items-start gap-2">
+                          <Link2 size={16} className="mt-0.5 text-slate-400" />
+                          <div><p className="text-xs uppercase tracking-wide text-slate-400">Työn viite</p><p className="text-sm font-medium text-slate-700">{order.workReference}</p></div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                    {(order.residentNotificationRequired || order.startConstraints || order.accessNotes) && (
+                      <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                        {order.residentNotificationRequired && (
+                          <p className="flex items-start gap-2 font-semibold"><BellRing size={16} className="mt-0.5 shrink-0" /> Ilmoita asukkaalle tai tilan käyttäjälle ennen aloitusta.</p>
+                        )}
+                        {order.startConstraints && <p><strong>Aloitusehdot:</strong> {order.startConstraints}</p>}
+                        {order.accessNotes && <p className="flex items-start gap-2"><KeyRound size={16} className="mt-0.5 shrink-0" /><span><strong>Pääsy ja avaimet:</strong> {order.accessNotes}</span></p>}
+                      </div>
+                    )}
+
+                    {order.workerNote && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <strong>Työhuomio:</strong> {order.workerNote}
+                      </div>
+                    )}
+
+                    {!canManage && !['Valmis', 'Peruttu'].includes(order.status) && (
+                      <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                        {order.status === 'Avoin' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Aloita työ</Button>}
+                        {order.status === 'Odottaa' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Jatka työtä</Button>}
+                        {order.status === 'Käynnissä' && <Button variant="outline" onClick={() => openTransition(order, 'Odottaa')} disabled={saving} className="gap-2"><PauseCircle size={16} /> Keskeytä</Button>}
+                        {['Käynnissä', 'Odottaa'].includes(order.status) && <Button onClick={() => openTransition(order, 'Valmis')} disabled={saving} className="gap-2 bg-emerald-600 hover:bg-emerald-700"><CheckCircle2 size={16} /> Merkitse valmiiksi</Button>}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -645,11 +773,53 @@ export default function Tyomaaraykset() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Poista työmääräys</AlertDialogTitle>
-            <AlertDialogDescription>Poistetaanko <strong>{deleteTarget?.title}</strong>? Myös siihen linkitetyt kalenterivaraukset poistetaan.</AlertDialogDescription>
+            <AlertDialogDescription>
+              Poistetaanko <strong>{deleteTarget?.title}</strong>? Toimintoa ei voi perua. Linkitetyt kalenterivaraukset poistetaan, mutta aiemmat tuntikirjaukset säilyvät historiassa.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={saving}>Peruuta</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void remove()} disabled={saving} className="bg-red-600 hover:bg-red-700">Poista</AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => deleteTarget && void removeOrders([deleteTarget.id])}
+              disabled={saving || !deleteTarget || !canSelectForDeletion(deleteTarget)}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {saving ? 'Poistetaan…' : 'Poista'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={(open) => !open && setBulkDeleteOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Poista {selectedOrders.length} työmääräystä</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-slate-600">
+                <p>Valitut työmääräykset poistetaan yhdellä kertaa. Toimintoa ei voi perua.</p>
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <ul className="space-y-1">
+                    {selectedOrders.slice(0, 8).map((order) => (
+                      <li key={order.id} className="font-medium text-slate-800">• {order.title}</li>
+                    ))}
+                  </ul>
+                  {selectedOrders.length > 8 && (
+                    <p className="mt-2 text-xs text-slate-500">Lisäksi {selectedOrders.length - 8} muuta työmääräystä.</p>
+                  )}
+                </div>
+                <p>Linkitetyt kalenterivaraukset poistetaan. Aiemmat tuntikirjaukset säilyvät historiassa. Aktiivista työaikaa sisältävää työmääräystä ei poisteta.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Peruuta</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void removeOrders(selectedOrders.map((order) => order.id))}
+              disabled={saving || selectedOrders.length === 0}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {saving ? 'Poistetaan…' : `Poista ${selectedOrders.length} työmääräystä`}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
