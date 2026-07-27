@@ -1,0 +1,193 @@
+from pathlib import Path
+import re
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    file = Path(path)
+    content = file.read_text(encoding='utf-8')
+    count = content.count(old)
+    if count != 1:
+        raise SystemExit(f'{path}: expected one occurrence, found {count}: {old[:120]!r}')
+    file.write_text(content.replace(old, new, 1), encoding='utf-8')
+
+
+replace_once(
+    'src/lib/supabase/inspectionRead.ts',
+    'FindingAction, InspectionAttachment, InspectionDetail, InspectionFinding,\n  InspectionReport, InspectionResultDetail, InspectionResultStatus, InspectionStatus,',
+    'FindingAction, InspectionAttachment, InspectionDetail, InspectionFinding, InspectionSignature,\n  InspectionReport, InspectionResultDetail, InspectionResultStatus, InspectionStatus,',
+)
+
+replace_once(
+    'src/lib/supabase/inspectionRead.ts',
+    "function mapAttachment(row: Row): InspectionAttachment {\n  return {\n    id: text(row, 'id'), inspectionId: optionalText(row, 'inspection_id'), resultId: optionalText(row, 'result_id'),\n    findingId: optionalText(row, 'finding_id'), objectPath: text(row, 'object_path'), fileName: text(row, 'file_name'),\n    mimeType: text(row, 'mime_type'), sizeBytes: num(row, 'size_bytes'), kind: text(row, 'kind'),\n    caption: text(row, 'caption'), createdAt: text(row, 'created_at'),\n  };\n}\n",
+    "function mapAttachment(row: Row): InspectionAttachment {\n  return {\n    id: text(row, 'id'), inspectionId: optionalText(row, 'inspection_id'), resultId: optionalText(row, 'result_id'),\n    findingId: optionalText(row, 'finding_id'), objectPath: text(row, 'object_path'), fileName: text(row, 'file_name'),\n    mimeType: text(row, 'mime_type'), sizeBytes: num(row, 'size_bytes'), kind: text(row, 'kind'),\n    caption: text(row, 'caption'), createdAt: text(row, 'created_at'),\n  };\n}\n\nfunction mapSignature(row: Row): InspectionSignature {\n  return {\n    id: text(row, 'id'), inspectionId: text(row, 'inspection_id'), signerName: text(row, 'signer_name'),\n    signerRole: text(row, 'signer_role'), signerCompany: text(row, 'signer_company'),\n    signatureType: text(row, 'signature_type'), signatureData: optionalText(row, 'signature_data'),\n    note: text(row, 'note'), signedAt: text(row, 'signed_at'),\n  };\n}\n",
+)
+
+replace_once(
+    'src/lib/supabase/inspectionRead.ts',
+    "    signatures: rows(signatureResponse.data).map((signature) => ({\n      id: text(signature, 'id'), inspectionId: text(signature, 'inspection_id'), signerName: text(signature, 'signer_name'),\n      signerRole: text(signature, 'signer_role'), signerCompany: text(signature, 'signer_company'),\n      signatureType: text(signature, 'signature_type'), note: text(signature, 'note'), signedAt: text(signature, 'signed_at'),\n    })),",
+    "    signatures: rows(signatureResponse.data).map(mapSignature),",
+)
+
+replace_once(
+    'src/lib/supabase/inspectionRead.ts',
+    '  mapAttachment,\n};',
+    '  mapAttachment,\n  mapSignature,\n};',
+)
+
+replace_once(
+    'src/lib/supabase/inspectionEntities.ts',
+    "export async function createAttachmentUrl(objectPath: string): Promise<string> {\n  const { data, error } = await supabase.storage\n    .from('inspection-files')\n    .createSignedUrl(objectPath, 300);\n  if (error) throw failure('Liitteen avaaminen epäonnistui', error.message);\n  return data.signedUrl;\n}\n",
+    "export async function createAttachmentUrl(objectPath: string): Promise<string> {\n  const { data, error } = await supabase.storage\n    .from('inspection-files')\n    .createSignedUrl(objectPath, 300);\n  if (error) throw failure('Liitteen avaaminen epäonnistui', error.message);\n  return data.signedUrl;\n}\n\nexport async function downloadInspectionAttachment(objectPath: string): Promise<Blob> {\n  const { data, error } = await supabase.storage\n    .from('inspection-files')\n    .download(objectPath);\n  if (error) throw failure('Liitteen esikatselu epäonnistui', error.message);\n  if (!data) throw new Error('Liitteen esikatselutiedosto puuttuu.');\n  return data;\n}\n",
+)
+
+detail_path = Path('src/pages/inspections/InspectionDetailView.tsx')
+detail = detail_path.read_text(encoding='utf-8')
+old_import = '  approveInspection, createAttachmentUrl, createInspectionFinding,\n  saveInspectionResult, uploadInspectionAttachment, voidInspection,'
+new_import = '  approveInspection, createAttachmentUrl, createInspectionFinding, downloadInspectionAttachment,\n  saveInspectionResult, uploadInspectionAttachment, voidInspection,'
+if detail.count(old_import) != 1:
+    raise SystemExit('InspectionDetailView import marker not found once')
+detail = detail.replace(old_import, new_import, 1)
+
+pattern = re.compile(r"function AttachmentPreview\(\{ attachment, onOpen \}: \{.*?\n\}\n\nconst uploadLabelClasses", re.S)
+replacement = '''function AttachmentPreview({ attachment, onOpen }: {
+  attachment: InspectionAttachment;
+  onOpen: (path: string) => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewState, setPreviewState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    setPreviewUrl(null);
+    setPreviewState('loading');
+
+    if (!attachment.mimeType.startsWith('image/')) {
+      setPreviewState('error');
+      return () => { active = false; };
+    }
+
+    void downloadInspectionAttachment(attachment.objectPath)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+        setPreviewState('ready');
+      })
+      .catch(() => {
+        if (!active) return;
+        setPreviewUrl(null);
+        setPreviewState('error');
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment.mimeType, attachment.objectPath]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(attachment.objectPath)}
+      className="group overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-primary/40 hover:shadow-sm"
+    >
+      <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-slate-100">
+        {previewState === 'loading' && <Loader2 size={26} className="animate-spin text-slate-400" />}
+        {previewState === 'ready' && previewUrl && (
+          <img
+            src={previewUrl}
+            alt={attachment.caption || attachment.fileName}
+            className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+            onError={() => {
+              setPreviewUrl(null);
+              setPreviewState('error');
+            }}
+          />
+        )}
+        {previewState === 'error' && (
+          <div className="flex flex-col items-center gap-2 px-3 text-center text-xs text-slate-500">
+            <ImageIcon size={28} className="text-slate-400" />
+            <span>Esikatselua ei voitu ladata. Avaa tiedosto napsauttamalla.</span>
+          </div>
+        )}
+      </div>
+      <div className="p-3">
+        <p className="text-xs font-semibold text-primary">{attachment.kind}</p>
+        <p className="mt-1 truncate text-sm font-medium">{attachment.fileName}</p>
+        <p className="mt-1 text-xs text-text-muted">{formatDateTime(attachment.createdAt)}</p>
+      </div>
+    </button>
+  );
+}
+
+const uploadLabelClasses'''
+detail, count = pattern.subn(replacement, detail, count=1)
+if count != 1:
+    raise SystemExit(f'AttachmentPreview replacement count {count}')
+
+scroll_marker = "  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });"
+if detail.count(scroll_marker) != 1:
+    raise SystemExit('scrollTo marker not found once')
+detail = detail.replace(scroll_marker, scroll_marker + "\n  const openSignature = () => { setOperationError(null); setSignatureOpen(true); };", 1)
+detail = detail.replace('action: () => setSignatureOpen(true), icon: Signature', 'action: openSignature, icon: Signature', 1)
+detail = detail.replace('onClick={() => setSignatureOpen(true)}><Signature', 'onClick={openSignature}><Signature', 1)
+detail = detail.replace(
+    "<SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === 'signature'}",
+    "<SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === 'signature'} error={signatureOpen ? operationError : null}",
+    1,
+)
+detail_path.write_text(detail, encoding='utf-8')
+
+dialogs_path = Path('src/pages/inspections/InspectionDialogs.tsx')
+dialogs = dialogs_path.read_text(encoding='utf-8')
+header = "export function SignatureDialog({ open, busy, defaultName = '', onClose, onSubmit }: {\n  open: boolean;\n  busy: boolean;\n  defaultName?: string;"
+if dialogs.count(header) != 1:
+    raise SystemExit('SignatureDialog header not found once')
+dialogs = dialogs.replace(
+    header,
+    "export function SignatureDialog({ open, busy, error, defaultName = '', onClose, onSubmit }: {\n  open: boolean;\n  busy: boolean;\n  error?: string | null;\n  defaultName?: string;",
+    1,
+)
+info = "        <div className=\"rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900\">\n          Allekirjoitus vahvistaa, että tarkastustiedot on kirjattu ja kohde on tarkastettu. Hyväksyminen tehdään erikseen tarkastuksen valmistuttua.\n        </div>"
+if dialogs.count(info) != 1:
+    raise SystemExit('SignatureDialog info block not found once')
+dialogs = dialogs.replace(
+    info,
+    info + "\n        {error && <div role=\"alert\" className=\"rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800\">{error}</div>}",
+    1,
+)
+dialogs_path.write_text(dialogs, encoding='utf-8')
+
+test_path = Path('src/lib/supabase/__tests__/inspectionRead.test.ts')
+test = test_path.read_text(encoding='utf-8')
+old_destructure = 'const { asRow, num, mapInspection, mapFinding, mapAttachment } = inspectionReadMappers;'
+if test.count(old_destructure) != 1:
+    raise SystemExit('Test mapper destructure not found once')
+test = test.replace(old_destructure, 'const { asRow, num, mapInspection, mapFinding, mapAttachment, mapSignature } = inspectionReadMappers;', 1)
+insertion = """
+
+  it('maps handwritten signature image data for approval readiness and rendering', () => {
+    const signature = mapSignature({
+      id: 'signature-1',
+      inspection_id: 'inspection-1',
+      signer_name: 'Jethro Nevalainen',
+      signer_role: 'Työnjohtaja',
+      signer_company: null,
+      signature_type: 'Piirretty allekirjoitus',
+      signature_data: 'data:image/png;base64,abc123',
+      note: null,
+      signed_at: '2026-07-27T11:00:00Z',
+    });
+
+    expect(signature.signatureData).toBe('data:image/png;base64,abc123');
+    expect(signature.signerCompany).toBe('');
+    expect(signature.note).toBe('');
+  });
+"""
+ending = '\n});\n'
+if not test.endswith(ending):
+    raise SystemExit('Unexpected inspectionRead test ending')
+test = test[:-len(ending)] + insertion + ending
+test_path.write_text(test, encoding='utf-8')
