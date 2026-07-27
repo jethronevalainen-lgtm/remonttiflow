@@ -65,8 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL || secrets.E2E_EMAIL || secrets.TEST_USER_EMAIL }}
-      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD || secrets.E2E_PASSWORD || secrets.TEST_USER_PASSWORD }}
+      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL || secrets.E2E_EMAIL || secrets.E2E_USER_MAIL || secrets.E2E_EMAIL_ADDRESS || secrets.TEST_USER_EMAIL || secrets.TEST_EMAIL || secrets.TEST_ADMIN_EMAIL || vars.E2E_USER_EMAIL || vars.E2E_EMAIL || vars.E2E_USER_MAIL || vars.TEST_USER_EMAIL || vars.TEST_EMAIL || vars.TEST_ADMIN_EMAIL }}
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD || secrets.E2E_PASSWORD || secrets.TEST_USER_PASSWORD || secrets.TEST_PASSWORD || secrets.TEST_ADMIN_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -83,8 +83,8 @@ jobs:
       - name: Validate authenticated smoke credentials
         shell: bash
         run: |
-          test -n "$E2E_USER_EMAIL" || { echo "Missing E2E_USER_EMAIL, E2E_EMAIL or TEST_USER_EMAIL repository secret"; exit 1; }
-          test -n "$E2E_USER_PASSWORD" || { echo "Missing E2E_USER_PASSWORD, E2E_PASSWORD or TEST_USER_PASSWORD repository secret"; exit 1; }
+          test -n "$E2E_USER_EMAIL" || { echo "Missing test email. Supported GitHub secret or variable names: E2E_USER_EMAIL, E2E_EMAIL, E2E_USER_MAIL, E2E_EMAIL_ADDRESS, TEST_USER_EMAIL, TEST_EMAIL, TEST_ADMIN_EMAIL"; exit 1; }
+          test -n "$E2E_USER_PASSWORD" || { echo "Missing test password. Supported GitHub secret names: E2E_USER_PASSWORD, E2E_PASSWORD, TEST_USER_PASSWORD, TEST_PASSWORD, TEST_ADMIN_PASSWORD"; exit 1; }
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
