@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rpc = vi.fn();
 
@@ -9,6 +9,10 @@ vi.mock('@/lib/supabase/client', () => ({
 import { deleteManagedWorkOrders } from '@/lib/supabase/workOrderBulkDelete';
 
 describe('deleteManagedWorkOrders', () => {
+  beforeEach(() => {
+    rpc.mockReset();
+  });
+
   it('deduplicates ids and returns the confirmed delete count', async () => {
     rpc.mockResolvedValueOnce({ data: 2, error: null });
 
