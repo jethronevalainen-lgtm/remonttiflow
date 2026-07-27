@@ -52,7 +52,9 @@ describe('organization context query', () => {
     const organizations = await getMyOrganizations('user-1', controller.signal);
 
     expect(mocks.from).toHaveBeenCalledWith('organization_members');
-    expect(mocks.select).toHaveBeenCalledWith('role, organizations(*)');
+    expect(mocks.select).toHaveBeenCalledWith(
+      'role, organizations:organizations!organization_members_organization_id_fkey(*)',
+    );
     expect(mocks.eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(mocks.abortSignal).toHaveBeenCalledWith(controller.signal);
     expect(organizations).toEqual([{ ...response.data[0].organizations, role: 'admin' }]);
