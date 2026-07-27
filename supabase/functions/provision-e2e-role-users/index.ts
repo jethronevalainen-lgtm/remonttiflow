@@ -121,7 +121,7 @@ async function ensureUser(
   if (!user) {
     const { data, error } = await admin.auth.admin.createUser({
       email,
-      password: password ?? `${crypto.randomUUID()}-${crypto.randomUUID()}`,
+      password: password ?? `vakantti-role-${crypto.randomUUID()}`,
       email_confirm: true,
       user_metadata: metadata,
     });
