@@ -23,6 +23,12 @@ function downloadBlob(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function blobFromBytes(bytes: Uint8Array, type: string): Blob {
+  const copy = new Uint8Array(new ArrayBuffer(bytes.byteLength));
+  copy.set(bytes);
+  return new Blob([copy.buffer], { type });
+}
+
 function formatValue(value: unknown, column?: ReportCenterColumn): string {
   if (value === null || value === undefined || value === '') return '';
   if (column?.type === 'boolean') return value === true || value === 'true' ? 'Kyllä' : 'Ei';
@@ -100,7 +106,7 @@ function numericCell(value: unknown): number | null {
 function sheetXml(dataset: ReportCenterDataset): string {
   const headings: ReportCenterRow = Object.fromEntries(dataset.columns.map((column) => [column.key, column.label]));
   const allRows = [headings, ...dataset.rows];
-  const rows = allRows.map((row, rowIndex) => {
+  const body = allRows.map((row, rowIndex) => {
     const cells = dataset.columns.map((column, columnIndex) => {
       const reference = `${excelColumn(columnIndex)}${rowIndex + 1}`;
       const value = row[column.key];
@@ -109,25 +115,20 @@ function sheetXml(dataset: ReportCenterDataset): string {
         if (number !== null) return `<c r="${reference}" s="${column.type === 'money' ? 1 : 0}"><v>${number}</v></c>`;
       }
       if (rowIndex > 0 && column.type === 'boolean') {
-        const bool = value === true || value === 'true' ? 1 : 0;
-        return `<c r="${reference}" t="b"><v>${bool}</v></c>`;
+        return `<c r="${reference}" t="b"><v>${value === true || value === 'true' ? 1 : 0}</v></c>`;
       }
-      const text = rowIndex === 0 ? column.label : formatValue(value, column);
-      return `<c r="${reference}" t="inlineStr"${rowIndex === 0 ? ' s="2"' : ''}><is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>`;
+      const rendered = rowIndex === 0 ? column.label : formatValue(value, column);
+      return `<c r="${reference}" t="inlineStr"${rowIndex === 0 ? ' s="2"' : ''}><is><t xml:space="preserve">${xmlEscape(rendered)}</t></is></c>`;
     }).join('');
     return `<row r="${rowIndex + 1}">${cells}</row>`;
   }).join('');
   const widths = dataset.columns.map((column, index) => {
-    const contentWidth = Math.min(45, Math.max(column.label.length + 2, ...dataset.rows.slice(0, 200).map((row) => formatValue(row[column.key], column).length + 2)));
-    return `<col min="${index + 1}" max="${index + 1}" width="${Math.max(10, contentWidth)}" customWidth="1"/>`;
+    const lengths = dataset.rows.slice(0, 200).map((row) => formatValue(row[column.key], column).length + 2);
+    const width = Math.min(45, Math.max(10, column.label.length + 2, ...lengths));
+    return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`;
   }).join('');
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
-  <cols>${widths}</cols>
-  <sheetData>${rows}</sheetData>
-  <autoFilter ref="A1:${excelColumn(Math.max(0, dataset.columns.length - 1))}${Math.max(1, allRows.length)}"/>
-</worksheet>`;
+  const endColumn = excelColumn(Math.max(0, dataset.columns.length - 1));
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${widths}</cols><sheetData>${body}</sheetData><autoFilter ref="A1:${endColumn}${Math.max(1, allRows.length)}"/></worksheet>`;
 }
 
 const CRC_TABLE = (() => {
@@ -155,8 +156,7 @@ function u32(value: number): Uint8Array {
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
-  const length = parts.reduce((sum, part) => sum + part.length, 0);
-  const result = new Uint8Array(length);
+  const result = new Uint8Array(new ArrayBuffer(parts.reduce((sum, part) => sum + part.length, 0)));
   let offset = 0;
   for (const part of parts) {
     result.set(part, offset);
@@ -184,17 +184,15 @@ function zipStore(files: Array<{ name: string; content: string }>): Uint8Array {
     entries.push({ name: file.name, data, crc, offset });
     offset += header.length + data.length;
   }
-  const centralParts: Uint8Array[] = [];
-  for (const entry of entries) {
+  const locals = concatBytes(localParts);
+  const central = concatBytes(entries.map((entry) => {
     const name = encoder.encode(entry.name);
-    centralParts.push(concatBytes([
+    return concatBytes([
       u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
       u32(entry.crc), u32(entry.data.length), u32(entry.data.length), u16(name.length),
       u16(0), u16(0), u16(0), u16(0), u32(0), u32(entry.offset), name,
-    ]));
-  }
-  const central = concatBytes(centralParts);
-  const locals = concatBytes(localParts);
+    ]);
+  }));
   const end = concatBytes([
     u32(0x06054b50), u16(0), u16(0), u16(entries.length), u16(entries.length),
     u32(central.length), u32(locals.length), u16(0),
@@ -206,40 +204,29 @@ export function downloadReportXlsx(dataset: ReportCenterDataset): void {
   const files = [
     {
       name: '[Content_Types].xml',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-</Types>`,
+      content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
     },
     {
       name: '_rels/.rels',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+      content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
     },
     {
       name: 'xl/workbook.xml',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Raportti" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+      content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Raportti" sheetId="1" r:id="rId1"/></sheets></workbook>',
     },
     {
       name: 'xl/_rels/workbook.xml.rels',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+      content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
     },
     {
       name: 'xl/styles.xml',
-      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`,
+      content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>',
     },
     { name: 'xl/worksheets/sheet1.xml', content: sheetXml(dataset) },
   ];
   const archive = zipStore(files);
   downloadBlob(
-    new Blob([archive], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    blobFromBytes(archive, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
     `${safeFilePart(dataset.title)}-${datePart()}.xlsx`,
   );
 }
@@ -252,7 +239,7 @@ function pdfCharCode(char: string): number {
 }
 
 function latin1Bytes(value: string): Uint8Array {
-  const result = new Uint8Array(value.length);
+  const result = new Uint8Array(new ArrayBuffer(value.length));
   for (let index = 0; index < value.length; index += 1) result[index] = pdfCharCode(value[index]);
   return result;
 }
@@ -264,10 +251,9 @@ function pdfEscape(value: string): string {
 function wrapText(value: string, maxLength = 105): string[] {
   const clean = value.replace(/\s+/g, ' ').trim();
   if (!clean) return [''];
-  const words = clean.split(' ');
   const lines: string[] = [];
   let current = '';
-  for (const word of words) {
+  for (const word of clean.split(' ')) {
     const candidate = current ? `${current} ${word}` : word;
     if (candidate.length <= maxLength) current = candidate;
     else {
@@ -288,11 +274,8 @@ function reportPdfLines(dataset: ReportCenterDataset): string[] {
     '',
   ];
   for (const row of dataset.rows) {
-    const content = dataset.columns
-      .map((column) => `${column.label}: ${formatValue(row[column.key], column) || '—'}`)
-      .join(' | ');
-    lines.push(...wrapText(content));
-    lines.push('');
+    const content = dataset.columns.map((column) => `${column.label}: ${formatValue(row[column.key], column) || '—'}`).join(' | ');
+    lines.push(...wrapText(content), '');
   }
   return lines;
 }
@@ -303,63 +286,43 @@ function makePdf(lines: string[]): Uint8Array {
   for (let index = 0; index < lines.length; index += maxLines) pages.push(lines.slice(index, index + maxLines));
   if (!pages.length) pages.push(['Raportti on tyhjä.']);
 
-  const objectStrings: string[] = [];
-  const pageObjectNumbers: number[] = [];
-  const contentObjectNumbers: number[] = [];
-  const catalogObject = 1;
-  const pagesObject = 2;
-  const fontObject = 3;
+  const objects: string[] = [];
+  const pageNumbers: number[] = [];
+  const contentNumbers: number[] = [];
   let nextObject = 4;
-  for (let index = 0; index < pages.length; index += 1) {
-    pageObjectNumbers.push(nextObject++);
-    contentObjectNumbers.push(nextObject++);
-  }
-
-  objectStrings[catalogObject] = `<< /Type /Catalog /Pages ${pagesObject} 0 R >>`;
-  objectStrings[pagesObject] = `<< /Type /Pages /Kids [${pageObjectNumbers.map((number) => `${number} 0 R`).join(' ')}] /Count ${pages.length} >>`;
-  objectStrings[fontObject] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+  pages.forEach(() => {
+    pageNumbers.push(nextObject++);
+    contentNumbers.push(nextObject++);
+  });
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objects[2] = `<< /Type /Pages /Kids [${pageNumbers.map((number) => `${number} 0 R`).join(' ')}] /Count ${pages.length} >>`;
+  objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
 
   pages.forEach((pageLines, pageIndex) => {
-    const pageNumber = pageObjectNumbers[pageIndex];
-    const contentNumber = contentObjectNumbers[pageIndex];
-    const body = [
-      'BT',
-      '/F1 9 Tf',
-      '40 800 Td',
-      ...pageLines.flatMap((line, lineIndex) => [
-        lineIndex === 0 ? '' : '0 -15 Td',
-        `(${pdfEscape(line)}) Tj`,
-      ]).filter(Boolean),
-      'ET',
-    ].join('\n');
-    const bodyBytes = latin1Bytes(body);
-    objectStrings[contentNumber] = `<< /Length ${bodyBytes.length} >>\nstream\n${body}\nendstream`;
-    objectStrings[pageNumber] = `<< /Type /Page /Parent ${pagesObject} 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObject} 0 R >> >> /Contents ${contentNumber} 0 R >>`;
+    const body = ['BT', '/F1 9 Tf', '40 800 Td', ...pageLines.flatMap((line, lineIndex) => [lineIndex ? '0 -15 Td' : '', `(${pdfEscape(line)}) Tj`]).filter(Boolean), 'ET'].join('\n');
+    const bodyLength = latin1Bytes(body).length;
+    objects[contentNumbers[pageIndex]] = `<< /Length ${bodyLength} >>\nstream\n${body}\nendstream`;
+    objects[pageNumbers[pageIndex]] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentNumbers[pageIndex]} 0 R >>`;
   });
 
   const parts: Uint8Array[] = [latin1Bytes('%PDF-1.4\n%âãÏÓ\n')];
   const offsets: number[] = [0];
   let offset = parts[0].length;
-  for (let number = 1; number < objectStrings.length; number += 1) {
-    const objectBytes = latin1Bytes(`${number} 0 obj\n${objectStrings[number]}\nendobj\n`);
+  for (let number = 1; number < objects.length; number += 1) {
+    const objectBytes = latin1Bytes(`${number} 0 obj\n${objects[number]}\nendobj\n`);
     offsets[number] = offset;
     parts.push(objectBytes);
     offset += objectBytes.length;
   }
   const xrefOffset = offset;
-  const xref = [
-    `xref\n0 ${objectStrings.length}\n`,
-    '0000000000 65535 f \n',
-    ...offsets.slice(1).map((entry) => `${String(entry).padStart(10, '0')} 00000 n \n`),
-    `trailer\n<< /Size ${objectStrings.length} /Root ${catalogObject} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`,
-  ].join('');
+  const xref = [`xref\n0 ${objects.length}\n`, '0000000000 65535 f \n', ...offsets.slice(1).map((entry) => `${String(entry).padStart(10, '0')} 00000 n \n`), `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`].join('');
   parts.push(latin1Bytes(xref));
   return concatBytes(parts);
 }
 
 export function downloadReportPdf(dataset: ReportCenterDataset): void {
   const pdf = makePdf(reportPdfLines(dataset));
-  downloadBlob(new Blob([pdf], { type: 'application/pdf' }), `${safeFilePart(dataset.title)}-${datePart()}.pdf`);
+  downloadBlob(blobFromBytes(pdf, 'application/pdf'), `${safeFilePart(dataset.title)}-${datePart()}.pdf`);
 }
 
 function htmlEscape(value: string): string {
