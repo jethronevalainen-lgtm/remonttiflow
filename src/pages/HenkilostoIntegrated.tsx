@@ -660,7 +660,7 @@ export default function HenkilostoIntegrated() {
               <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:col-span-2">
                 <div>
                   <div className="flex items-center gap-2 font-semibold"><UserRoundCheck size={17} className="text-primary" />Esihenkilö</div>
-                  <p className="mt-1 text-sm text-text-secondary">Valitse henkilölle vastuullinen työnjohtaja. Projektikoordinaattoreita ei voi nimetä esihenkilöksi.</p>
+                  <p className="mt-1 text-sm text-text-secondary">Valitse henkilölle vastuullinen työnjohtaja.</p>
                 </div>
                 <Select value={selectedSupervisorUserId} onValueChange={setSelectedSupervisorUserId} disabled={membersLoading || supervisorsLoading}>
                   <SelectTrigger><SelectValue placeholder="Valitse esihenkilö" /></SelectTrigger>
