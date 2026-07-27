@@ -14,6 +14,7 @@ import {
   CustomerCollaborationManager, ProjectDiscussions, ProjectConversation,
   ProjectRequests, SafetyPortal, QrHallinta, QrKirjautuminen, Varmuuskopiot,
 } from './pages';
+import HenkilokortitPreview from './pages/HenkilokortitPreview';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
@@ -104,6 +105,13 @@ function RoleHome() {
   return <Navigate to={homeForRole(effectiveRole)} replace />;
 }
 
+function EmployeeCardsRoute() {
+  const { effectiveRole, isPreviewing } = useViewAs();
+  return isPreviewing && effectiveRole !== 'admin'
+    ? <HenkilokortitPreview />
+    : <Henkilokortit />;
+}
+
 function AppRoutes() {
   const allRoles: UserRole[] = ['admin', 'supervisor', 'worker', 'customer'];
   const internalRoles: UserRole[] = ['admin', 'supervisor', 'worker'];
@@ -144,7 +152,7 @@ function AppRoutes() {
         <Route path="/viestinta" element={<RoleGuard allowedRoles={internalRoles}><Viestinta /></RoleGuard>} />
         <Route path="/kalusto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Kalusto /></RoleGuard>} />
         <Route path="/henkilosto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Henkilosto /></RoleGuard>} />
-        <Route path="/henkilokortit" element={<RoleGuard allowedRoles={internalRoles}><Henkilokortit /></RoleGuard>} />
+        <Route path="/henkilokortit" element={<RoleGuard allowedRoles={internalRoles}><EmployeeCardsRoute /></RoleGuard>} />
         <Route path="/lomakkeet" element={<RoleGuard allowedRoles={internalRoles}><Lomakkeet /></RoleGuard>} />
         <Route path="/raportit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Raportit /></RoleGuard>} />
         <Route path="/varmuuskopiot" element={<RoleGuard allowedRoles={['admin']} useActualRole><Varmuuskopiot /></RoleGuard>} />
