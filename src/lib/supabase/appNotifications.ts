@@ -48,7 +48,7 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   shiftStartRemindersEnabled: true,
   shiftStartReminderMinutes: 30,
   workOrderDueRemindersEnabled: true,
-  workOrderDueReminderDays: 1,
+  workOrderDueReminderDays: 7,
   workOrderOverdueRemindersEnabled: true,
   timezone: 'Europe/Helsinki',
 };
