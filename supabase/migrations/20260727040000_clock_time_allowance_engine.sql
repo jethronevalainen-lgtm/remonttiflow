@@ -142,7 +142,7 @@ window_bounds as (
       + case when p_window_end <= p_window_start then interval '1 day' else interval '0' end as window_end
   from generate_series(-1, 1) as offset_value
 ),
-overlaps as (
+window_overlaps as (
   select
     greatest(
       0,
@@ -165,7 +165,7 @@ overlaps as (
   cross join window_bounds
 )
 select greatest(0, coalesce(sum(shift_minutes - break_minutes), 0))::integer
-from overlaps;
+from window_overlaps;
 $$;
 
 revoke all on function private.clock_window_overlap_minutes(
