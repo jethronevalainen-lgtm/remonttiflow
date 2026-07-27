@@ -45,7 +45,9 @@ export async function getMyOrganizations(
 ): Promise<MyOrganization[]> {
   const query = supabase
     .from('organization_members')
-    .select('role, organizations(*)')
+    .select(
+      'role, organizations:organizations!organization_members_organization_id_fkey(*)',
+    )
     .eq('user_id', userId);
 
   if (signal) query.abortSignal(signal);
