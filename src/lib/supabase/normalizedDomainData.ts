@@ -6,6 +6,7 @@ import type {
   SafetyItemSeverity,
   SafetyItemType,
   TimeEntry,
+  TimeEntryBreakSource,
   TimeEntryStatus,
 } from '@/types';
 
@@ -77,6 +78,16 @@ function mapTimeEntry(item: Row): TimeEntry {
     hours: numberValue(item, 'hours'),
     overtime: numberValue(item, 'overtime'),
     breakMinutes: numberValue(item, 'break_minutes'),
+    breakSource: enumValue<TimeEntryBreakSource>(
+      item,
+      'break_source',
+      ['none', 'manual', 'automatic'],
+      numberValue(item, 'break_minutes') > 0 ? 'manual' : 'none',
+    ),
+    startTime: optionalText(item, 'start_time'),
+    endTime: optionalText(item, 'end_time'),
+    breakStartTime: optionalText(item, 'break_start_time'),
+    breakEndTime: optionalText(item, 'break_end_time'),
     source: optionalText(item, 'source'),
     description: text(item, 'description'),
     status: enumValue<TimeEntryStatus>(item, 'status', ['Hyväksytty', 'Odottaa', 'Hylätty'], 'Odottaa'),
@@ -84,6 +95,7 @@ function mapTimeEntry(item: Row): TimeEntry {
     approvedAt: optionalText(item, 'approved_at'),
     rejectionReason: optionalText(item, 'rejection_reason'),
     lockedAt: optionalText(item, 'locked_at'),
+    payrollPeriodId: optionalText(item, 'payroll_period_id'),
   };
 }
 
