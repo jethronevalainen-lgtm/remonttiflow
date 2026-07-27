@@ -25,7 +25,7 @@ export { default as Tyoturvallisuus } from './Tyoturvallisuus';
 export { default as SafetyPortal } from './SafetyPortal';
 export { default as SafetyObservationPortal } from './SafetyObservationPortal';
 export { default as Viestinta } from './Viestinta';
-export { default as Raportit } from './Raportit';
+export { default as Raportit } from './RaportitV2';
 export { default as Aikataulutus } from './Aikataulutus';
 export { default as Tyovuorokalenteri } from './Tyovuorokalenteri';
 export { default as Paivakirjat } from './Paivakirjat';
