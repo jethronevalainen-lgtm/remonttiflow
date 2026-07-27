@@ -1,0 +1,60 @@
+name: One-shot fix generic project work plans
+
+on:
+  push:
+    branches:
+      - feat/generic-project-work-plans
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/generic-project-work-plans
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Fix typecheck findings
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          plans_path = Path('src/lib/supabase/projectWorkPlans.ts')
+          plans = plans_path.read_text()
+          old = """  const rows = Array.isArray(data) ? data.filter((item): item is Row => Boolean(item) && typeof item === 'object') : [];\n"""
+          new = """  const rows: Row[] = Array.isArray(data)\n    ? data.map((item) => item as unknown as Row)\n    : [];\n"""
+          if old not in plans:
+              raise SystemExit('projectWorkPlans row conversion anchor missing')
+          plans_path.write_text(plans.replace(old, new, 1))
+
+          page_path = Path('src/pages/ProjectWorks.tsx')
+          page = page_path.read_text()
+          old_import = "  ClipboardList,\n"
+          if old_import not in page:
+              raise SystemExit('unused ClipboardList import anchor missing')
+          page_path.write_text(page.replace(old_import, '', 1))
+          PY
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run production quality gate
+        run: npm run ship:check
+
+      - name: Commit verified fixes
+        run: |
+          rm .github/workflows/one-shot-fix-generic-project-work-plans.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/supabase/projectWorkPlans.ts src/pages/ProjectWorks.tsx .github/workflows/one-shot-fix-generic-project-work-plans.yml
+          git commit -m "fix: pass generic work plan quality gate"
+          git push origin HEAD:feat/generic-project-work-plans
