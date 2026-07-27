@@ -152,11 +152,17 @@ export default function KayttajaEsikatseluV2() {
           {loading && <div className="p-10 text-center text-sm text-slate-500">Ladataan käyttäjiä…</div>}
           {!loading && filteredMembers.map((member) => {
             const name = member.profile?.full_name || member.profile?.email || 'Nimetön käyttäjä';
+            const email = member.profile?.email || '';
+            const isCurrentTarget = isImpersonating && member.userId === previewTarget?.userId;
             return (
-              <div key={member.userId} className="grid gap-4 border-b p-5 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)_auto] lg:items-center">
+              <div
+                key={member.userId}
+                data-impersonation-email={email}
+                className="grid gap-4 border-b p-5 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)_auto] lg:items-center"
+              >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-light text-sm font-bold text-primary">{initials(name)}</div>
-                  <div className="min-w-0"><p className="truncate font-semibold">{name}</p><p className="truncate text-sm text-slate-500">{member.profile?.email || 'Ei sähköpostia'}</p></div>
+                  <div className="min-w-0"><p className="truncate font-semibold">{name}</p><p className="truncate text-sm text-slate-500">{email || 'Ei sähköpostia'}</p></div>
                 </div>
                 <div className="rounded-xl border bg-slate-50 p-3">
                   <Badge variant="outline" className={ROLE_BADGES[member.role]}>{ROLE_LABELS[member.role]}</Badge>
@@ -164,7 +170,8 @@ export default function KayttajaEsikatseluV2() {
                 </div>
                 <Button
                   className="gap-2"
-                  disabled={Boolean(startingUserId) || switching || member.userId === previewTarget?.userId}
+                  disabled={Boolean(startingUserId) || isCurrentTarget}
+                  aria-label={`Toimi käyttäjänä ${name}`}
                   onClick={() => void actAsMember(member)}
                 >
                   <LogIn size={16} />
