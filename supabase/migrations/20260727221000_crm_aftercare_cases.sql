@@ -54,6 +54,8 @@ create index if not exists customer_cases_org_status_idx
   on public.customer_cases(organization_id, status, due_at);
 create index if not exists customer_cases_customer_idx
   on public.customer_cases(organization_id, customer_id, created_at desc);
+create index if not exists customer_cases_customer_id_idx
+  on public.customer_cases(customer_id);
 create index if not exists customer_cases_project_idx
   on public.customer_cases(project_id, customer_visible, created_at desc);
 create index if not exists customer_cases_site_id_idx

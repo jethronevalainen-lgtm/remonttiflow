@@ -333,14 +333,20 @@ export function CrmAftercarePanel() {
         status: form.status,
         dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : undefined,
         assignedUserId: form.assignedUserId || undefined,
-        warrantyCovered: form.warrantyCovered === 'unknown' ? undefined : form.warrantyCovered === 'yes',
+        warrantyCovered: form.warrantyCovered === 'unknown' ? null : form.warrantyCovered === 'yes',
         rootCause: form.rootCause,
         resolution: form.resolution,
         estimatedCostCents,
         actualCostCents,
         customerVisible: form.customerVisible,
-        customerDecision: form.status === 'Odottaa asiakkaan hyväksyntää' ? 'Odottaa' as const : undefined,
-        closedAt: TERMINAL_STATUSES.includes(form.status) ? new Date().toISOString() : undefined,
+        customerDecision: form.status === 'Odottaa asiakkaan hyväksyntää'
+          ? 'Odottaa' as const
+          : TERMINAL_STATUSES.includes(form.status)
+            ? editing?.customerDecision ?? null
+            : null,
+        closedAt: TERMINAL_STATUSES.includes(form.status)
+          ? editing?.closedAt ?? new Date().toISOString()
+          : '',
       };
       if (editing) await updateCustomerCase(currentOrg.id, editing.id, payload);
       else await createCustomerCase(currentOrg.id, user?.id, payload);
