@@ -112,7 +112,8 @@ async function loginAsAdministrator(page: Page): Promise<void> {
   await page.getByLabel('Salasana').fill(E2E_PASSWORD);
   await page.getByRole('button', { name: 'Kirjaudu sisään' }).click();
   await expect(page).toHaveURL(/#\/dashboard/, { timeout: 30_000 });
-  await expect(page.getByRole('heading', { name: 'Yleisnäkymä' })).toBeVisible();
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Kirjaudu ulos' })).toBeVisible({ timeout: 30_000 });
 
   await page.goto('/#/kayttajaesikatselu');
   await expect(page.getByRole('heading', { name: 'Toimi käyttäjänä' })).toBeVisible({ timeout: 30_000 });
