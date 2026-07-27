@@ -21,6 +21,7 @@ describe('worker route boundaries', () => {
       '/projektikeskustelut',
       '/viestinta',
       '/lomakkeet',
+      '/qr-kirjautuminen',
     ]);
   });
 
