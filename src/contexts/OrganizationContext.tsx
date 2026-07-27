@@ -21,6 +21,11 @@ export interface OrganizationContextValue {
   organizations: MyOrganization[];
   currentOrg: MyOrganization | null;
   actualRole: OrganizationRole | null;
+  /**
+   * Compatibility capability used by older operational pages. A project
+   * coordinator behaves like management in project workflows, while route and
+   * database guards still use actualRole to keep HR/payroll data inaccessible.
+   */
   currentRole: OrganizationRole | null;
   setCurrentOrg: (orgId: string) => void;
   refreshOrganizations: () => Promise<void>;
@@ -93,6 +98,9 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
   const [orgsLoading, setOrgsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const actualRole = currentOrg?.role ?? null;
+  const currentRole: OrganizationRole | null = actualRole === 'project_coordinator'
+    ? 'supervisor'
+    : actualRole;
 
   const applyOrganizations = useCallback((orgs: MyOrganization[], preferredId: string | null) => {
     setOrganizations(orgs);
@@ -158,7 +166,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     organizations,
     currentOrg,
     actualRole,
-    currentRole: actualRole,
+    currentRole,
     setCurrentOrg,
     refreshOrganizations,
     loading: authLoading || orgsLoading,
@@ -167,6 +175,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     actualRole,
     authLoading,
     currentOrg,
+    currentRole,
     error,
     organizations,
     orgsLoading,
