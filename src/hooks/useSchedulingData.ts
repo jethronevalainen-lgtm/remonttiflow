@@ -5,6 +5,7 @@ import { useViewAs } from '@/contexts/ViewAsContext';
 import { supabase } from '@/lib/supabase/client';
 
 export type PhaseStatus = 'Suunniteltu' | 'Käynnissä' | 'Valmis' | 'Myöhässä';
+export type ShiftSourceType = 'manual' | 'work_order';
 
 export interface ProjectPhase {
   id: string;
@@ -25,11 +26,14 @@ export interface Shift {
   employeeName: string;
   projectId?: string;
   project: string;
+  title: string;
   date: string;
   startTime: string;
   endTime: string;
   shiftType: string;
   notes: string;
+  workOrderId?: string;
+  sourceType: ShiftSourceType;
 }
 
 type Row = Record<string, unknown>;
@@ -60,6 +64,10 @@ function numberValue(item: Row, key: string): number {
   return 0;
 }
 
+function sourceType(value: unknown): ShiftSourceType {
+  return value === 'work_order' ? 'work_order' : 'manual';
+}
+
 async function loadScheduling(organizationId: string) {
   const [phasesResponse, shiftsResponse] = await Promise.all([
     supabase
@@ -78,7 +86,7 @@ async function loadScheduling(organizationId: string) {
     throw new Error(`Projektivaiheiden haku epäonnistui: ${phasesResponse.error.message}`);
   }
   if (shiftsResponse.error) {
-    throw new Error(`Työvuorojen haku epäonnistui: ${shiftsResponse.error.message}`);
+    throw new Error(`Resurssivarausten haku epäonnistui: ${shiftsResponse.error.message}`);
   }
 
   const phases = (Array.isArray(phasesResponse.data) ? phasesResponse.data : [])
@@ -110,11 +118,14 @@ async function loadScheduling(organizationId: string) {
       employeeName: text(item, 'employee_name'),
       projectId: optionalText(item, 'project_id'),
       project: text(item, 'project'),
+      title: text(item, 'title'),
       date: text(item, 'date'),
-      startTime: text(item, 'start_time'),
-      endTime: text(item, 'end_time'),
+      startTime: text(item, 'start_time').slice(0, 5),
+      endTime: text(item, 'end_time').slice(0, 5),
       shiftType: text(item, 'shift_type'),
       notes: text(item, 'notes'),
+      workOrderId: optionalText(item, 'work_order_id'),
+      sourceType: sourceType(item.source_type),
     }));
 
   return { phases, shifts };
@@ -135,7 +146,7 @@ export function useSchedulingData() {
     queryKey,
     queryFn: () => loadScheduling(organizationId as string),
     enabled: Boolean(organizationId),
-    staleTime: 20_000,
+    staleTime: 10_000,
     retry: 1,
   });
 
