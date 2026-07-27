@@ -60,7 +60,7 @@ export default function KayttajaEsikatseluV2() {
     ].filter(Boolean).join(' ').toLocaleLowerCase('fi').includes(query));
   }, [members, search]);
 
-  const useAsMember = async (member: (typeof members)[number]) => {
+  const actAsMember = async (member: (typeof members)[number]) => {
     const displayName = member.profile?.full_name || member.profile?.email || 'Nimetön käyttäjä';
     setStartingUserId(member.userId);
     setOperationError(null);
@@ -165,7 +165,7 @@ export default function KayttajaEsikatseluV2() {
                 <Button
                   className="gap-2"
                   disabled={Boolean(startingUserId) || switching || member.userId === previewTarget?.userId}
-                  onClick={() => void useAsMember(member)}
+                  onClick={() => void actAsMember(member)}
                 >
                   <LogIn size={16} />
                   {startingUserId === member.userId ? 'Avataan…' : 'Toimi käyttäjänä'}
