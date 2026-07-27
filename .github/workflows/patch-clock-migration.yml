@@ -1,0 +1,50 @@
+name: Patch Clock Migration
+
+on:
+  push:
+    branches:
+      - agent/clock-time-allowance-engine
+    paths:
+      - .github/workflows/patch-clock-migration.yml
+      - supabase/migrations/20260727040000_clock_time_allowance_engine.sql
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[clock-migration-patched]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/clock-time-allowance-engine
+          fetch-depth: 0
+
+      - name: Patch reserved CTE name
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('supabase/migrations/20260727040000_clock_time_allowance_engine.sql')
+          content = path.read_text(encoding='utf-8')
+          updated = content.replace('\noverlaps as (\n', '\nwindow_overlaps as (\n').replace('\nfrom overlaps;\n', '\nfrom window_overlaps;\n')
+          if updated == content:
+              print('Clock migration already patched.')
+          else:
+              path.write_text(updated, encoding='utf-8')
+              print('Patched reserved CTE name.')
+          PY
+
+      - name: Commit deterministic patch
+        run: |
+          if git diff --quiet; then
+            echo "No patch required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/migrations/20260727040000_clock_time_allowance_engine.sql
+          git commit -m "Fix clock overlap CTE [clock-migration-patched]"
+          git push origin HEAD:agent/clock-time-allowance-engine
