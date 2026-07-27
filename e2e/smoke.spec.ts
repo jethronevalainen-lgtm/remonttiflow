@@ -103,6 +103,24 @@ async function clearBrowserState(page: Page): Promise<void> {
   });
 }
 
+async function openAdministratorPreview(page: Page): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    await page.goto('/#/kayttajaesikatselu');
+    try {
+      await expect(page).toHaveURL(/#\/kayttajaesikatselu(?:[/?]|$)/, { timeout: 5_000 });
+      await expect(page.getByRole('heading', { name: 'Toimi käyttäjänä' })).toBeVisible({ timeout: 5_000 });
+      return;
+    } catch (caught) {
+      lastError = caught;
+      await page.waitForTimeout(attempt * 500);
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Adminin käyttäjäesikatselu ei avautunut istunnon vaihdon jälkeen.');
+}
+
 /** Login against Supabase with the isolated administrator prepared for this run. */
 async function loginAsAdministrator(page: Page): Promise<void> {
   if (!HAS_E2E_CREDENTIALS) throw new Error('E2E credentials are not configured.');
@@ -115,8 +133,7 @@ async function loginAsAdministrator(page: Page): Promise<void> {
   await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('button', { name: 'Kirjaudu ulos' })).toBeVisible({ timeout: 30_000 });
 
-  await page.goto('/#/kayttajaesikatselu');
-  await expect(page.getByRole('heading', { name: 'Toimi käyttäjänä' })).toBeVisible({ timeout: 30_000 });
+  await openAdministratorPreview(page);
 }
 
 async function expectApplicationSection(page: Page, route: string): Promise<void> {
@@ -131,8 +148,7 @@ async function expectApplicationSection(page: Page, route: string): Promise<void
 }
 
 async function startImpersonation(page: Page, role: Exclude<UserRole, 'admin'>): Promise<void> {
-  await page.goto('/#/kayttajaesikatselu');
-  await expect(page.getByRole('heading', { name: 'Toimi käyttäjänä' })).toBeVisible({ timeout: 30_000 });
+  await openAdministratorPreview(page);
 
   const email = ROLE_EMAILS[role];
   const search = page.getByPlaceholder('Hae käyttäjää tai roolia');
@@ -155,6 +171,7 @@ async function stopImpersonation(page: Page): Promise<void> {
   await expect(returnButton).toBeVisible({ timeout: 30_000 });
   await returnButton.click();
   await expect(page).toHaveURL(/#\/dashboard/, { timeout: 30_000 });
+  await openAdministratorPreview(page);
 }
 
 async function expectRoleStaticRoutes(page: Page, role: UserRole): Promise<void> {
