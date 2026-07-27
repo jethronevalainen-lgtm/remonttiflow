@@ -39,3 +39,4 @@ export { default as CRM } from './CRM';
 export { default as AIPage } from './AI';
 export { default as Hallinta } from './HallintaV2';
 export { default as KayttajaEsikatselu } from './KayttajaEsikatseluV2';
+export { default as Toiminnanohjaus } from './Toiminnanohjaus';
