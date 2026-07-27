@@ -9,6 +9,7 @@ export { default as CustomerCollaborationManager } from './CustomerCollaboration
 export { default as Asiakkaat } from './Asiakkaat';
 export { default as Henkilosto } from './Henkilosto';
 export { default as Henkilokortit } from './Henkilokortit';
+export { default as PalkkaAineisto } from './PalkkaAineisto';
 export { default as Tyomaaraykset } from './Tyomaaraykset';
 export { default as Tilaukset } from './Tilaukset';
 export { default as TilaajanTyot } from './TilaajanTyot';
