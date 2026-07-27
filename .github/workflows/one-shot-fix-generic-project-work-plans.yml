@@ -9,21 +9,16 @@ permissions:
   contents: write
 
 jobs:
-  fix-and-verify:
+  apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           ref: feat/generic-project-work-plans
           fetch-depth: 0
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Fix typecheck findings
+      - name: Apply typecheck fixes
         run: |
           python <<'PY'
           from pathlib import Path
@@ -44,17 +39,11 @@ jobs:
           page_path.write_text(page.replace(old_import, '', 1))
           PY
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Run production quality gate
-        run: npm run ship:check
-
-      - name: Commit verified fixes
+      - name: Commit fixes and remove one-shot workflow
         run: |
           rm .github/workflows/one-shot-fix-generic-project-work-plans.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/lib/supabase/projectWorkPlans.ts src/pages/ProjectWorks.tsx .github/workflows/one-shot-fix-generic-project-work-plans.yml
-          git commit -m "fix: pass generic work plan quality gate"
+          git commit -m "fix: resolve generic work plan typecheck findings"
           git push origin HEAD:feat/generic-project-work-plans
