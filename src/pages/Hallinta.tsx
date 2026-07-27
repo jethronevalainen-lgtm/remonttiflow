@@ -1,1 +1,1 @@
-export { default } from './HallintaV2';
+export { default } from './HallintaV3';
