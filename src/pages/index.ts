@@ -36,6 +36,7 @@ export { default as Jatehuolto } from './Jatehuolto';
 export { default as Tyonjohto } from './Tyonjohto';
 export { default as Tarkastukset } from './Tarkastukset';
 export { default as CRM } from './CRM';
+export { default as Toiminnanohjaus } from './Toiminnanohjaus';
 export { default as AIPage } from './AI';
 export { default as Hallinta } from './HallintaV2';
 export { default as KayttajaEsikatselu } from './KayttajaEsikatseluV2';
