@@ -122,9 +122,8 @@ const managementGroups: NavGroup[] = [
     key: 'commercial', title: 'Asiakkaat ja talous', items: [
       { label: 'Asiakkaat', icon: Users, path: '/asiakkaat' },
       { label: 'CRM', icon: MessageSquare, path: '/crm' },
+      { label: 'Tarjouslaskenta', icon: FileText, path: '/tarjoukset' },
       { label: 'Toiminnanohjaus', icon: Gauge, path: '/toiminnanohjaus' },
-      { label: 'Laskenta', icon: BarChart3, path: '/laskenta' },
-      { label: 'Määrälaskenta', icon: Wrench, path: '/maaralaskenta' },
     ],
   },
   {
