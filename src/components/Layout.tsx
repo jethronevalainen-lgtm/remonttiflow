@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -41,6 +41,19 @@ const managementBottomItems = [
   { path: '/tyoturvallisuus', label: 'Turvallisuus', icon: ShieldCheck },
   { path: '/projektikeskustelut', label: 'Keskustelut', icon: MessageCircle },
 ];
+
+function RouteLoadingState() {
+  return (
+    <div
+      className="flex min-h-[40vh] items-center justify-center gap-3 text-sm font-medium text-slate-600"
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 size={20} className="animate-spin text-primary" />
+      Ladataan osiota…
+    </div>
+  );
+}
 
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
@@ -121,7 +134,9 @@ export default function Layout() {
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18 }}
             >
-              <Outlet />
+              <Suspense fallback={<RouteLoadingState />}>
+                <Outlet />
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>
