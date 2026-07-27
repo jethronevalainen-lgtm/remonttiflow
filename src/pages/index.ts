@@ -13,7 +13,7 @@ export { default as PalkkaAineisto } from './PalkkaAineisto';
 export { default as Tyomaaraykset } from './Tyomaaraykset';
 export { default as Tilaukset } from './Tilaukset';
 export { default as TilaajanTyot } from './TilaajanTyot';
-export { default as Tuntikirjaukset } from './Tuntikirjaukset';
+export { default as Tuntikirjaukset } from './TuntikirjauksetV2';
 export { default as QrHallinta } from './QrHallinta';
 export { default as QrKirjautuminen } from './QrKirjautuminen';
 export { default as Varmuuskopiot } from './Varmuuskopiot';
