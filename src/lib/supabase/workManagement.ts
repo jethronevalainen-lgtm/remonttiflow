@@ -61,6 +61,13 @@ export interface ManagedWorkOrder {
   completionReviewedBy?: string;
   completionReviewNote: string;
   completionApproved: boolean;
+  workPlanId?: string;
+  workPackageKey: string;
+  workPackageTitle: string;
+  projectPhaseId?: string;
+  phaseOrder: number;
+  predecessorWorkOrderId?: string;
+  phaseGateEnabled: boolean;
 }
 
 export interface RoleWorkspaceData {
@@ -282,6 +289,13 @@ export async function loadRoleWorkspace(
       description: text(item, 'description'),
       type: text(item, 'type'),
       assignmentScope: scope(item.assignment_scope),
+      workPlanId: optionalText(item, 'work_plan_id'),
+      workPackageKey: text(item, 'work_package_key'),
+      workPackageTitle: text(item, 'work_package_title'),
+      projectPhaseId: optionalText(item, 'project_phase_id'),
+      phaseOrder: Number.isFinite(Number(item.phase_order)) ? Number(item.phase_order) : 0,
+      predecessorWorkOrderId: optionalText(item, 'predecessor_work_order_id'),
+      phaseGateEnabled: booleanValue(item, 'phase_gate_enabled', true),
       assigneeUserIds,
       assigneeNames: assigneeUserIds.map((userId) => {
         const profile = profiles.get(userId) ?? {};
