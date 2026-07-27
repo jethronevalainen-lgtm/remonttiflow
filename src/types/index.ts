@@ -16,7 +16,16 @@ export type EmployeeStatus = 'Aktiivinen' | 'Lomalla' | 'Sairas' | 'Koulutuksess
 export type EquipmentStatus = 'Käytössä' | 'Vapaa' | 'Huollossa' | 'Vuokralla';
 export type CustomerType = 'Yritys' | 'Yksityinen' | 'Taloyhtiö';
 export type CustomerStatus = 'Aktiivinen' | 'Epäaktiivinen';
-export type CrmLeadStage = 'Uusi' | 'Tarjous tehty' | 'Neuvottelu' | 'Sopimus';
+export type CrmLeadStage =
+  | 'Uusi'
+  | 'Kartoitus sovittu'
+  | 'Kartoitettu'
+  | 'Tarjous laskennassa'
+  | 'Tarjous lähetetty'
+  | 'Neuvottelu'
+  | 'Voitettu'
+  | 'Hävitty'
+  | 'Jäissä';
 export type SafetyItemType = 'incident' | 'risk' | 'inspection' | 'training';
 export type SafetyItemSeverity = 'Lievä' | 'Keskitasoinen' | 'Vakava';
 export type AnnouncementPriority = 'Tärkeä' | 'Normaali' | 'Info';
@@ -38,6 +47,7 @@ export interface Project {
   name: string;
   customer: string;
   customerId?: string;
+  customerSiteId?: string;
   projectNumber?: string;
   status: ProjectStatus;
   startDate: string;
@@ -178,12 +188,22 @@ export interface CrmLead {
   name: string;
   company: string;
   customerId?: string;
+  siteId?: string;
   value: number;
+  estimatedCost?: number;
   stage: CrmLeadStage;
   assignee: string;
   assigneeUserId?: string;
   probability?: number;
   source?: string;
+  description?: string;
+  nextAction?: string;
+  nextActionDueAt?: string;
+  expectedDecisionDate?: string;
+  quotedAt?: string;
+  wonAt?: string;
+  lostAt?: string;
+  frozenUntil?: string;
   lostReason?: string;
   convertedProjectId?: string;
   lastActivityAt?: string;
