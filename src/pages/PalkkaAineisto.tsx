@@ -3,14 +3,14 @@ import { motion } from 'framer-motion';
 import {
   AlertTriangle,
   BadgeEuro,
-  Calculator,
   CheckCircle2,
   Clock3,
   FileLock2,
   Loader2,
+  Moon,
   RefreshCw,
   Save,
-  ShieldAlert,
+  SunMedium,
   UsersRound,
 } from 'lucide-react';
 
@@ -49,13 +49,13 @@ interface EmployeeSummary {
   entryCount: number;
   totalMinutes: number;
   regularMinutes: number;
-  additionalMinutes: number;
-  overtime50Minutes: number;
-  overtime100Minutes: number;
-  weeklyOvertime50Minutes: number;
+  overtimeMinutes: number;
+  eveningMinutes: number;
+  nightMinutes: number;
+  saturdayMinutes: number;
+  sundayMinutes: number;
   variablePayCents: number;
-  lineTotalCents: number;
-  fixedMonthlySalaryCents: number;
+  estimatedTotalCents: number;
   blockers: string[];
   warnings: string[];
 }
@@ -69,17 +69,6 @@ function monthRange(date = new Date()) {
     String(value.getDate()).padStart(2, '0'),
   ].join('-');
   return { start: iso(start), end: iso(end) };
-}
-
-function isFullMonth(start: string, end: string) {
-  const startDate = new Date(`${start}T00:00:00`);
-  const endDate = new Date(`${end}T00:00:00`);
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return false;
-  const expectedEnd = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-  return startDate.getDate() === 1
-    && startDate.getFullYear() === endDate.getFullYear()
-    && startDate.getMonth() === endDate.getMonth()
-    && expectedEnd.getDate() === endDate.getDate();
 }
 
 function hours(minutes: number) {
@@ -99,43 +88,41 @@ function dateTimeLabel(value?: string) {
   return new Intl.DateTimeFormat('fi-FI', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 }
 
-function summarize(lines: PayrollPreviewLine[], includeMonthlySalary: boolean): EmployeeSummary[] {
-  const summaries = new Map<string, EmployeeSummary>();
+function summarize(lines: PayrollPreviewLine[]): EmployeeSummary[] {
+  const map = new Map<string, EmployeeSummary>();
   for (const line of lines) {
     const key = line.employeeId ?? `unresolved:${line.employeeName}`;
-    const item = summaries.get(key) ?? {
+    const current = map.get(key) ?? {
       key,
       employeeName: line.employeeName,
       entryCount: 0,
       totalMinutes: 0,
       regularMinutes: 0,
-      additionalMinutes: 0,
-      overtime50Minutes: 0,
-      overtime100Minutes: 0,
-      weeklyOvertime50Minutes: 0,
+      overtimeMinutes: 0,
+      eveningMinutes: 0,
+      nightMinutes: 0,
+      saturdayMinutes: 0,
+      sundayMinutes: 0,
       variablePayCents: 0,
-      lineTotalCents: 0,
-      fixedMonthlySalaryCents: 0,
+      estimatedTotalCents: 0,
       blockers: [],
       warnings: [],
     };
-    item.entryCount += 1;
-    item.totalMinutes += line.totalMinutes;
-    item.regularMinutes += line.regularMinutes;
-    item.additionalMinutes += line.additionalMinutes;
-    item.overtime50Minutes += line.overtime50Minutes;
-    item.overtime100Minutes += line.overtime100Minutes;
-    item.weeklyOvertime50Minutes += line.weeklyOvertime50Minutes;
-    item.variablePayCents += line.variablePayCents;
-    item.lineTotalCents += line.lineTotalCents;
-    if (includeMonthlySalary && line.payType === 'Kuukausipalkka') {
-      item.fixedMonthlySalaryCents = Math.max(item.fixedMonthlySalaryCents, line.monthlySalaryCents ?? 0);
-    }
-    item.blockers = [...new Set([...item.blockers, ...line.blockers])];
-    item.warnings = [...new Set([...item.warnings, ...line.warnings])];
-    summaries.set(key, item);
+    current.entryCount += 1;
+    current.totalMinutes += line.totalMinutes;
+    current.regularMinutes += line.regularMinutes;
+    current.overtimeMinutes += line.overtime50Minutes + line.overtime100Minutes + line.weeklyOvertime50Minutes;
+    current.eveningMinutes += line.eveningMinutes;
+    current.nightMinutes += line.nightMinutes;
+    current.saturdayMinutes += line.saturdayMinutes;
+    current.sundayMinutes += line.sundayMinutes;
+    current.variablePayCents += line.variablePayCents;
+    current.estimatedTotalCents += line.lineTotalCents;
+    current.blockers = [...new Set([...current.blockers, ...line.blockers])];
+    current.warnings = [...new Set([...current.warnings, ...line.warnings])];
+    map.set(key, current);
   }
-  return [...summaries.values()].sort((a, b) => a.employeeName.localeCompare(b.employeeName, 'fi'));
+  return [...map.values()].sort((a, b) => a.employeeName.localeCompare(b.employeeName, 'fi'));
 }
 
 function NumericRule({
@@ -191,20 +178,15 @@ export default function PalkkaAineisto() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const isAdmin = currentRole === 'admin';
-  const summaries = useMemo(
-    () => summarize(lines, isFullMonth(periodStart, periodEnd)),
-    [lines, periodEnd, periodStart],
-  );
+  const summaries = useMemo(() => summarize(lines), [lines]);
   const blockerCount = summaries.reduce((sum, item) => sum + item.blockers.length, 0);
-  const totalMinutes = summaries.reduce((sum, item) => sum + item.totalMinutes, 0);
-  const overtimeMinutes = summaries.reduce(
-    (sum, item) => sum + item.overtime50Minutes + item.overtime100Minutes + item.weeklyOvertime50Minutes,
-    0,
-  );
-  const totalCents = summaries.reduce(
-    (sum, item) => sum + item.lineTotalCents + item.fixedMonthlySalaryCents,
-    0,
-  );
+  const totals = useMemo(() => summaries.reduce((acc, item) => ({
+    minutes: acc.minutes + item.totalMinutes,
+    overtime: acc.overtime + item.overtimeMinutes,
+    evening: acc.evening + item.eveningMinutes,
+    night: acc.night + item.nightMinutes,
+    amount: acc.amount + item.estimatedTotalCents,
+  }), { minutes: 0, overtime: 0, evening: 0, night: 0, amount: 0 }), [summaries]);
 
   const loadBase = useCallback(async () => {
     if (!currentOrg) {
@@ -255,7 +237,8 @@ export default function PalkkaAineisto() {
     try {
       await saveOrganizationTimeRules(rules, user.id);
       setRules(await getOrganizationTimeRules(rules.organizationId));
-      setSuccess('Työaikasäännöt tallennettiin. Laske aineisto uudelleen.');
+      setSuccess('Työaikasäännöt tallennettiin. Palkka-aineisto lasketaan uusilla säännöillä.');
+      await calculate();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Työaikasääntöjen tallennus epäonnistui.');
     } finally {
@@ -270,7 +253,7 @@ export default function PalkkaAineisto() {
     try {
       await lockPayrollPeriod({ organizationId: currentOrg.id, periodStart, periodEnd, notes });
       setPeriods(await listPayrollPeriods(currentOrg.id));
-      setSuccess('Palkkakausi lukittiin. Kauden hyväksyttyjä tuntikirjauksia ei voi enää muuttaa.');
+      setSuccess('Palkkakausi lukittiin ja laskentarivit tallennettiin muuttumattomaksi snapshotiksi.');
       setNotes('');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Palkkakauden lukitus epäonnistui.');
@@ -289,7 +272,7 @@ export default function PalkkaAineisto() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h1 className="text-hero text-text-primary">Palkka-aineisto</h1>
-          <p className="mt-1 max-w-3xl text-body-sm text-text-secondary">Hyväksyttyjen tuntien palvelinpuolinen luokittelu, palkkaerien tarkistus ja palkkakauden lukitus.</p>
+          <p className="mt-1 max-w-3xl text-body-sm text-text-secondary">Kellonaikapohjainen työajan luokittelu, ilta- ja yölisät, ylityöt sekä palkkakauden lukitus.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="gap-2" onClick={() => void calculate()} disabled={calculating}>
@@ -305,74 +288,66 @@ export default function PalkkaAineisto() {
       <Card><CardContent className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-[1fr_1fr_2fr_auto] xl:items-end">
         <div className="space-y-2"><Label>Kauden alku</Label><Input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></div>
         <div className="space-y-2"><Label>Kauden loppu</Label><Input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></div>
-        <div className="space-y-2"><Label>Lukituksen muistiinpano</Label><Input value={notes} maxLength={500} onChange={(event) => setNotes(event.target.value)} /></div>
-        <Button variant="outline" className="gap-2" onClick={() => void calculate()} disabled={calculating}><Calculator size={16} /> Laske</Button>
+        <div className="space-y-2"><Label>Lukituksen muistiinpano</Label><Input value={notes} maxLength={500} onChange={(event) => setNotes(event.target.value)} placeholder="Esim. heinäkuun palkka-aineisto" /></div>
+        <Button variant="outline" onClick={() => void calculate()} disabled={calculating}>Päivitä</Button>
       </CardContent></Card>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[
-          { label: 'Työntekijöitä', value: String(summaries.length), icon: UsersRound },
-          { label: 'Hyväksytty työaika', value: hours(totalMinutes), icon: Clock3 },
-          { label: 'Ylityötä', value: hours(overtimeMinutes), icon: Calculator },
-          { label: 'Arvioitu aineisto', value: euro(totalCents), icon: BadgeEuro },
-          { label: 'Estäviä puutteita', value: String(blockerCount), icon: ShieldAlert },
-        ].map((item) => <Card key={item.label}><CardContent className="p-4"><div className="mb-2 flex justify-between text-xs text-text-secondary"><span>{item.label}</span><item.icon size={17} className="text-orange-600" /></div><p className="font-mono text-xl font-bold sm:text-2xl">{item.value}</p></CardContent></Card>)}
+          { label: 'Työntekijöitä', value: summaries.length, icon: UsersRound },
+          { label: 'Työaika', value: hours(totals.minutes), icon: Clock3 },
+          { label: 'Ylityö', value: hours(totals.overtime), icon: BadgeEuro },
+          { label: 'Ilta / yö', value: `${hours(totals.evening)} / ${hours(totals.night)}`, icon: Moon },
+          { label: 'Arvio yhteensä', value: euro(totals.amount), icon: BadgeEuro },
+        ].map((item) => <Card key={item.label}><CardContent className="p-4"><div className="mb-2 flex items-center justify-between text-xs text-text-secondary"><span>{item.label}</span><item.icon size={17} className="text-primary" /></div><p className="font-mono text-xl font-bold">{item.value}</p></CardContent></Card>)}
       </div>
 
-      {blockerCount > 0 && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><p className="font-semibold">Palkkakautta ei voi lukita.</p><p className="mt-1">Korjaa henkilökortti-, palkkaehto- tai kellonaikapuutteet ja laske aineisto uudelleen.</p></div>}
-
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b"><CardTitle className="text-lg">Työntekijäkohtainen tarkistus</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          {summaries.map((item) => <div key={item.key} className="border-b px-5 py-5">
-            <div className="grid gap-3 lg:grid-cols-[1.4fr_repeat(5,110px)] lg:items-center">
-              <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{item.employeeName}</p><Badge variant="outline">{item.entryCount} kirjausta</Badge></div><p className="mt-1 text-xs text-slate-500">Säännöllinen {hours(item.regularMinutes)} · viikkoylityö {hours(item.weeklyOvertime50Minutes)}</p></div>
-              <div><p className="text-xs text-slate-500">Yhteensä</p><p className="font-mono">{hours(item.totalMinutes)}</p></div>
-              <div><p className="text-xs text-slate-500">Lisätyö</p><p className="font-mono">{hours(item.additionalMinutes)}</p></div>
-              <div><p className="text-xs text-slate-500">50 %</p><p className="font-mono">{hours(item.overtime50Minutes + item.weeklyOvertime50Minutes)}</p></div>
-              <div><p className="text-xs text-slate-500">100 %</p><p className="font-mono">{hours(item.overtime100Minutes)}</p></div>
-              <div><p className="text-xs text-slate-500">Arvio</p><p className="font-mono font-semibold">{euro(item.lineTotalCents + item.fixedMonthlySalaryCents)}</p></div>
-            </div>
-            {(item.blockers.length > 0 || item.warnings.length > 0) && <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {item.blockers.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">{item.blockers.map((message) => <p key={message}>• {message}</p>)}</div>}
-              {item.warnings.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">{item.warnings.map((message) => <p key={message}>• {message}</p>)}</div>}
-            </div>}
-          </div>)}
-          {summaries.length === 0 && <div className="p-12 text-center"><Calculator size={42} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei hyväksyttyjä tuntikirjauksia valitulla kaudella</p></div>}
-        </CardContent>
-      </Card>
-
       {rules && <Card>
-        <CardHeader className="border-b"><CardTitle className="text-lg">Organisaation työaikasäännöt</CardTitle></CardHeader>
-        <CardContent className="space-y-6 p-5">
-          {!isAdmin && <p className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-600">Työnjohtaja voi tarkastella sääntöjä. Vain admin voi muuttaa niitä.</p>}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <NumericRule label="Sovittu / päivä" value={rules.contractualDailyHours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('contractualDailyHours', value)} />
-            <NumericRule label="Sovittu / viikko" value={rules.contractualWeeklyHours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('contractualWeeklyHours', value)} />
-            <NumericRule label="Ylityöraja / päivä" value={rules.statutoryDailyOvertimeAfterHours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('statutoryDailyOvertimeAfterHours', value)} />
-            <NumericRule label="Ylityöraja / viikko" value={rules.statutoryWeeklyOvertimeAfterHours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('statutoryWeeklyOvertimeAfterHours', value)} />
-            <NumericRule label="50 % ylityötä / päivä" value={rules.dailyOvertime50Hours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('dailyOvertime50Hours', value)} />
-            <NumericRule label="Kuukausipalkan jakaja" value={rules.monthlySalaryHourDivisor} disabled={!isAdmin} step={0.5} onChange={(value) => updateRule('monthlySalaryHourDivisor', value)} />
-            <NumericRule label="Sunnuntaikerroin" value={rules.sundayMultiplier} disabled={!isAdmin} step={0.1} onChange={(value) => updateRule('sundayMultiplier', value)} />
-            <NumericRule label="Keskimääräinen enimmäistyöaika" value={rules.maximumAverageWeeklyHours} disabled={!isAdmin} suffix="h/vko" onChange={(value) => updateRule('maximumAverageWeeklyHours', value)} />
-            <div className="space-y-2"><Label>Pyöristys</Label><Select value={String(rules.roundingMinutes)} disabled={!isAdmin} onValueChange={(value) => updateRule('roundingMinutes', Number(value))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[1,5,10,15,30,60].map((value) => <SelectItem key={value} value={String(value)}>{value} min</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label>Pyöristyssuunta</Label><Select value={rules.roundingMode} disabled={!isAdmin} onValueChange={(value) => updateRule('roundingMode', value as OrganizationTimeRules['roundingMode'])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="nearest">Lähimpään</SelectItem><SelectItem value="floor">Alaspäin</SelectItem><SelectItem value="ceil">Ylöspäin</SelectItem></SelectContent></Select></div>
-          </div>
-          <div><h3 className="font-semibold">Vuoden 2026 matkakorvausten oletukset</h3><p className="mt-1 text-xs text-slate-500">0,55 €/km · osapäiväraha 25 € · kokopäiväraha 54 € · ateriakorvaus 13,50 €. Arvot ovat muokattavia.</p></div>
-          {isAdmin && <div className="flex justify-end"><Button className="gap-2" onClick={() => void persistRules()} disabled={savingRules}>{savingRules ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Tallenna säännöt</Button></div>}
+        <CardHeader className="flex flex-row items-center justify-between"><CardTitle className="text-lg">Työaika- ja lisäsäännöt</CardTitle>{isAdmin && <Button size="sm" className="gap-2" onClick={() => void persistRules()} disabled={savingRules}>{savingRules ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Tallenna säännöt</Button>}</CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <NumericRule label="Sopimustunnit / päivä" value={rules.contractualDailyHours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('contractualDailyHours', value)} />
+          <NumericRule label="Sopimustunnit / viikko" value={rules.contractualWeeklyHours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('contractualWeeklyHours', value)} />
+          <NumericRule label="Vuorokautinen ylityöraja" value={rules.statutoryDailyOvertimeAfterHours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('statutoryDailyOvertimeAfterHours', value)} />
+          <NumericRule label="Viikoittainen ylityöraja" value={rules.statutoryWeeklyOvertimeAfterHours} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('statutoryWeeklyOvertimeAfterHours', value)} />
+          <NumericRule label="Automaattinen tauko alkaa" value={rules.automaticBreakAfterMinutes} disabled={!isAdmin} suffix="min" step={1} onChange={(value) => updateRule('automaticBreakAfterMinutes', value)} />
+          <NumericRule label="Automaattinen tauko" value={rules.automaticBreakMinutes} disabled={!isAdmin} suffix="min" step={1} onChange={(value) => updateRule('automaticBreakMinutes', value)} />
+          <div className="space-y-2"><Label>Ilta-aika</Label><div className="grid grid-cols-2 gap-2"><Input type="time" value={rules.eveningStartTime} disabled={!isAdmin} onChange={(event) => updateRule('eveningStartTime', event.target.value)} /><Input type="time" value={rules.eveningEndTime} disabled={!isAdmin} onChange={(event) => updateRule('eveningEndTime', event.target.value)} /></div></div>
+          <div className="space-y-2"><Label>Yöaika</Label><div className="grid grid-cols-2 gap-2"><Input type="time" value={rules.nightStartTime} disabled={!isAdmin} onChange={(event) => updateRule('nightStartTime', event.target.value)} /><Input type="time" value={rules.nightEndTime} disabled={!isAdmin} onChange={(event) => updateRule('nightEndTime', event.target.value)} /></div></div>
+          <div className="space-y-2"><Label>Pyöristys</Label><Select value={rules.roundingMode} disabled={!isAdmin} onValueChange={(value) => updateRule('roundingMode', value as OrganizationTimeRules['roundingMode'])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="nearest">Lähimpään</SelectItem><SelectItem value="floor">Alaspäin</SelectItem><SelectItem value="ceil">Ylöspäin</SelectItem></SelectContent></Select></div>
+          <NumericRule label="Pyöristysväli" value={rules.roundingMinutes} disabled={!isAdmin} suffix="min" step={1} onChange={(value) => updateRule('roundingMinutes', value)} />
+          <NumericRule label="Kuukausipalkan tuntijakaja" value={rules.monthlySalaryHourDivisor} disabled={!isAdmin} suffix="h" onChange={(value) => updateRule('monthlySalaryHourDivisor', value)} />
+          <NumericRule label="Sunnuntaikerroin" value={rules.sundayMultiplier} disabled={!isAdmin} suffix="×" onChange={(value) => updateRule('sundayMultiplier', value)} />
         </CardContent>
       </Card>}
 
       <Card>
-        <CardHeader className="border-b"><CardTitle className="text-lg">Lukitut palkkakaudet</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-lg">Työntekijäkohtainen yhteenveto</CardTitle></CardHeader>
         <CardContent className="p-0">
-          {periods.map((period) => <div key={period.id} className="grid gap-3 border-b px-5 py-4 md:grid-cols-[1fr_120px_140px_180px] md:items-center"><div><p className="font-semibold">{dateLabel(period.periodStart)}–{dateLabel(period.periodEnd)}</p><p className="mt-1 text-xs text-slate-500">{period.notes || 'Ei muistiinpanoa'} · {dateTimeLabel(period.lockedAt)}</p></div><Badge className="w-fit border-0 bg-slate-100 text-slate-700">{period.status}</Badge><p className="font-mono text-sm">{period.employeeCount} työntekijää</p><p className="font-mono font-semibold md:text-right">{euro(period.estimatedTotalCents)}</p></div>)}
-          {periods.length === 0 && <div className="p-10 text-center text-sm text-slate-500">Palkkakausia ei ole vielä lukittu.</div>}
+          {summaries.map((item) => <div key={item.key} className="border-t p-5 first:border-t-0">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><h3 className="font-semibold">{item.employeeName}</h3><p className="text-xs text-text-secondary">{item.entryCount} hyväksyttyä kirjausta</p></div><div className="flex flex-wrap gap-2"><Badge variant="outline">Työ {hours(item.totalMinutes)}</Badge><Badge variant="outline">Ylityö {hours(item.overtimeMinutes)}</Badge><Badge className="border-0 bg-amber-50 text-amber-800"><SunMedium size={12} className="mr-1" />Ilta {hours(item.eveningMinutes)}</Badge><Badge className="border-0 bg-indigo-50 text-indigo-800"><Moon size={12} className="mr-1" />Yö {hours(item.nightMinutes)}</Badge><Badge className="border-0 bg-emerald-50 text-emerald-800">{euro(item.estimatedTotalCents)}</Badge></div></div>
+            {item.blockers.length > 0 && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><strong>Estää lukituksen:</strong> {item.blockers.join(' · ')}</div>}
+            {item.warnings.length > 0 && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{item.warnings.join(' · ')}</div>}
+          </div>)}
+          {summaries.length === 0 && <div className="p-10 text-center text-sm text-text-secondary">Valitulla kaudella ei ole hyväksyttyjä tuntikirjauksia.</div>}
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader><CardTitle className="text-lg">Laskentarivit</CardTitle></CardHeader>
+        <CardContent className="p-0">
+          {lines.slice(0, 100).map((line) => <div key={line.timeEntryId} className="grid gap-2 border-t px-5 py-4 text-sm first:border-t-0 lg:grid-cols-[110px_1fr_1fr_150px_150px_120px] lg:items-center">
+            <span>{dateLabel(line.workDate)}</span><div><p className="font-medium">{line.employeeName}</p><p className="text-xs text-text-secondary">{line.projectName}</p></div><div><p>{line.startTime && line.endTime ? `${line.startTime}–${line.endTime}` : 'Kellonaika puuttuu'}</p><p className="text-xs text-text-secondary">Tauko {line.breakMinutes} min · {line.breakSource || 'ei lähdettä'}</p></div><span>Ilta {hours(line.eveningMinutes)}<br />Yö {hours(line.nightMinutes)}</span><span>50/100 % {hours(line.overtime50Minutes)} / {hours(line.overtime100Minutes)}</span><span className="font-mono font-semibold">{euro(line.lineTotalCents)}</span>
+          </div>)}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-lg">Lukitut palkkakaudet</CardTitle></CardHeader>
+        <CardContent className="p-0">{periods.map((period) => <div key={period.id} className="grid gap-2 border-t px-5 py-4 text-sm first:border-t-0 md:grid-cols-[1fr_120px_150px_180px] md:items-center"><div><p className="font-medium">{dateLabel(period.periodStart)}–{dateLabel(period.periodEnd)}</p><p className="text-xs text-text-secondary">{period.notes || 'Ei muistiinpanoa'}</p></div><Badge className="w-fit border-0 bg-slate-100 text-slate-700">{period.status}</Badge><span>{period.employeeCount} työntekijää<br />{euro(period.estimatedTotalCents)}</span><span className="text-text-secondary">Lukittu {dateTimeLabel(period.lockedAt)}</span></div>)}{periods.length === 0 && <div className="p-8 text-center text-sm text-text-secondary">Lukittuja palkkakausia ei ole.</div>}</CardContent>
+      </Card>
+
       <AlertDialog open={confirmLock} onOpenChange={setConfirmLock}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Lukitaanko palkkakausi?</AlertDialogTitle><AlertDialogDescription>Kaudesta {dateLabel(periodStart)}–{dateLabel(periodEnd)} muodostetaan muuttumaton laskentasnapshot. Lukittuja kirjauksia ei voi muokata tai poistaa.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction onClick={() => void lockPeriod()} disabled={locking}>{locking ? 'Lukitaan…' : 'Lukitse palkkakausi'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Lukitaanko palkkakausi?</AlertDialogTitle><AlertDialogDescription>Lukitus tallentaa laskentarivit muuttumattomaksi aineistoksi ja estää kauden hyväksyttyjen tuntikirjausten muuttamisen. Toimintoa ei voi perua tässä vaiheessa.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction onClick={() => void lockPeriod()} disabled={locking}>{locking ? 'Lukitaan…' : 'Lukitse palkkakausi'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
       </AlertDialog>
     </motion.div>
   );
