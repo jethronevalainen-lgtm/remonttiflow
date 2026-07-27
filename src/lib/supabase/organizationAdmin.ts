@@ -117,7 +117,7 @@ export async function fetchCustomerUserAccess(
     p_user_id: userId,
   });
   if (error) throw new Error(`Tilaajan käyttöoikeuksien haku epäonnistui: ${error.message}`);
-  return rows(data).map((row) => ({
+  return rows(data).map((row): CustomerAccessAssignment => ({
     customerId: text(row, 'customer_id'),
     customerName: text(row, 'customer_name'),
     accessScope: text(row, 'access_scope') === 'selected_projects' ? 'selected_projects' : 'all_projects',
@@ -177,6 +177,9 @@ export async function updateOrganizationMemberRole(
   userId: string,
   role: OrganizationRole,
 ): Promise<void> {
+  if (role === 'customer') {
+    throw new Error('Tilaajarooli määritetään käyttäjäkutsun kautta, jotta asiakkuudet ja projektioikeudet eivät jää puuttumaan.');
+  }
   const { error } = await supabase
     .from('organization_members')
     .update({ role })
