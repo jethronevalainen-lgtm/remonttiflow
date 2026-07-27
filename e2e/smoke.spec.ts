@@ -1,109 +1,204 @@
+import { createHash } from 'node:crypto';
+
 import { test, expect, type Page } from '@playwright/test';
 
+import { ROLE_ROUTES, type UserRole } from '../src/auth/permissions';
+
 /**
- * Critical smoke paths for the VaKantti application.
+ * Critical browser paths for the VaKantti application.
  *
- * Unauthenticated checks always run. Authenticated checks only run when the
- * CI environment provides E2E_USER_EMAIL and E2E_USER_PASSWORD. Credentials
- * must never be committed to the repository or written to workflow logs.
+ * GitHub Actions authenticates the fixture provisioning request with OIDC. The
+ * provisioner creates or updates an isolated administrator and deterministic
+ * test identities for every other role before the browser signs in.
  */
 const E2E_EMAIL = process.env.E2E_USER_EMAIL?.trim() ?? '';
-const E2E_PASSWORD = process.env.E2E_USER_PASSWORD ?? '';
-const HAS_E2E_CREDENTIALS = Boolean(E2E_EMAIL && E2E_PASSWORD);
+const E2E_SECRET = process.env.E2E_USER_PASSWORD ?? '';
+const E2E_PASSWORD = E2E_SECRET
+  ? `vakantti-e2e-${createHash('sha256').update(E2E_SECRET).digest('base64url')}`
+  : '';
+const E2E_PROVISION_TOKEN = process.env.E2E_PROVISION_TOKEN?.trim() ?? '';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL?.trim() ?? '';
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
+const HAS_E2E_CREDENTIALS = Boolean(
+  E2E_EMAIL
+  && E2E_PASSWORD
+  && E2E_PROVISION_TOKEN
+  && SUPABASE_URL
+  && SUPABASE_KEY,
+);
 
-/** Login against Supabase and wait for the dashboard. */
-async function login(page: Page) {
-  if (!HAS_E2E_CREDENTIALS) {
-    throw new Error('E2E credentials are not configured.');
+const ROLE_EMAILS: Record<Exclude<UserRole, 'admin'>, string> = {
+  supervisor: 'supervisor@roles.vakantti.invalid',
+  project_coordinator: 'project-coordinator@roles.vakantti.invalid',
+  worker: 'worker@roles.vakantti.invalid',
+  customer: 'customer@roles.vakantti.invalid',
+};
+
+interface E2EFixtures {
+  organizationId: string;
+  projectId: string;
+  workOrderId: string;
+}
+
+interface ProvisionResponse {
+  ok?: boolean;
+  error?: string;
+  adminEmail?: string;
+  organizationId?: string;
+  projectId?: string;
+  workOrderId?: string;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function provisionRoleFixtures(): Promise<E2EFixtures> {
+  const provisionResponse = await fetch(
+    `${SUPABASE_URL}/functions/v1/provision-e2e-role-users`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${E2E_PROVISION_TOKEN}`,
+        apikey: SUPABASE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password: E2E_PASSWORD }),
+    },
+  );
+
+  let data: ProvisionResponse;
+  try {
+    data = await provisionResponse.json() as ProvisionResponse;
+  } catch {
+    throw new Error(`E2E-roolien valmistelu palautti virheellisen vastauksen (HTTP ${provisionResponse.status}).`);
   }
+
+  if (!provisionResponse.ok) {
+    throw new Error(
+      `E2E-roolien valmistelu epäonnistui (HTTP ${provisionResponse.status}): ${data.error ?? 'tuntematon virhe'}`,
+    );
+  }
+  if (
+    data.ok !== true
+    || data.adminEmail !== E2E_EMAIL
+    || !data.organizationId
+    || !data.projectId
+    || !data.workOrderId
+  ) {
+    throw new Error('E2E-roolien valmistelu palautti puutteellisen fixture-vastauksen.');
+  }
+
+  return {
+    organizationId: String(data.organizationId),
+    projectId: String(data.projectId),
+    workOrderId: String(data.workOrderId),
+  };
+}
+
+async function clearBrowserState(page: Page): Promise<void> {
+  await page.context().addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+}
+
+async function openAdministratorPreview(page: Page): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    await page.goto('/#/kayttajaesikatselu');
+    try {
+      await expect(page).toHaveURL(/#\/kayttajaesikatselu(?:[/?]|$)/, { timeout: 5_000 });
+      await expect(page.getByRole('heading', { name: 'Toimi käyttäjänä' })).toBeVisible({ timeout: 5_000 });
+      return;
+    } catch (caught) {
+      lastError = caught;
+      await page.waitForTimeout(attempt * 500);
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Adminin käyttäjäesikatselu ei avautunut istunnon vaihdon jälkeen.');
+}
+
+/** Login against Supabase with the isolated administrator prepared for this run. */
+async function loginAsAdministrator(page: Page): Promise<void> {
+  if (!HAS_E2E_CREDENTIALS) throw new Error('E2E credentials are not configured.');
 
   await page.goto('/#/login');
   await page.getByLabel('Sähköposti').fill(E2E_EMAIL);
   await page.getByLabel('Salasana').fill(E2E_PASSWORD);
   await page.getByRole('button', { name: 'Kirjaudu sisään' }).click();
   await expect(page).toHaveURL(/#\/dashboard/, { timeout: 30_000 });
-  await expect(page.getByRole('heading', { name: 'Yleisnäkymä' })).toBeVisible();
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Kirjaudu ulos' })).toBeVisible({ timeout: 30_000 });
+
+  await openAdministratorPreview(page);
 }
 
-/** Click a main-nav item in the desktop sidebar by its visible label. */
-async function clickSidebarItem(page: Page, label: string) {
-  const sidebar = page.locator('aside').first();
-  await sidebar
-    .locator('button:has(span.truncate)', { hasText: label })
-    .click();
-}
-
-const supervisorSectionRoutes = [
-  '/dashboard',
-  '/tyonjohto',
-  '/tarkastukset',
-  '/projektit',
-  '/projektipyynnot',
-  '/projektikeskustelut',
-  '/aikataulutus',
-  '/paivakirjat',
-  '/kuittaukset',
-  '/laskenta',
-  '/maaralaskenta',
-  '/jatehuolto',
-  '/tyomaaraykset',
-  '/tilaukset',
-  '/tyovuorokalenteri',
-  '/tuntikirjaukset',
-  '/kirjaukset',
-  '/palkka-aineisto',
-  '/qr-kirjautuminen',
-  '/qr-hallinta',
-  '/matkakulut',
-  '/tyoturvallisuus',
-  '/crm',
-  '/asiakkaat',
-  '/toiminnanohjaus',
-  '/ai',
-  '/viestinta',
-  '/kalusto',
-  '/henkilosto',
-  '/henkilokortit',
-  '/lomakkeet',
-  '/raportit',
-] as const;
-
-async function expectApplicationSection(page: Page, route: string) {
+async function expectApplicationSection(page: Page, route: string): Promise<void> {
   await page.goto(`/#${route}`);
-  await expect(page).toHaveURL(new RegExp(`#${route.replaceAll('/', '\\/')}(?:[/?]|$)`));
+  await expect(page).toHaveURL(new RegExp(`#${escapeRegExp(route)}(?:[/?]|$)`), { timeout: 30_000 });
   await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Ladataan osiota…', { exact: true })).toBeHidden({ timeout: 30_000 });
   await expect(page.getByText('Jokin meni pieleen', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Sivua ei löytynyt', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Työtilaa ei voitu avata', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Kirjaudu sisään' })).toHaveCount(0);
 }
 
-test.describe('smoke: public authentication shell', () => {
-  test.beforeEach(async ({ context }) => {
-    await context.addInitScript(() => {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
+async function startImpersonation(page: Page, role: Exclude<UserRole, 'admin'>): Promise<void> {
+  await openAdministratorPreview(page);
+
+  const email = ROLE_EMAILS[role];
+  const search = page.getByPlaceholder('Hae käyttäjää tai roolia');
+  await search.fill(email);
+
+  const row = page.locator(`[data-impersonation-email="${email}"]`);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  const action = row.getByRole('button', { name: /^Toimi käyttäjänä / });
+  await expect(action).toBeEnabled({ timeout: 30_000 });
+  await action.click({ timeout: 30_000 });
+
+  const expectedHome = role === 'customer' ? '/tilaajan-tyot' : '/dashboard';
+  await expect(page).toHaveURL(new RegExp(`#${escapeRegExp(expectedHome)}(?:[/?]|$)`), { timeout: 30_000 });
+  await expect(page.locator('main')).toBeVisible({ timeout: 30_000 });
+}
+
+async function stopImpersonation(page: Page): Promise<void> {
+  await page.goto('/#/kayttajaesikatselu');
+  const returnButton = page.getByRole('button', { name: 'Palaa admin-istuntoon' });
+  await expect(returnButton).toBeVisible({ timeout: 30_000 });
+  await returnButton.click();
+  await expect(page).toHaveURL(/#\/dashboard/, { timeout: 30_000 });
+  await openAdministratorPreview(page);
+}
+
+async function expectRoleStaticRoutes(page: Page, role: UserRole): Promise<void> {
+  const routes = ROLE_ROUTES[role].filter((route) => route !== '/tilaajan-projektit');
+  for (const route of routes) {
+    await test.step(`${role}: ${route}`, async () => {
+      await expectApplicationSection(page, route);
     });
+  }
+}
+
+test.describe('smoke: public authentication shell', () => {
+  test.beforeEach(async ({ page }) => {
+    await clearBrowserState(page);
   });
 
-  test('unauthenticated visit to / redirects to the login page', async ({
-    page,
-  }) => {
+  test('unauthenticated visit to / redirects to the login page', async ({ page }) => {
     await page.goto('/');
-
     await expect(page).toHaveURL(/#\/login/);
     await expect(page.getByText('VaKantti', { exact: true })).toBeVisible();
     await expect(page.getByText('Rakennusalan työnhallinta')).toBeVisible();
     await expect(page.getByLabel('Sähköposti')).toBeVisible();
     await expect(page.getByLabel('Salasana')).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'Kirjaudu sisään' }),
-    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Kirjaudu sisään' })).toBeVisible();
   });
 
-  test('invalid credentials show a Finnish error alert and stay on /login', async ({
-    page,
-  }) => {
+  test('invalid credentials show a Finnish error alert and stay on /login', async ({ page }) => {
     await page.goto('/#/login');
     await page.getByLabel('Sähköposti').fill('not-a-user@vakantti.invalid');
     await page.getByLabel('Salasana').fill('invalid-password');
@@ -116,86 +211,86 @@ test.describe('smoke: public authentication shell', () => {
   });
 });
 
-test.describe('smoke: authenticated critical paths', () => {
+test.describe('smoke: authenticated role and dynamic route matrix', () => {
+  test.describe.configure({ mode: 'serial' });
   test.skip(
     !HAS_E2E_CREDENTIALS,
-    'Authenticated smoke tests require E2E_USER_EMAIL and E2E_USER_PASSWORD secrets.',
+    'Authenticated smoke tests require the E2E secret, GitHub OIDC token and Supabase public configuration.',
   );
 
-  test.beforeEach(async ({ context }) => {
-    await context.addInitScript(() => {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
-    });
+  let fixtures: E2EFixtures;
+
+  test.beforeAll(async () => {
+    fixtures = await provisionRoleFixtures();
   });
 
-  test('valid login lands on the dashboard', async ({ page }) => {
-    await login(page);
-    await expect(page).toHaveURL(/#\/dashboard/);
-    await expect(page.getByRole('heading', { name: 'Yleisnäkymä' })).toBeVisible();
-    await expect(page.getByText('Aktiiviset projektit')).toBeVisible();
+  test.beforeEach(async ({ page }) => {
+    await clearBrowserState(page);
   });
 
-  test('authenticated sidebar navigation opens the Projektit page', async ({
-    page,
-  }) => {
-    await login(page);
-    await clickSidebarItem(page, 'Projektit');
+  test('admin, supervisor, coordinator, worker and customer routes match the permission contract', async ({ page }) => {
+    test.setTimeout(720_000);
+    await loginAsAdministrator(page);
 
-    await expect(page).toHaveURL(/#\/projektit/);
-    await expect(
-      page.getByRole('heading', { name: 'Projektit', exact: true }),
-    ).toBeVisible();
-  });
-
-  test('authenticated sidebar navigation opens worksite receipts', async ({
-    page,
-  }) => {
-    await login(page);
-    await clickSidebarItem(page, 'Kuittaukset');
-
-    await expect(page).toHaveURL(/#\/kuittaukset/);
-    await expect(
-      page.getByRole('heading', { name: 'Työmaakuittaukset', exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'Uusi kuittaus' }),
-    ).toBeVisible();
-  });
-
-  test('every supervisor section loads without a route or render failure', async ({
-    page,
-  }) => {
-    test.setTimeout(240_000);
-    await login(page);
-
-    for (const route of supervisorSectionRoutes) {
-      await test.step(route, async () => {
-        await expectApplicationSection(page, route);
-      });
+    await expectRoleStaticRoutes(page, 'admin');
+    for (const route of [
+      `/projektit/${fixtures.projectId}`,
+      `/projektit/${fixtures.projectId}/tyotila`,
+      `/projektit/${fixtures.projectId}/tilaajayhteistyo`,
+      `/projektikeskustelut/${fixtures.projectId}`,
+    ]) {
+      await expectApplicationSection(page, route);
     }
+
+    await startImpersonation(page, 'supervisor');
+    await expectRoleStaticRoutes(page, 'supervisor');
+    await expectApplicationSection(page, `/projektit/${fixtures.projectId}`);
+    await expectApplicationSection(page, `/projektit/${fixtures.projectId}/tyotila`);
+    await stopImpersonation(page);
+
+    await startImpersonation(page, 'project_coordinator');
+    await expectRoleStaticRoutes(page, 'project_coordinator');
+    await expectApplicationSection(page, `/projektit/${fixtures.projectId}`);
+    await expectApplicationSection(page, `/projektit/${fixtures.projectId}/tyotila`);
+    for (const forbidden of [
+      '/henkilosto',
+      '/henkilokortit',
+      '/palkka-aineisto',
+      '/matkakulut',
+      '/kirjaukset',
+      '/tyovuorokalenteri',
+      '/raportit',
+    ]) {
+      await page.goto(`/#${forbidden}`);
+      await expect(page).toHaveURL(/#\/dashboard(?:[/?]|$)/, { timeout: 30_000 });
+    }
+    await stopImpersonation(page);
+
+    await startImpersonation(page, 'worker');
+    await expectRoleStaticRoutes(page, 'worker');
+    await expectApplicationSection(page, `/projektikeskustelut/${fixtures.projectId}`);
+    await expectApplicationSection(page, '/tyomaaraykset');
+    await expect(page.getByText('Automaatiotestin työmääräys', { exact: true })).toBeVisible({ timeout: 30_000 });
+    await stopImpersonation(page);
+
+    await startImpersonation(page, 'customer');
+    await expectRoleStaticRoutes(page, 'customer');
+    await expectApplicationSection(page, `/tilaajan-projektit/${fixtures.projectId}`);
+    await expectApplicationSection(page, `/projektikeskustelut/${fixtures.projectId}`);
+    await page.goto('/#/dashboard');
+    await expect(page).toHaveURL(/#\/tilaajan-tyot(?:[/?]|$)/, { timeout: 30_000 });
+    await stopImpersonation(page);
   });
 
-  test('unknown route while authenticated renders the 404 page', async ({
-    page,
-  }) => {
-    await login(page);
+  test('unknown route renders 404 and logout returns to login', async ({ page }) => {
+    await loginAsAdministrator(page);
     await page.goto('/#/jotain-olematonta');
-
     await expect(page.getByText('404', { exact: true })).toBeVisible();
     await expect(page.getByText('Sivua ei löytynyt')).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: 'Takaisin etusivulle' }),
-    ).toBeVisible();
-  });
+    await expect(page.getByRole('link', { name: 'Takaisin etusivulle' })).toBeVisible();
 
-  test('logout redirects back to the login page', async ({ page }) => {
-    await login(page);
     await page.getByRole('button', { name: 'Kirjaudu ulos' }).click();
-
     await expect(page).toHaveURL(/#\/login/, { timeout: 30_000 });
-    await expect(
-      page.getByRole('button', { name: 'Kirjaudu sisään' }),
-    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Kirjaudu sisään' })).toBeVisible();
   });
 });
