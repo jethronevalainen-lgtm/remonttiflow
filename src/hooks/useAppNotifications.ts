@@ -37,7 +37,7 @@ export function useAppNotifications() {
     });
   }, [organizationId, queryClient, queryKey, userId]);
 
-  const notifications = query.data ?? [];
+  const notifications = useMemo(() => query.data ?? [], [query.data]);
   const unreadCount = useMemo(
     () => notifications.filter((notification) => !notification.readAt).length,
     [notifications],
