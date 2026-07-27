@@ -83,9 +83,8 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
   ],
   worker: [
     '/dashboard', '/tarkastukset', '/tyomaaraykset', '/kuittaukset',
-    '/tuntikirjaukset', '/kirjaukset', '/matkakulut', '/tyoturvallisuus',
-    '/projektikeskustelut', '/viestinta', '/lomakkeet', '/qr-kirjautuminen',
-    '/henkilokortit',
+    '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus',
+    '/projektikeskustelut', '/viestinta', '/lomakkeet',
   ],
   customer: [
     '/tilaajan-tyot', '/tilaajan-projektit', '/projektikeskustelut',
