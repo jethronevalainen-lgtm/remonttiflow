@@ -154,11 +154,11 @@ async function startImpersonation(page: Page, role: Exclude<UserRole, 'admin'>):
   const search = page.getByPlaceholder('Hae käyttäjää tai roolia');
   await search.fill(email);
 
-  const row = page.locator('div.grid').filter({ hasText: email }).filter({
-    has: page.getByRole('button', { name: 'Toimi käyttäjänä' }),
-  }).first();
+  const row = page.locator(`[data-impersonation-email="${email}"]`);
   await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.getByRole('button', { name: 'Toimi käyttäjänä' }).click();
+  const action = row.getByRole('button', { name: /^Toimi käyttäjänä / });
+  await expect(action).toBeEnabled({ timeout: 30_000 });
+  await action.click({ timeout: 30_000 });
 
   const expectedHome = role === 'customer' ? '/tilaajan-tyot' : '/dashboard';
   await expect(page).toHaveURL(new RegExp(`#${escapeRegExp(expectedHome)}(?:[/?]|$)`), { timeout: 30_000 });
