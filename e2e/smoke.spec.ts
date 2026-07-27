@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { test, expect, type Page } from '@playwright/test';
 
 import { ROLE_ROUTES, type UserRole } from '../src/auth/permissions';
@@ -10,7 +12,10 @@ import { ROLE_ROUTES, type UserRole } from '../src/auth/permissions';
  * test identities for every other role before the browser signs in.
  */
 const E2E_EMAIL = process.env.E2E_USER_EMAIL?.trim() ?? '';
-const E2E_PASSWORD = process.env.E2E_USER_PASSWORD ?? '';
+const E2E_SECRET = process.env.E2E_USER_PASSWORD ?? '';
+const E2E_PASSWORD = E2E_SECRET
+  ? `vakantti-e2e-${createHash('sha256').update(E2E_SECRET).digest('hex')}`
+  : '';
 const E2E_PROVISION_TOKEN = process.env.E2E_PROVISION_TOKEN?.trim() ?? '';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL?.trim() ?? '';
 const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
@@ -192,7 +197,7 @@ test.describe('smoke: authenticated role and dynamic route matrix', () => {
   test.describe.configure({ mode: 'serial' });
   test.skip(
     !HAS_E2E_CREDENTIALS,
-    'Authenticated smoke tests require the E2E password, GitHub OIDC token and Supabase public configuration.',
+    'Authenticated smoke tests require the E2E secret, GitHub OIDC token and Supabase public configuration.',
   );
 
   let fixtures: E2EFixtures;
