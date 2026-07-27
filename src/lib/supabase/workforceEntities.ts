@@ -21,6 +21,11 @@ function timeEntryPayload(entry: Omit<TimeEntry, 'id'> | Partial<TimeEntry>): Pa
   if (entry.hours !== undefined) payload.hours = entry.hours;
   if (entry.overtime !== undefined) payload.overtime = entry.overtime;
   if (entry.breakMinutes !== undefined) payload.break_minutes = entry.breakMinutes;
+  if (entry.breakSource !== undefined) payload.break_source = entry.breakSource;
+  if (entry.startTime !== undefined) payload.start_time = entry.startTime || null;
+  if (entry.endTime !== undefined) payload.end_time = entry.endTime || null;
+  if (entry.breakStartTime !== undefined) payload.break_start_time = entry.breakStartTime || null;
+  if (entry.breakEndTime !== undefined) payload.break_end_time = entry.breakEndTime || null;
   if (entry.source !== undefined) payload.source = entry.source;
   if (entry.description !== undefined) payload.description = entry.description || null;
   if (entry.status !== undefined) payload.status = entry.status;
@@ -28,6 +33,7 @@ function timeEntryPayload(entry: Omit<TimeEntry, 'id'> | Partial<TimeEntry>): Pa
   if (entry.approvedAt !== undefined) payload.approved_at = entry.approvedAt || null;
   if (entry.rejectionReason !== undefined) payload.rejection_reason = entry.rejectionReason || null;
   if (entry.lockedAt !== undefined) payload.locked_at = entry.lockedAt || null;
+  if (entry.payrollPeriodId !== undefined) payload.payroll_period_id = entry.payrollPeriodId || null;
   return payload;
 }
 
