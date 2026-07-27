@@ -188,14 +188,21 @@ test.describe('smoke: public authentication shell', () => {
     await clearBrowserState(page);
   });
 
-  test('unauthenticated visit to / redirects to the login page', async ({ page }) => {
+  test('unauthenticated visit to / shows the public homepage and exposes login', async ({ page }) => {
     await page.goto('/');
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('heading', {
+      name: 'Työmaa, työnjohto ja hallinto yhdessä järjestelmässä.',
+    })).toBeVisible();
+    await expect(page.getByText('Rakennusalan työnhallinta').first()).toBeVisible();
+
+    const loginLink = page.getByRole('link', { name: 'Kirjaudu sisään' }).first();
+    await expect(loginLink).toBeVisible();
+    await loginLink.click();
+
     await expect(page).toHaveURL(/#\/login/);
-    await expect(page.getByText('VaKantti', { exact: true })).toBeVisible();
-    await expect(page.getByText('Rakennusalan työnhallinta')).toBeVisible();
     await expect(page.getByLabel('Sähköposti')).toBeVisible();
     await expect(page.getByLabel('Salasana')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Kirjaudu sisään' })).toBeVisible();
   });
 
   test('invalid credentials show a Finnish error alert and stay on /login', async ({ page }) => {

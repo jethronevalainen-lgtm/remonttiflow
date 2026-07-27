@@ -7,6 +7,7 @@ import { useViewAs } from '@/contexts/ViewAsContext';
 import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
 import { ErrorState, LoadingState } from '@/components/states';
+import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
@@ -53,6 +54,15 @@ const QrHallinta = lazy(() => import('./pages/QrHallinta'));
 const QrKirjautuminen = lazy(() => import('./pages/QrKirjautuminen'));
 const Varmuuskopiot = lazy(() => import('./pages/Varmuuskopiot'));
 const Toiminnanohjaus = lazy(() => import('./pages/Toiminnanohjaus'));
+
+function PublicHome() {
+  const { session, loading } = useAuth();
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center"><LoadingState text="Ladataan…" /></div>;
+  }
+  if (session) return <Navigate to="/app" replace />;
+  return <LandingPage />;
+}
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
@@ -135,9 +145,10 @@ function TimeEntriesRoute() {
 function AppRoutes() {
   return (
     <Routes>
+      <Route path="/" element={<PublicHome />} />
       <Route path="/login" element={<Login />} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
-        <Route path="/" element={<RoleHome />} />
+        <Route path="/app" element={<RoleHome />} />
         <Route path="/dashboard" element={<RoleGuard allowedRoles={rolesForRoute('/dashboard')}><Dashboard /></RoleGuard>} />
         <Route path="/tyonjohto" element={<RoleGuard allowedRoles={rolesForRoute('/tyonjohto')}><Tyonjohto /></RoleGuard>} />
         <Route path="/tarkastukset" element={<RoleGuard allowedRoles={rolesForRoute('/tarkastukset')}><Tarkastukset /></RoleGuard>} />
