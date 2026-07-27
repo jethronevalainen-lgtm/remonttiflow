@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import { test, expect, type Page } from '@playwright/test';
 
 import { ROLE_ROUTES, type UserRole } from '../src/auth/permissions';
@@ -6,15 +5,22 @@ import { ROLE_ROUTES, type UserRole } from '../src/auth/permissions';
 /**
  * Critical browser paths for the VaKantti application.
  *
- * The authenticated suite signs in with one repository-secret admin account.
- * An admin-only Edge Function then guarantees deterministic test identities for
- * every other role and a controlled project, customer and work order fixture.
+ * GitHub Actions authenticates the fixture provisioning request with OIDC. The
+ * provisioner creates or updates an isolated administrator and deterministic
+ * test identities for every other role before the browser signs in.
  */
 const E2E_EMAIL = process.env.E2E_USER_EMAIL?.trim() ?? '';
 const E2E_PASSWORD = process.env.E2E_USER_PASSWORD ?? '';
+const E2E_PROVISION_TOKEN = process.env.E2E_PROVISION_TOKEN?.trim() ?? '';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL?.trim() ?? '';
 const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
-const HAS_E2E_CREDENTIALS = Boolean(E2E_EMAIL && E2E_PASSWORD && SUPABASE_URL && SUPABASE_KEY);
+const HAS_E2E_CREDENTIALS = Boolean(
+  E2E_EMAIL
+  && E2E_PASSWORD
+  && E2E_PROVISION_TOKEN
+  && SUPABASE_URL
+  && SUPABASE_KEY,
+);
 
 const ROLE_EMAILS: Record<Exclude<UserRole, 'admin'>, string> = {
   supervisor: 'supervisor@roles.vakantti.invalid',
@@ -29,33 +35,55 @@ interface E2EFixtures {
   workOrderId: string;
 }
 
+interface ProvisionResponse {
+  ok?: boolean;
+  error?: string;
+  adminEmail?: string;
+  organizationId?: string;
+  projectId?: string;
+  workOrderId?: string;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function provisionRoleFixtures(): Promise<E2EFixtures> {
-  const client = createClient(SUPABASE_URL, SUPABASE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-  const { error: signInError } = await client.auth.signInWithPassword({
-    email: E2E_EMAIL,
-    password: E2E_PASSWORD,
-  });
-  if (signInError) {
-    throw new Error(`E2E-adminin kirjautuminen epäonnistui: ${signInError.message}`);
+  const provisionResponse = await fetch(
+    `${SUPABASE_URL}/functions/v1/provision-e2e-role-users`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${E2E_PROVISION_TOKEN}`,
+        apikey: SUPABASE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password: E2E_PASSWORD }),
+    },
+  );
+
+  let data: ProvisionResponse;
+  try {
+    data = await provisionResponse.json() as ProvisionResponse;
+  } catch {
+    throw new Error(`E2E-roolien valmistelu palautti virheellisen vastauksen (HTTP ${provisionResponse.status}).`);
   }
 
-  const { data, error } = await client.functions.invoke('provision-e2e-role-users', {
-    body: {},
-  });
-  await client.auth.signOut();
+  if (!provisionResponse.ok) {
+    throw new Error(
+      `E2E-roolien valmistelu epäonnistui (HTTP ${provisionResponse.status}): ${data.error ?? 'tuntematon virhe'}`,
+    );
+  }
+  if (
+    data.ok !== true
+    || data.adminEmail !== E2E_EMAIL
+    || !data.organizationId
+    || !data.projectId
+    || !data.workOrderId
+  ) {
+    throw new Error('E2E-roolien valmistelu palautti puutteellisen fixture-vastauksen.');
+  }
 
-  if (error) {
-    throw new Error(`E2E-roolien valmistelu epäonnistui: ${error.message}`);
-  }
-  if (!data?.ok || !data.organizationId || !data.projectId || !data.workOrderId) {
-    throw new Error(`E2E-roolien valmistelu palautti virheellisen vastauksen: ${JSON.stringify(data)}`);
-  }
   return {
     organizationId: String(data.organizationId),
     projectId: String(data.projectId),
@@ -70,7 +98,7 @@ async function clearBrowserState(page: Page): Promise<void> {
   });
 }
 
-/** Login against Supabase and require the repository-secret account to be admin. */
+/** Login against Supabase with the isolated administrator prepared for this run. */
 async function loginAsAdministrator(page: Page): Promise<void> {
   if (!HAS_E2E_CREDENTIALS) throw new Error('E2E credentials are not configured.');
 
@@ -164,7 +192,7 @@ test.describe('smoke: authenticated role and dynamic route matrix', () => {
   test.describe.configure({ mode: 'serial' });
   test.skip(
     !HAS_E2E_CREDENTIALS,
-    'Authenticated smoke tests require E2E_USER_EMAIL and E2E_USER_PASSWORD secrets.',
+    'Authenticated smoke tests require the E2E password, GitHub OIDC token and Supabase public configuration.',
   );
 
   let fixtures: E2EFixtures;
