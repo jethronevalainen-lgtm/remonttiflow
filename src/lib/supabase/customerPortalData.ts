@@ -151,11 +151,14 @@ export async function loadPortalAccounts(
   organizationId: string,
   preview?: CustomerPreviewScope | null,
 ): Promise<CustomerPortalAccountV2[]> {
-  const rpc = preview ? 'admin_preview_customer_accounts' : 'customer_portal_accounts_v2';
-  const args = preview
-    ? { p_organization_id: organizationId, p_customer_ids: preview.customerIds }
-    : { p_organization_id: organizationId };
-  const { data, error } = await supabase.rpc(rpc, args);
+  const { data, error } = preview
+    ? await supabase.rpc('admin_preview_customer_accounts_v2', {
+      p_organization_id: organizationId,
+      ...customerPreviewRpcArgs(preview),
+    })
+    : await supabase.rpc('customer_portal_accounts_v2', {
+      p_organization_id: organizationId,
+    });
   if (error) throw new Error(`Tilaajatietojen haku epäonnistui: ${error.message}`);
   return rows(data).map((row) => ({
     customerId: text(row, 'customer_id'),
