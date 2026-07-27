@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   AlertTriangle,
   Camera,
   CheckCircle2,
   ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   FileUp,
   Flag,
@@ -178,6 +179,8 @@ export default function InspectionDetailView({
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
+  const [activeStage, setActiveStage] = useState(0);
+  const initializedInspectionRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (detail) setComments(Object.fromEntries(detail.results.map((result) => [result.id, result.comment])));
@@ -192,10 +195,33 @@ export default function InspectionDetailView({
     return Object.values(grouped).sort((a, b) => a[0].sectionOrder - b[0].sectionOrder);
   }, [detail]);
 
+  useEffect(() => {
+    if (!detail || sections.length === 0 || initializedInspectionRef.current === inspectionId) return;
+    const storageKey = `inspection-stage:${inspectionId}`;
+    const savedStage = Number(window.sessionStorage.getItem(storageKey));
+    const firstIncomplete = sections.findIndex((results) =>
+      results.some((result) => result.status === 'Tarkastamatta'));
+    const fallbackStage = firstIncomplete >= 0 ? firstIncomplete : sections.length;
+    const maxStage = sections.length + 2;
+    setActiveStage(Number.isInteger(savedStage) && savedStage >= 0 && savedStage <= maxStage
+      ? savedStage
+      : fallbackStage);
+    initializedInspectionRef.current = inspectionId;
+  }, [detail, inspectionId, sections]);
+
+  useEffect(() => {
+    if (initializedInspectionRef.current !== inspectionId) return;
+    window.sessionStorage.setItem(`inspection-stage:${inspectionId}`, String(activeStage));
+  }, [activeStage, inspectionId]);
+
   const refreshAll = async () => { await Promise.all([refresh(), onWorkspaceRefresh()]); };
   const fail = (caught: unknown, fallback: string) => setOperationError(caught instanceof Error ? caught.message : fallback);
   const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const openSignature = () => { setOperationError(null); setSignatureOpen(true); };
+  const goToStage = (stage: number) => {
+    setActiveStage(stage);
+    window.requestAnimationFrame(() => scrollTo('inspection-guided-flow'));
+  };
 
   const saveStatus = async (result: InspectionResultDetail, status: InspectionResultStatus) => {
     if (!canManage) return;
@@ -305,15 +331,83 @@ export default function InspectionDetailView({
   const signatureReady = canManage && !locked && preSignatureBlockers.length === 0;
   const canApprove = canManage && !locked && approvalBlockers.length === 0;
   const workflowActiveStep = !inspectionComplete ? 1 : blockingFindings.length > 0 ? 2 : !hasHandoverPhoto ? 3 : 4;
+  const sectionIsComplete = (results: InspectionResultDetail[]) =>
+    results.length > 0 && results.every((result) => result.status !== 'Tarkastamatta');
+  const sectionStageCount = sections.length;
+  const findingsStageIndex = sectionStageCount;
+  const attachmentsStageIndex = sectionStageCount + 1;
+  const signatureStageIndex = sectionStageCount + 2;
+  const firstIncompleteSectionIndex = sections.findIndex((results) => !sectionIsComplete(results));
+  const guidedStages = [
+    ...sections.map((results, index) => ({
+      title: results[0]?.sectionTitle || `Tarkastusvaihe ${index + 1}`,
+      description: `${results.filter((result) => result.status !== 'Tarkastamatta').length}/${results.length} kohtaa käsitelty`,
+      complete: sectionIsComplete(results),
+      available: index === 0 || sections.slice(0, index).every(sectionIsComplete),
+    })),
+    {
+      title: 'Puutteet',
+      description: blockingFindings.length > 0 ? `${blockingFindings.length} estävää puutetta avoinna` : 'Tarkista ja sulje havaitut puutteet',
+      complete: findingsReady,
+      available: inspectionComplete,
+    },
+    {
+      title: 'Luovutuskuvat',
+      description: hasHandoverPhoto ? 'Valmis kohde dokumentoitu' : 'Ota vähintään yksi kuva valmiista kohteesta',
+      complete: hasHandoverPhoto,
+      available: findingsReady,
+    },
+    {
+      title: 'Allekirjoitus',
+      description: hasHandwrittenSignature ? 'Allekirjoitus tallennettu' : 'Vahvista tarkastus allekirjoituksella',
+      complete: hasHandwrittenSignature,
+      available: findingsReady && hasHandoverPhoto,
+    },
+  ];
+  const activeGuidedStage = guidedStages[activeStage] ?? guidedStages[0];
+  const canAdvanceGuidedStage = activeStage < sectionStageCount
+    ? sectionIsComplete(sections[activeStage] ?? [])
+    : activeStage === findingsStageIndex
+      ? blockingFindings.length === 0
+      : activeStage === attachmentsStageIndex
+        ? hasHandoverPhoto
+        : false;
+  const nextGuidedStageLabel = activeStage + 1 < sectionStageCount
+    ? `Jatka: ${sections[activeStage + 1]?.[0]?.sectionTitle || 'seuraava vaihe'}`
+    : activeStage < sectionStageCount
+      ? 'Jatka puutteisiin'
+      : activeStage === findingsStageIndex
+        ? 'Jatka luovutuskuviin'
+        : 'Jatka allekirjoitukseen';
 
   const nextAction = !inspectionComplete
-    ? { title: 'Jatka tarkastusta', description: `${completedResults}/${detail.results.length} tarkastuskohtaa käsitelty.`, action: () => scrollTo('inspection-sections'), icon: ClipboardCheck }
+    ? {
+        title: 'Jatka tarkastusta',
+        description: `${completedResults}/${detail.results.length} tarkastuskohtaa käsitelty.`,
+        action: () => goToStage(firstIncompleteSectionIndex >= 0 ? firstIncompleteSectionIndex : 0),
+        icon: ClipboardCheck,
+      }
     : blockingFindings.length > 0
-      ? { title: 'Käsittele avoimet puutteet', description: `${blockingFindings.length} puutetta estää luovutuksen.`, action: () => scrollTo('inspection-findings'), icon: AlertTriangle }
+      ? {
+          title: 'Käsittele avoimet puutteet',
+          description: `${blockingFindings.length} puutetta estää luovutuksen.`,
+          action: () => goToStage(findingsStageIndex),
+          icon: AlertTriangle,
+        }
       : !hasHandoverPhoto
-        ? { title: 'Lisää luovutuskuva', description: 'Dokumentoi valmis kohde ennen allekirjoitusta.', action: () => scrollTo('inspection-attachments'), icon: Camera }
+        ? {
+            title: 'Ota luovutuskuva',
+            description: 'Dokumentoi valmis kohde ennen allekirjoitusta.',
+            action: () => goToStage(attachmentsStageIndex),
+            icon: Camera,
+          }
         : !hasHandwrittenSignature
-          ? { title: 'Allekirjoita tarkastus', description: 'Tarkastustyö on valmis. Tee allekirjoitus ennen hyväksyntää.', action: openSignature, icon: Signature }
+          ? {
+              title: 'Allekirjoita tarkastus',
+              description: 'Tarkastustyö on valmis. Tee allekirjoitus ennen hyväksyntää.',
+              action: () => goToStage(signatureStageIndex),
+              icon: Signature,
+            }
           : { title: 'Hyväksy tarkastus', description: 'Kaikki luovutuksen vaatimukset täyttyvät.', action: () => setApprovalOpen(true), icon: ShieldCheck };
 
   return (
@@ -380,16 +474,83 @@ export default function InspectionDetailView({
         </Card>
       )}
 
-      <div id="inspection-sections" className="scroll-mt-6 space-y-5">
-        {sections.map((results) => <InspectionSectionCard key={results[0].sectionId} results={results} attachments={detail.attachments} canManage={canManage} locked={locked} savingKey={savingKey} comments={comments} onCommentChange={(id, value) => setComments((previous) => ({ ...previous, [id]: value }))} onStatus={saveStatus} onSaveComment={saveComment} onMarkSection={markSectionOkay} onUpload={uploadResult} onOpenAttachment={openAttachment} />)}
+
+      {canManage && !locked && guidedStages.length > 0 && (
+        <Card id="inspection-guided-flow" className="scroll-mt-6 border-primary/20 print:hidden">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2"><ClipboardCheck size={19} />Ohjattu itselleluovutus</CardTitle>
+            <p className="text-sm text-text-secondary">Etene vaihe kerrallaan. Seuraava vaihe avautuu, kun nykyinen vaihe on käsitelty.</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="overflow-x-auto pb-1">
+              <div className="flex min-w-max gap-2">
+                {guidedStages.map((stage, index) => (
+                  <button
+                    key={`${index}-${stage.title}`}
+                    type="button"
+                    disabled={!stage.available && index !== activeStage}
+                    onClick={() => goToStage(index)}
+                    className={cn(
+                      'flex w-52 items-start gap-3 rounded-xl border px-3 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-45',
+                      index === activeStage ? 'border-primary bg-primary/5 shadow-sm' : 'border-slate-200 bg-white hover:border-primary/30',
+                    )}
+                  >
+                    <span className={cn(
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                      stage.complete ? 'bg-emerald-600 text-white' : index === activeStage ? 'bg-primary text-primary-foreground' : 'bg-slate-200 text-slate-700',
+                    )}>
+                      {stage.complete ? <CheckCircle2 size={15} /> : index + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-text-primary">{stage.title}</span>
+                      <span className="mt-1 block text-xs leading-snug text-text-secondary">{stage.description}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">Vaihe {activeStage + 1}/{guidedStages.length}</p>
+                  <p className="mt-1 font-semibold text-text-primary">{activeGuidedStage?.title}</p>
+                  <p className="mt-1 text-sm text-text-secondary">{activeGuidedStage?.description}</p>
+                </div>
+                {!canAdvanceGuidedStage && activeStage < signatureStageIndex && (
+                  <Badge className="mt-2 w-fit border-0 bg-amber-50 text-amber-800 sm:mt-0">Käsittele vaihe loppuun</Badge>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button variant="outline" disabled={activeStage === 0 || Boolean(savingKey)} onClick={() => goToStage(Math.max(0, activeStage - 1))}>
+                <ChevronLeft size={16} className="mr-2" />Edellinen vaihe
+              </Button>
+              {activeStage < signatureStageIndex && (
+                <Button disabled={!canAdvanceGuidedStage || Boolean(savingKey)} onClick={() => goToStage(Math.min(signatureStageIndex, activeStage + 1))}>
+                  {nextGuidedStageLabel}<ChevronRight size={16} className="ml-2" />
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div id="inspection-sections" className={cn('scroll-mt-6 space-y-5', canManage && !locked && activeStage >= sectionStageCount && 'hidden', 'print:block')}>
+        {sections.map((results, index) => (
+          <div key={results[0].sectionId} className={cn(canManage && !locked && activeStage !== index && 'hidden', 'print:block')}>
+            <InspectionSectionCard results={results} attachments={detail.attachments} canManage={canManage} locked={locked} savingKey={savingKey} comments={comments} onCommentChange={(id, value) => setComments((previous) => ({ ...previous, [id]: value }))} onStatus={saveStatus} onSaveComment={saveComment} onMarkSection={markSectionOkay} onUpload={uploadResult} onOpenAttachment={openAttachment} />
+          </div>
+        ))}
       </div>
 
-      <Card id="inspection-findings" className="scroll-mt-6 print:shadow-none"><CardHeader><CardTitle>Puutteet ja korjaukset</CardTitle><p className="text-sm text-text-secondary">Luovutuksen estävät puutteet on suljettava ennen loppudokumentointia ja allekirjoitusta.</p></CardHeader><CardContent className="space-y-3">
+      <Card id="inspection-findings" className={cn('scroll-mt-6 print:shadow-none', canManage && !locked && activeStage !== findingsStageIndex && 'hidden', 'print:block')}><CardHeader><CardTitle>Puutteet ja korjaukset</CardTitle><p className="text-sm text-text-secondary">Luovutuksen estävät puutteet on suljettava ennen loppudokumentointia ja allekirjoitusta.</p></CardHeader><CardContent className="space-y-3">
         {detail.findings.map((finding) => <div key={finding.id} className="rounded-xl border p-4"><div className="flex flex-col gap-3 sm:flex-row sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{finding.title}</h3><Badge className={cn('border-0', severityClasses(finding.severity))}>{finding.severity}</Badge><Badge className={cn('border-0', findingStatusClasses(finding.status))}>{finding.status}</Badge></div><p className="mt-1 text-sm text-text-secondary">{finding.location || 'Sijaintia ei kirjattu'} · määräaika {formatDate(finding.dueDate)}</p>{finding.description && <p className="mt-2 whitespace-pre-wrap text-sm">{finding.description}</p>}{finding.correctionNote && <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Korjaajan ilmoitus: {finding.correctionNote}</p>}{finding.rejectionReason && <p className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-900">Hylkäyksen syy: {finding.rejectionReason}</p>}</div><div className="text-sm sm:text-right"><p className="text-text-muted">Vastuuhenkilö</p><p className="font-medium">{finding.contractorName || personName(people, finding.assigneeUserId)}</p></div></div><div className="mt-3 flex flex-wrap gap-2">{detail.attachments.filter((attachment) => attachment.findingId === finding.id).map((attachment) => <button key={attachment.id} type="button" onClick={() => void openAttachment(attachment.objectPath)} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs hover:bg-slate-50"><ImageIcon size={14} />{attachment.kind}: {attachment.fileName}</button>)}</div></div>)}
         {detail.findings.length === 0 && <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 size={18} />Tarkastuksessa ei ole kirjattuja puutteita.</div>}
       </CardContent></Card>
 
-      <Card id="inspection-attachments" className="scroll-mt-6 print:shadow-none">
+      <Card id="inspection-attachments" className={cn('scroll-mt-6 print:shadow-none', canManage && !locked && activeStage !== attachmentsStageIndex && 'hidden', 'print:block')}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Camera size={19} />Luovutuskuvat ja dokumentit</CardTitle>
           <p className="text-sm text-text-secondary">Kun tarkastuskohdat ja puutteet on käsitelty, dokumentoi valmis kohde vähintään yhdellä luovutus- tai yleiskuvalla.</p>
@@ -398,8 +559,8 @@ export default function InspectionDetailView({
           <div className="flex flex-wrap items-center gap-2 print:hidden">
             {canManage && !locked && userId && (
               <>
-                <label className={uploadLabelClasses}><Camera size={16} className="mr-2" />Lisää luovutuskuva<input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => void uploadInspectionFile(event, 'Luovutuskuva')} /></label>
-                <label className={uploadLabelClasses}><ImageIcon size={16} className="mr-2" />Lisää yleiskuva<input className="sr-only" type="file" accept="image/*" onChange={(event) => void uploadInspectionFile(event, 'Yleiskuva')} /></label>
+                <label className={uploadLabelClasses}><Camera size={16} className="mr-2" />Ota luovutuskuva<input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => void uploadInspectionFile(event, 'Luovutuskuva')} /></label>
+                <label className={uploadLabelClasses}><ImageIcon size={16} className="mr-2" />Valitse kuva<input className="sr-only" type="file" accept="image/*" onChange={(event) => void uploadInspectionFile(event, 'Yleiskuva')} /></label>
                 <label className={uploadLabelClasses}><FileUp size={16} className="mr-2" />Lisää asiakirja<input className="sr-only" type="file" accept="image/*,application/pdf" onChange={(event) => void uploadInspectionFile(event, 'Asiakirja')} /></label>
               </>
             )}
@@ -415,7 +576,7 @@ export default function InspectionDetailView({
         </CardContent>
       </Card>
 
-      <Card id="inspection-signatures" className="scroll-mt-6 overflow-hidden border-slate-200 print:shadow-none">
+      <Card id="inspection-signatures" className={cn('scroll-mt-6 overflow-hidden border-slate-200 print:shadow-none', canManage && !locked && activeStage !== signatureStageIndex && 'hidden', 'print:block')}>
         <CardHeader className="bg-slate-50/70">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div><CardTitle className="flex items-center gap-2"><Signature size={18} />Luovutus, allekirjoitus ja hyväksyntä</CardTitle><p className="mt-1 text-sm text-text-secondary">Tämä on tarkastuksen viimeinen vaihe. Allekirjoita vasta, kun työ on tarkastettu, puutteet käsitelty ja luovutuskuvat lisätty.</p></div>
