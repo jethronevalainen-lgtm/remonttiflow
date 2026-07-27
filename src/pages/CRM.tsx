@@ -50,6 +50,7 @@ import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useCustomerRelations } from '@/hooks/useCustomerRelations';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
+import { convertCrmLeadToProject } from '@/lib/supabase/crmConversion';
 import {
   completeCrmActivity,
   createCrmActivity,
@@ -153,6 +154,12 @@ interface SiteForm {
   accessInstructions: string;
   contactInstructions: string;
   notes: string;
+}
+
+interface ProjectConversionForm {
+  projectName: string;
+  startDate: string;
+  endDate: string;
 }
 
 type DeleteTarget =
@@ -305,6 +312,7 @@ export default function CRM() {
     addCrmLead,
     updateCrmLead,
     deleteCrmLead,
+    refresh,
     operationError: domainError,
   } = useAppDataContext();
   const relations = useCustomerRelations();
@@ -322,6 +330,8 @@ export default function CRM() {
   const [contactForm, setContactForm] = useState<ContactForm>(emptyContact);
   const [siteDialog, setSiteDialog] = useState(false);
   const [siteForm, setSiteForm] = useState<SiteForm>(emptySite);
+  const [conversionLead, setConversionLead] = useState<CrmLead | null>(null);
+  const [conversionForm, setConversionForm] = useState<ProjectConversionForm>({ projectName: '', startDate: '', endDate: '' });
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -589,6 +599,42 @@ export default function CRM() {
         stage: nextStage,
         probability: DEFAULT_PROBABILITY[nextStage],
       });
+    }
+  };
+
+  const openProjectConversion = (lead: CrmLead) => {
+    setConversionLead(lead);
+    setConversionForm({ projectName: lead.name, startDate: '', endDate: '' });
+    setOperationError(null);
+  };
+
+  const saveProjectConversion = async () => {
+    if (!currentOrg || !conversionLead) return;
+    if (!conversionForm.projectName.trim()) {
+      setOperationError('Projektin nimi on pakollinen.');
+      return;
+    }
+    if (!conversionForm.startDate || !conversionForm.endDate || conversionForm.endDate < conversionForm.startDate) {
+      setOperationError('Anna projektille kelvollinen aloitus- ja lopetuspäivä.');
+      return;
+    }
+
+    setSaving(true);
+    setOperationError(null);
+    try {
+      await convertCrmLeadToProject({
+        organizationId: currentOrg.id,
+        leadId: conversionLead.id,
+        projectName: conversionForm.projectName,
+        startDate: conversionForm.startDate,
+        endDate: conversionForm.endDate,
+      });
+      await refresh();
+      setConversionLead(null);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Projektin luominen epäonnistui.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1037,6 +1083,9 @@ export default function CRM() {
                               {ACTIVE_STAGES.includes(stage) && stage !== 'Jäissä' && (
                                 <Button variant="ghost" size="sm" className="text-emerald-700" onClick={() => advanceLead(lead)}><ArrowRight size={15} /></Button>
                               )}
+                              {stage === 'Voitettu' && !lead.convertedProjectId && (
+                                <Button variant="ghost" size="sm" className="text-primary" title="Luo projekti" onClick={() => openProjectConversion(lead)}><Briefcase size={15} /></Button>
+                              )}
                               <Button variant="ghost" size="sm" onClick={() => openLeadEdit(lead)}><FileText size={15} /></Button>
                               <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteTarget({ kind: 'lead', id: lead.id, label: lead.name })}><Trash2 size={15} /></Button>
                             </div>
@@ -1366,6 +1415,24 @@ export default function CRM() {
               </Card>
             </div>
           </>}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(conversionLead)} onOpenChange={(open) => { if (!open) setConversionLead(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Muuta voitettu kauppa projektiksi</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-xl border bg-muted/40 p-4">
+              <p className="font-semibold">{conversionLead?.name}</p>
+              <p className="text-sm text-text-secondary">Budjetti muodostetaan kaupan arvosta {currency(conversionLead?.value ?? 0)}.</p>
+            </div>
+            <div className="space-y-2"><Label>Projektin nimi *</Label><Input value={conversionForm.projectName} onChange={(event) => setConversionForm((previous) => ({ ...previous, projectName: event.target.value }))} /></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label>Aloituspäivä *</Label><Input type="date" value={conversionForm.startDate} onChange={(event) => setConversionForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>Lopetuspäivä *</Label><Input type="date" value={conversionForm.endDate} onChange={(event) => setConversionForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setConversionLead(null)}>Peruuta</Button><Button disabled={saving} onClick={() => void saveProjectConversion()}>Luo projekti</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
