@@ -36,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { CrmAftercarePanel } from '@/components/crm/CrmAftercarePanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -910,6 +911,7 @@ export default function CRM() {
             <TabsTrigger value="pipeline">Myyntiputki</TabsTrigger>
             <TabsTrigger value="tasks">Tehtävät ({openActivities.length})</TabsTrigger>
             <TabsTrigger value="customers">Asiakkaat ({customers.length})</TabsTrigger>
+            <TabsTrigger value="aftercare">Reklamaatiot ja takuu</TabsTrigger>
             <TabsTrigger value="reports">Myynnin analyysi</TabsTrigger>
           </TabsList>
         </div>
@@ -1205,6 +1207,10 @@ export default function CRM() {
             })}
             {!customerRows.length && <div className="col-span-full rounded-xl border border-dashed p-12 text-center text-text-muted">Asiakkaita ei löytynyt.</div>}
           </div>
+        </TabsContent>
+
+        <TabsContent value="aftercare" className="space-y-4">
+          <CrmAftercarePanel />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">
