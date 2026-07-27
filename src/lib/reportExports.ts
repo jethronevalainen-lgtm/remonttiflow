@@ -1,4 +1,15 @@
-import type { ReportCenterColumn, ReportCenterDataset, ReportCenterRow } from '@/lib/supabase/reportCenter';
+import type {
+  ReportCenterColumn,
+  ReportCenterDataset,
+  ReportCenterInsight,
+  ReportMetricFormat,
+} from '@/lib/supabase/reportCenter';
+
+interface SheetCell {
+  value: unknown;
+  type?: 'text' | 'number' | 'money' | 'boolean';
+  bold?: boolean;
+}
 
 function safeFilePart(value: string): string {
   return value
@@ -51,24 +62,82 @@ function formatValue(value: unknown, column?: ReportCenterColumn): string {
   return String(value);
 }
 
-function csvCell(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
+function summaryLabel(key: string): string {
+  const labels: Record<string, string> = {
+    rowCount: 'Rivejä', hours: 'Tunnit', totalRecordedHours: 'Kirjatut tunnit', overtime: 'Ylityö',
+    approvedRows: 'Hyväksyttyjä', pendingRows: 'Odottaa hyväksyntää', rejectedRows: 'Hylättyjä', approvalRate: 'Hyväksymisaste',
+    missingDescriptions: 'Puuttuvat selosteet', shortDescriptions: 'Liian lyhyet selosteet',
+    openCheckIns: 'Avoimet kirjautumiset', durationHours: 'Läsnäoloaika', longPresence: 'Yli 12 h läsnäolot',
+    outsideGeofence: 'Työmaa-alueen ulkopuolella', weakLocation: 'Heikko sijaintitarkkuus',
+    amountEur: 'Kulut yhteensä', approvedAmountEur: 'Hyväksytyt kulut', pendingAmountEur: 'Odottaa hyväksyntää',
+    rejectedAmountEur: 'Hylätyt kulut', missingAttachments: 'Puuttuvat liitteet',
+    budgetEur: 'Budjetti', spentEur: 'Toteuma', overBudgetEur: 'Budjetin ylitys', overBudgetProjects: 'Budjetin ylittäneet',
+    delayedProjects: 'Myöhässä', approvedHours: 'Hyväksytyt tunnit', pendingHours: 'Odottavat tunnit', openWorkOrders: 'Avoimet työmääräykset',
+    maintenanceDue: 'Huolto 30 päivän sisällä', overdueMaintenance: 'Huolto myöhässä', dueSoonMaintenance: 'Huolto 30 päivän sisällä',
+    unassignedEquipment: 'Ilman vastuuhenkilöä', inMaintenance: 'Huollossa',
+  };
+  return labels[key] || key;
 }
 
-function datasetRows(dataset: ReportCenterDataset): string[][] {
+function summaryFormat(key: string): ReportMetricFormat {
+  if (['amountEur', 'approvedAmountEur', 'pendingAmountEur', 'rejectedAmountEur', 'budgetEur', 'spentEur', 'overBudgetEur'].includes(key)) return 'money';
+  if (['hours', 'totalRecordedHours', 'overtime', 'durationHours', 'approvedHours', 'pendingHours'].includes(key)) return 'hours';
+  if (key === 'approvalRate') return 'percent';
+  return 'number';
+}
+
+function metricValue(value: unknown, format: ReportMetricFormat): string {
+  const number = Number(value);
+  if (format === 'money' && Number.isFinite(number)) return new Intl.NumberFormat('fi-FI', { style: 'currency', currency: 'EUR' }).format(number);
+  if (format === 'hours' && Number.isFinite(number)) return `${new Intl.NumberFormat('fi-FI', { maximumFractionDigits: 2 }).format(number)} h`;
+  if (format === 'percent' && Number.isFinite(number)) return `${new Intl.NumberFormat('fi-FI', { maximumFractionDigits: 1 }).format(number)} %`;
+  return Number.isFinite(number) ? new Intl.NumberFormat('fi-FI', { maximumFractionDigits: 2 }).format(number) : String(value ?? '—');
+}
+
+function severityLabel(insight: ReportCenterInsight): string {
+  if (insight.severity === 'critical') return 'Vaatii toimenpiteen';
+  if (insight.severity === 'warning') return 'Tarkistettava';
+  if (insight.severity === 'success') return 'Kunnossa';
+  return 'Huomio';
+}
+
+function contextRows(dataset: ReportCenterDataset): string[][] {
+  const context = dataset.context;
   return [
-    dataset.columns.map((column) => column.label),
-    ...dataset.rows.map((row) => dataset.columns.map((column) => formatValue(row[column.key], column))),
+    ['Organisaatio', context?.organizationName || '—'],
+    ['Ajanjakso', context?.periodLabel || `${dataset.dateFrom || '—'}–${dataset.dateTo || '—'}`],
+    ['Projekti', context?.projectLabel || '—'],
+    ['Henkilöt', context?.peopleLabel || '—'],
+    ['Tilat', context?.statusLabel || '—'],
+    ['Muodostettu', new Date(dataset.generatedAt).toLocaleString('fi-FI')],
   ];
+}
+
+function csvCell(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 export function downloadReportCsv(dataset: ReportCenterDataset): void {
   const lines: string[][] = [
     [dataset.title],
-    [`Aikaväli ${dataset.dateFrom || '—'}–${dataset.dateTo || '—'}`],
-    [`Muodostettu ${new Date(dataset.generatedAt).toLocaleString('fi-FI')}`],
+    ...contextRows(dataset),
     [],
-    ...datasetRows(dataset),
+    ['YHTEENVETO'],
+    ['Tunnusluku', 'Arvo'],
+    ...Object.entries(dataset.summary).map(([key, value]) => [summaryLabel(key), metricValue(value, summaryFormat(key))]),
+    [],
+    ['TARKISTETTAVAT ASIAT'],
+    ['Taso', 'Asia', 'Arvo', 'Selite'],
+    ...(dataset.insights ?? []).map((insight) => [
+      severityLabel(insight),
+      insight.title,
+      insight.value === undefined ? '' : metricValue(insight.value, insight.format ?? 'number'),
+      insight.description,
+    ]),
+    [],
+    ['AINEISTO'],
+    dataset.columns.map((column) => column.label),
+    ...dataset.rows.map((row) => dataset.columns.map((column) => formatValue(row[column.key], column))),
   ];
   const csv = lines.map((row) => row.map((cell) => csvCell(cell)).join(';')).join('\r\n');
   downloadBlob(
@@ -103,32 +172,80 @@ function numericCell(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function reportSheetRows(dataset: ReportCenterDataset): { rows: SheetCell[][]; dataHeaderRow: number } {
+  const rows: SheetCell[][] = [];
+
+  rows.push([{ value: dataset.title, bold: true }]);
+  for (const contextRow of contextRows(dataset)) {
+    rows.push(contextRow.map((value): SheetCell => ({ value })));
+  }
+
+  rows.push([]);
+  rows.push([{ value: 'Yhteenveto', bold: true }]);
+  rows.push([{ value: 'Tunnusluku', bold: true }, { value: 'Arvo', bold: true }]);
+  for (const [key, value] of Object.entries(dataset.summary)) {
+    const type: SheetCell['type'] = Number.isFinite(Number(value)) ? 'number' : 'text';
+    rows.push([
+      { value: summaryLabel(key) },
+      { value, type },
+    ]);
+  }
+
+  rows.push([]);
+  rows.push([{ value: 'Tarkistettavat asiat', bold: true }]);
+  rows.push([
+    { value: 'Taso', bold: true },
+    { value: 'Asia', bold: true },
+    { value: 'Arvo', bold: true },
+    { value: 'Selite', bold: true },
+  ]);
+  for (const insight of dataset.insights ?? []) {
+    const valueType: SheetCell['type'] = typeof insight.value === 'number' ? 'number' : 'text';
+    rows.push([
+      { value: severityLabel(insight) },
+      { value: insight.title },
+      { value: insight.value ?? '', type: valueType },
+      { value: insight.description },
+    ]);
+  }
+
+  rows.push([]);
+  rows.push([{ value: 'Aineisto', bold: true }]);
+  const dataHeaderRow = rows.length + 1;
+  rows.push(dataset.columns.map((column): SheetCell => ({ value: column.label, bold: true })));
+  for (const row of dataset.rows) {
+    rows.push(dataset.columns.map((column): SheetCell => ({ value: row[column.key], type: column.type })));
+  }
+  return { rows, dataHeaderRow };
+}
+
 function sheetXml(dataset: ReportCenterDataset): string {
-  const headings: ReportCenterRow = Object.fromEntries(dataset.columns.map((column) => [column.key, column.label]));
-  const allRows = [headings, ...dataset.rows];
-  const body = allRows.map((row, rowIndex) => {
-    const cells = dataset.columns.map((column, columnIndex) => {
+  const sheet = reportSheetRows(dataset);
+  const columnCount = Math.max(1, ...sheet.rows.map((row) => row.length));
+  const body = sheet.rows.map((row, rowIndex) => {
+    const cells = row.map((cell, columnIndex) => {
       const reference = `${excelColumn(columnIndex)}${rowIndex + 1}`;
-      const value = row[column.key];
-      if (rowIndex > 0 && (column.type === 'number' || column.type === 'money')) {
-        const number = numericCell(value);
-        if (number !== null) return `<c r="${reference}" s="${column.type === 'money' ? 1 : 0}"><v>${number}</v></c>`;
+      if (cell.type === 'number' || cell.type === 'money') {
+        const number = numericCell(cell.value);
+        if (number !== null) return `<c r="${reference}" s="${cell.bold ? 2 : 1}"><v>${number}</v></c>`;
       }
-      if (rowIndex > 0 && column.type === 'boolean') {
-        return `<c r="${reference}" t="b"><v>${value === true || value === 'true' ? 1 : 0}</v></c>`;
+      if (cell.type === 'boolean') {
+        return `<c r="${reference}" t="b" s="${cell.bold ? 2 : 0}"><v>${cell.value === true || cell.value === 'true' ? 1 : 0}</v></c>`;
       }
-      const rendered = rowIndex === 0 ? column.label : formatValue(value, column);
-      return `<c r="${reference}" t="inlineStr"${rowIndex === 0 ? ' s="2"' : ''}><is><t xml:space="preserve">${xmlEscape(rendered)}</t></is></c>`;
+      const rendered = typeof cell.value === 'string' ? cell.value : formatValue(cell.value);
+      return `<c r="${reference}" t="inlineStr" s="${cell.bold ? 2 : 0}"><is><t xml:space="preserve">${xmlEscape(rendered)}</t></is></c>`;
     }).join('');
     return `<row r="${rowIndex + 1}">${cells}</row>`;
   }).join('');
-  const widths = dataset.columns.map((column, index) => {
-    const lengths = dataset.rows.slice(0, 200).map((row) => formatValue(row[column.key], column).length + 2);
-    const width = Math.min(45, Math.max(10, column.label.length + 2, ...lengths));
-    return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`;
+
+  const widths = Array.from({ length: columnCount }, (_, columnIndex) => {
+    const lengths = sheet.rows.slice(0, 250).map((row) => String(row[columnIndex]?.value ?? '').length + 2);
+    const width = Math.min(55, Math.max(12, ...lengths));
+    return `<col min="${columnIndex + 1}" max="${columnIndex + 1}" width="${width}" customWidth="1"/>`;
   }).join('');
-  const endColumn = excelColumn(Math.max(0, dataset.columns.length - 1));
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${widths}</cols><sheetData>${body}</sheetData><autoFilter ref="A1:${endColumn}${Math.max(1, allRows.length)}"/></worksheet>`;
+  const endColumn = excelColumn(columnCount - 1);
+  const endRow = Math.max(sheet.dataHeaderRow, sheet.rows.length);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="${sheet.dataHeaderRow}" topLeftCell="A${sheet.dataHeaderRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${widths}</cols><sheetData>${body}</sheetData><autoFilter ref="A${sheet.dataHeaderRow}:${endColumn}${endRow}"/></worksheet>`;
 }
 
 const CRC_TABLE = (() => {
@@ -266,17 +383,21 @@ function wrapText(value: string, maxLength = 105): string[] {
 }
 
 function reportPdfLines(dataset: ReportCenterDataset): string[] {
-  const lines = [
-    dataset.title,
-    `Aikaväli: ${dataset.dateFrom || '—'}–${dataset.dateTo || '—'}`,
-    `Muodostettu: ${new Date(dataset.generatedAt).toLocaleString('fi-FI')}`,
-    `Rivejä: ${dataset.rows.length}`,
-    '',
-  ];
-  for (const row of dataset.rows) {
+  const lines = [dataset.title, ...contextRows(dataset).map(([label, value]) => `${label}: ${value}`), '', 'YHTEENVETO'];
+  for (const [key, value] of Object.entries(dataset.summary)) lines.push(`${summaryLabel(key)}: ${metricValue(value, summaryFormat(key))}`);
+  lines.push('', 'TARKISTETTAVAT ASIAT');
+  if (!dataset.insights?.length) lines.push('Ei automaattisia huomioita.');
+  for (const insight of dataset.insights ?? []) {
+    const value = insight.value === undefined ? '' : ` (${metricValue(insight.value, insight.format ?? 'number')})`;
+    lines.push(...wrapText(`${severityLabel(insight)}: ${insight.title}${value} — ${insight.description}`));
+  }
+  lines.push('', 'AINEISTO');
+  const maximumRows = 500;
+  for (const row of dataset.rows.slice(0, maximumRows)) {
     const content = dataset.columns.map((column) => `${column.label}: ${formatValue(row[column.key], column) || '—'}`).join(' | ');
     lines.push(...wrapText(content), '');
   }
+  if (dataset.rows.length > maximumRows) lines.push(`PDF-esitys rajattiin ensimmäiseen ${maximumRows} riviin. CSV- ja Excel-viennit sisältävät kaikki ${dataset.rows.length} riviä.`);
   return lines;
 }
 
@@ -299,7 +420,8 @@ function makePdf(lines: string[]): Uint8Array {
   objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
 
   pages.forEach((pageLines, pageIndex) => {
-    const body = ['BT', '/F1 9 Tf', '40 800 Td', ...pageLines.flatMap((line, lineIndex) => [lineIndex ? '0 -15 Td' : '', `(${pdfEscape(line)}) Tj`]).filter(Boolean), 'ET'].join('\n');
+    const numberedLines = [...pageLines, '', `Sivu ${pageIndex + 1}/${pages.length}`];
+    const body = ['BT', '/F1 9 Tf', '40 800 Td', ...numberedLines.flatMap((line, lineIndex) => [lineIndex ? '0 -15 Td' : '', `(${pdfEscape(line)}) Tj`]).filter(Boolean), 'ET'].join('\n');
     const bodyLength = latin1Bytes(body).length;
     objects[contentNumbers[pageIndex]] = `<< /Length ${bodyLength} >>\nstream\n${body}\nendstream`;
     objects[pageNumbers[pageIndex]] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentNumbers[pageIndex]} 0 R >>`;
@@ -334,6 +456,9 @@ export function printReport(dataset: ReportCenterDataset): void {
   if (!popup) throw new Error('Tulostusikkunaa ei voitu avata. Salli ponnahdusikkunat ja yritä uudelleen.');
   const header = dataset.columns.map((column) => `<th>${htmlEscape(column.label)}</th>`).join('');
   const body = dataset.rows.map((row) => `<tr>${dataset.columns.map((column) => `<td>${htmlEscape(formatValue(row[column.key], column))}</td>`).join('')}</tr>`).join('');
-  popup.document.write(`<!doctype html><html lang="fi"><head><meta charset="utf-8"><title>${htmlEscape(dataset.title)}</title><style>body{font-family:Arial,sans-serif;color:#0f172a;margin:28px}h1{font-size:24px;margin:0 0 8px}.meta{color:#475569;font-size:12px;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px;vertical-align:top;text-align:left}th{background:#f1f5f9}tr:nth-child(even){background:#f8fafc}@page{size:landscape;margin:12mm}@media print{body{margin:0}}</style></head><body><h1>${htmlEscape(dataset.title)}</h1><div class="meta">Aikaväli ${htmlEscape(dataset.dateFrom)}–${htmlEscape(dataset.dateTo)} · muodostettu ${htmlEscape(new Date(dataset.generatedAt).toLocaleString('fi-FI'))} · ${dataset.rows.length} riviä</div><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`);
+  const context = contextRows(dataset).map(([label, value]) => `<div><strong>${htmlEscape(label)}:</strong> ${htmlEscape(value)}</div>`).join('');
+  const summary = Object.entries(dataset.summary).map(([key, value]) => `<div class="metric"><span>${htmlEscape(summaryLabel(key))}</span><strong>${htmlEscape(metricValue(value, summaryFormat(key)))}</strong></div>`).join('');
+  const insights = (dataset.insights ?? []).map((insight) => `<div class="insight ${insight.severity}"><strong>${htmlEscape(severityLabel(insight))}: ${htmlEscape(insight.title)}</strong>${insight.value === undefined ? '' : `<b>${htmlEscape(metricValue(insight.value, insight.format ?? 'number'))}</b>`}<p>${htmlEscape(insight.description)}</p></div>`).join('');
+  popup.document.write(`<!doctype html><html lang="fi"><head><meta charset="utf-8"><title>${htmlEscape(dataset.title)}</title><style>body{font-family:Arial,sans-serif;color:#0f172a;margin:28px}h1{font-size:24px;margin:0 0 8px}h2{font-size:16px;margin:22px 0 10px}.meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 20px;color:#475569;font-size:11px;margin-bottom:18px}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.metric{border:1px solid #cbd5e1;border-radius:6px;padding:8px}.metric span{display:block;color:#64748b;font-size:9px;text-transform:uppercase}.metric strong{display:block;font-size:16px;margin-top:4px}.insights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.insight{border:1px solid #cbd5e1;border-radius:6px;padding:9px;font-size:10px}.insight b{float:right}.insight p{color:#475569;margin:5px 0 0}.insight.critical{border-color:#fca5a5;background:#fef2f2}.insight.warning{border-color:#fcd34d;background:#fffbeb}.insight.success{border-color:#86efac;background:#f0fdf4}table{width:100%;border-collapse:collapse;font-size:9px;margin-top:10px}th,td{border:1px solid #cbd5e1;padding:5px;vertical-align:top;text-align:left}th{background:#f1f5f9}tr:nth-child(even){background:#f8fafc}@page{size:landscape;margin:10mm}@media print{body{margin:0}.summary{grid-template-columns:repeat(4,minmax(0,1fr))}}</style></head><body><h1>${htmlEscape(dataset.title)}</h1><div class="meta">${context}</div><h2>Yhteenveto</h2><div class="summary">${summary}</div>${insights ? `<h2>Tarkistettavat asiat</h2><div class="insights">${insights}</div>` : ''}<h2>Aineisto (${dataset.rows.length} riviä)</h2><table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`);
   popup.document.close();
 }
