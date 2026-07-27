@@ -49,11 +49,12 @@ import {
   type ManagedWorkOrder,
 } from '@/lib/supabase/workManagement';
 import { cn } from '@/lib/utils';
-import WorkOrderDialog, {
+import type { WorkOrderPriority, WorkOrderStatus } from '@/types';
+import WorkOrderDialog from './workOrders/WorkOrderDialog';
+import {
   EMPTY_WORK_ORDER_FORM,
   type WorkOrderFormValues,
-} from './workOrders/WorkOrderDialog';
-import type { WorkOrderPriority, WorkOrderStatus } from '@/types';
+} from './workOrders/workOrderForm';
 
 const ALL = 'Kaikki';
 type ScopeFilter = 'all' | 'standalone' | 'project';
@@ -368,7 +369,7 @@ export default function Tyomaaraykset() {
             </button>
           ))}
         </div>
-        <Select value={scopeFilter} onValueChange={(value: ScopeFilter) => setScopeFilter(value)}>
+        <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as ScopeFilter)}>
           <SelectTrigger className="w-full lg:w-48"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Kaikki työt</SelectItem>
