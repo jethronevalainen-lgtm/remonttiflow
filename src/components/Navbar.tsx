@@ -17,6 +17,7 @@ import {
   FileQuestion,
   FileText,
   FolderKanban,
+  Gauge,
   HardHat,
   LayoutDashboard,
   MessageCircle,
@@ -46,6 +47,7 @@ const workerGroups: NavGroup[] = [
     title: 'Oma työ',
     items: [
       { label: 'Oma työtila', icon: LayoutDashboard, path: '/dashboard' },
+      { label: 'Kirjaukset', icon: Gauge, path: '/toiminnanohjaus' },
       { label: 'Minun työni', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
       { label: 'Omat henkilöstö- ja palkkatiedot', icon: UserCircle, path: '/henkilokortit' },
@@ -84,6 +86,7 @@ const managementGroups: NavGroup[] = [
     title: 'Tilannekuva',
     items: [
       { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+      { label: 'Toiminnanohjaus', icon: Gauge, path: '/toiminnanohjaus' },
       { label: 'Työnjohto', icon: HardHat, path: '/tyonjohto' },
       { label: 'Raportit', icon: BarChart3, path: '/raportit' },
     ],
