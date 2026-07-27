@@ -78,7 +78,14 @@ async function loadWorkerDirectory(
 export function useCommunicationDirectory() {
   const { currentOrg, actualRole } = useOrganization();
   const { effectiveUserId } = useViewAs();
-  const { people: operationalPeople, projectMemberships, workOrders, canManage } = useRoleWorkspace();
+  const {
+    people: operationalPeople,
+    projectMemberships,
+    workOrders,
+    canManage,
+    loading: workspaceLoading,
+    error: workspaceError,
+  } = useRoleWorkspace();
   const relevantUserIds = [
     ...projectMemberships.map((item) => item.userId),
     ...workOrders.flatMap((item) => item.assigneeUserIds),
@@ -90,22 +97,26 @@ export function useCommunicationDirectory() {
       currentOrg?.id ?? 'none',
       effectiveUserId ?? 'none',
       actualRole ?? 'none',
-      canManage ? 'operational-directory' : [...new Set(relevantUserIds)].sort().join(','),
+      [...new Set(relevantUserIds)].sort().join(','),
     ],
-    queryFn: () => canManage
-      ? Promise.resolve(
-          operationalPeople
-            .filter((person) => person.userId !== effectiveUserId)
-            .sort((a, b) => a.name.localeCompare(b.name, 'fi')),
-        )
-      : loadWorkerDirectory(
-          currentOrg?.id as string,
-          effectiveUserId as string,
-          relevantUserIds,
-        ),
-    enabled: Boolean(currentOrg?.id && effectiveUserId && actualRole),
+    queryFn: () => loadWorkerDirectory(
+      currentOrg?.id as string,
+      effectiveUserId as string,
+      relevantUserIds,
+    ),
+    enabled: Boolean(!canManage && currentOrg?.id && effectiveUserId && actualRole),
     staleTime: 30_000,
   });
+
+  if (canManage) {
+    return {
+      people: operationalPeople
+        .filter((person) => person.userId !== effectiveUserId)
+        .sort((a, b) => a.name.localeCompare(b.name, 'fi')),
+      loading: workspaceLoading,
+      error: workspaceError,
+    };
+  }
 
   return {
     people: query.data ?? [],
