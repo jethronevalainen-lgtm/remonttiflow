@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'supervisor' | 'worker' | 'customer';
+export type UserRole = 'admin' | 'supervisor' | 'project_coordinator' | 'worker' | 'customer';
 
 export type Permission =
   | 'organization.manage'
@@ -13,6 +13,7 @@ export type Permission =
   | 'work_orders.read.assigned'
   | 'work_orders.manage'
   | 'work_orders.transition'
+  | 'time_entries.read.all'
   | 'safety.create'
   | 'safety.read.all'
   | 'safety.read.project'
@@ -31,6 +32,7 @@ export type Permission =
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Järjestelmänvalvoja',
   supervisor: 'Työnjohtaja',
+  project_coordinator: 'Projektikoordinaattori',
   worker: 'Työntekijä',
   customer: 'Tilaaja',
 };
@@ -38,6 +40,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const ROLE_COLORS: Record<UserRole, string> = {
   admin: 'bg-purple-500',
   supervisor: 'bg-orange-500',
+  project_coordinator: 'bg-indigo-500',
   worker: 'bg-blue-500',
   customer: 'bg-teal-500',
 };
@@ -45,6 +48,7 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 export const ROLE_HOME: Record<UserRole, string> = {
   admin: '/dashboard',
   supervisor: '/dashboard',
+  project_coordinator: '/dashboard',
   worker: '/dashboard',
   customer: '/tilaajan-tyot',
 };
@@ -54,22 +58,34 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
     '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/projektipyynnot',
     '/projektikeskustelut', '/aikataulutus', '/paivakirjat', '/kuittaukset',
     '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
-    '/tyovuorokalenteri', '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus',
-    '/crm', '/asiakkaat', '/ai', '/viestinta', '/kalusto', '/henkilosto',
-    '/lomakkeet', '/raportit', '/hallinta', '/kayttajaesikatselu',
+    '/tyovuorokalenteri', '/tuntikirjaukset', '/kirjaukset', '/matkakulut',
+    '/tyoturvallisuus', '/crm', '/asiakkaat', '/toiminnanohjaus', '/ai',
+    '/viestinta', '/kalusto', '/henkilosto', '/henkilokortit', '/palkka-aineisto',
+    '/lomakkeet', '/raportit', '/qr-kirjautuminen', '/qr-hallinta', '/hallinta',
+    '/varmuuskopiot', '/kayttajaesikatselu',
   ],
   supervisor: [
     '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/projektipyynnot',
     '/projektikeskustelut', '/aikataulutus', '/paivakirjat', '/kuittaukset',
     '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
-    '/tyovuorokalenteri', '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus',
-    '/crm', '/asiakkaat', '/viestinta', '/kalusto', '/henkilosto', '/lomakkeet',
-    '/raportit',
+    '/tyovuorokalenteri', '/tuntikirjaukset', '/kirjaukset', '/matkakulut',
+    '/tyoturvallisuus', '/crm', '/asiakkaat', '/toiminnanohjaus', '/viestinta',
+    '/kalusto', '/henkilosto', '/henkilokortit', '/palkka-aineisto', '/lomakkeet',
+    '/raportit', '/qr-kirjautuminen', '/qr-hallinta',
+  ],
+  project_coordinator: [
+    '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/projektipyynnot',
+    '/projektikeskustelut', '/aikataulutus', '/paivakirjat', '/kuittaukset',
+    '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
+    '/tuntikirjaukset', '/tyoturvallisuus', '/crm', '/asiakkaat',
+    '/toiminnanohjaus', '/ai', '/viestinta', '/kalusto', '/lomakkeet',
+    '/qr-kirjautuminen', '/qr-hallinta',
   ],
   worker: [
     '/dashboard', '/tarkastukset', '/tyomaaraykset', '/kuittaukset',
-    '/tuntikirjaukset', '/matkakulut', '/tyoturvallisuus',
-    '/projektikeskustelut', '/viestinta', '/lomakkeet',
+    '/tuntikirjaukset', '/kirjaukset', '/matkakulut', '/tyoturvallisuus',
+    '/projektikeskustelut', '/viestinta', '/lomakkeet', '/qr-kirjautuminen',
+    '/henkilokortit',
   ],
   customer: [
     '/tilaajan-tyot', '/tilaajan-projektit', '/projektikeskustelut',
@@ -81,8 +97,8 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
   admin: new Set<Permission>([
     'organization.manage', 'members.manage', 'projects.read.all', 'projects.manage',
     'projects.request', 'project_requests.manage', 'work_orders.read.all',
-    'work_orders.manage', 'work_orders.transition', 'safety.create',
-    'safety.read.all', 'safety.manage', 'project_chat.shared',
+    'work_orders.manage', 'work_orders.transition', 'time_entries.read.all',
+    'safety.create', 'safety.read.all', 'safety.manage', 'project_chat.shared',
     'project_chat.internal', 'project_chat.attach', 'project_chat.edit_own',
     'project_documents.customer.read', 'project_documents.customer.share',
     'change_orders.customer.read', 'change_orders.customer.submit',
@@ -90,11 +106,20 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
   supervisor: new Set<Permission>([
     'projects.read.all', 'projects.manage', 'projects.request',
     'project_requests.manage', 'work_orders.read.all', 'work_orders.manage',
-    'work_orders.transition', 'safety.create', 'safety.read.all', 'safety.manage',
-    'project_chat.shared', 'project_chat.internal', 'project_chat.attach',
-    'project_chat.edit_own', 'project_documents.customer.read',
-    'project_documents.customer.share', 'change_orders.customer.read',
-    'change_orders.customer.submit',
+    'work_orders.transition', 'time_entries.read.all', 'safety.create',
+    'safety.read.all', 'safety.manage', 'project_chat.shared',
+    'project_chat.internal', 'project_chat.attach', 'project_chat.edit_own',
+    'project_documents.customer.read', 'project_documents.customer.share',
+    'change_orders.customer.read', 'change_orders.customer.submit',
+  ]),
+  project_coordinator: new Set<Permission>([
+    'projects.read.all', 'projects.manage', 'projects.request',
+    'project_requests.manage', 'work_orders.read.all', 'work_orders.manage',
+    'work_orders.transition', 'time_entries.read.all', 'safety.create',
+    'safety.read.all', 'safety.manage', 'project_chat.shared',
+    'project_chat.internal', 'project_chat.attach', 'project_chat.edit_own',
+    'project_documents.customer.read', 'project_documents.customer.share',
+    'change_orders.customer.read', 'change_orders.customer.submit',
   ]),
   worker: new Set<Permission>([
     'projects.read.assigned', 'work_orders.read.assigned', 'work_orders.transition',
