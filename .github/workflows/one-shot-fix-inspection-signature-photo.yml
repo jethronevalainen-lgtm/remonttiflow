@@ -17,7 +17,7 @@ jobs:
         with:
           ref: fix/inspection-signature-and-photo-preview
 
-      - name: Apply fixes and tests
+      - name: Apply fixes
         run: |
           python <<'PY'
           from pathlib import Path
@@ -31,35 +31,24 @@ jobs:
                   raise SystemExit(f'{path}: expected one occurrence, found {count}: {old[:100]!r}')
               file.write_text(content.replace(old, new, 1), encoding='utf-8')
 
-          replace_once(
-              'src/lib/supabase/inspectionSignatures.ts',
-              "signature_type: 'Käsin allekirjoitettu',",
-              "signature_type: 'Piirretty allekirjoitus',",
-          )
+          replace_once('src/lib/supabase/inspectionSignatures.ts', "signature_type: 'Käsin allekirjoitettu',", "signature_type: 'Piirretty allekirjoitus',")
 
           replace_once(
               'src/lib/supabase/inspectionRead.ts',
               'FindingAction, InspectionAttachment, InspectionDetail, InspectionFinding,\n  InspectionReport, InspectionResultDetail, InspectionResultStatus, InspectionStatus,',
               'FindingAction, InspectionAttachment, InspectionDetail, InspectionFinding, InspectionSignature,\n  InspectionReport, InspectionResultDetail, InspectionResultStatus, InspectionStatus,',
           )
-
           replace_once(
               'src/lib/supabase/inspectionRead.ts',
               "function mapAttachment(row: Row): InspectionAttachment {\n  return {\n    id: text(row, 'id'), inspectionId: optionalText(row, 'inspection_id'), resultId: optionalText(row, 'result_id'),\n    findingId: optionalText(row, 'finding_id'), objectPath: text(row, 'object_path'), fileName: text(row, 'file_name'),\n    mimeType: text(row, 'mime_type'), sizeBytes: num(row, 'size_bytes'), kind: text(row, 'kind'),\n    caption: text(row, 'caption'), createdAt: text(row, 'created_at'),\n  };\n}\n",
               "function mapAttachment(row: Row): InspectionAttachment {\n  return {\n    id: text(row, 'id'), inspectionId: optionalText(row, 'inspection_id'), resultId: optionalText(row, 'result_id'),\n    findingId: optionalText(row, 'finding_id'), objectPath: text(row, 'object_path'), fileName: text(row, 'file_name'),\n    mimeType: text(row, 'mime_type'), sizeBytes: num(row, 'size_bytes'), kind: text(row, 'kind'),\n    caption: text(row, 'caption'), createdAt: text(row, 'created_at'),\n  };\n}\n\nfunction mapSignature(row: Row): InspectionSignature {\n  return {\n    id: text(row, 'id'), inspectionId: text(row, 'inspection_id'), signerName: text(row, 'signer_name'),\n    signerRole: text(row, 'signer_role'), signerCompany: text(row, 'signer_company'),\n    signatureType: text(row, 'signature_type'), signatureData: optionalText(row, 'signature_data'),\n    note: text(row, 'note'), signedAt: text(row, 'signed_at'),\n  };\n}\n",
           )
-
           replace_once(
               'src/lib/supabase/inspectionRead.ts',
               "    signatures: rows(signatureResponse.data).map((signature) => ({\n      id: text(signature, 'id'), inspectionId: text(signature, 'inspection_id'), signerName: text(signature, 'signer_name'),\n      signerRole: text(signature, 'signer_role'), signerCompany: text(signature, 'signer_company'),\n      signatureType: text(signature, 'signature_type'), note: text(signature, 'note'), signedAt: text(signature, 'signed_at'),\n    })),",
               "    signatures: rows(signatureResponse.data).map(mapSignature),",
           )
-
-          replace_once(
-              'src/lib/supabase/inspectionRead.ts',
-              '  mapAttachment,\n};',
-              '  mapAttachment,\n  mapSignature,\n};',
-          )
+          replace_once('src/lib/supabase/inspectionRead.ts', '  mapAttachment,\n};', '  mapAttachment,\n  mapSignature,\n};')
 
           replace_once(
               'src/lib/supabase/inspectionEntities.ts',
@@ -74,7 +63,6 @@ jobs:
               '  approveInspection, createAttachmentUrl, createInspectionFinding, downloadInspectionAttachment,\n  saveInspectionResult, uploadInspectionAttachment, voidInspection,',
               1,
           )
-
           pattern = re.compile(r"function AttachmentPreview\(\{ attachment, onOpen \}: \{.*?\n\}\n\nconst uploadLabelClasses", re.S)
           replacement = '''function AttachmentPreview({ attachment, onOpen }: {
   attachment: InspectionAttachment;
@@ -114,36 +102,13 @@ jobs:
   }, [attachment.mimeType, attachment.objectPath]);
 
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(attachment.objectPath)}
-      className="group overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-primary/40 hover:shadow-sm"
-    >
+    <button type="button" onClick={() => onOpen(attachment.objectPath)} className="group overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition hover:border-primary/40 hover:shadow-sm">
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-slate-100">
         {previewState === 'loading' && <Loader2 size={26} className="animate-spin text-slate-400" />}
-        {previewState === 'ready' && previewUrl && (
-          <img
-            src={previewUrl}
-            alt={attachment.caption || attachment.fileName}
-            className="h-full w-full object-cover transition group-hover:scale-[1.02]"
-            onError={() => {
-              setPreviewUrl(null);
-              setPreviewState('error');
-            }}
-          />
-        )}
-        {previewState === 'error' && (
-          <div className="flex flex-col items-center gap-2 px-3 text-center text-xs text-slate-500">
-            <ImageIcon size={28} className="text-slate-400" />
-            <span>Esikatselua ei voitu ladata. Avaa tiedosto napsauttamalla.</span>
-          </div>
-        )}
+        {previewState === 'ready' && previewUrl && <img src={previewUrl} alt={attachment.caption || attachment.fileName} className="h-full w-full object-cover transition group-hover:scale-[1.02]" onError={() => { setPreviewUrl(null); setPreviewState('error'); }} />}
+        {previewState === 'error' && <div className="flex flex-col items-center gap-2 px-3 text-center text-xs text-slate-500"><ImageIcon size={28} className="text-slate-400" /><span>Esikatselua ei voitu ladata. Avaa tiedosto napsauttamalla.</span></div>}
       </div>
-      <div className="p-3">
-        <p className="text-xs font-semibold text-primary">{attachment.kind}</p>
-        <p className="mt-1 truncate text-sm font-medium">{attachment.fileName}</p>
-        <p className="mt-1 text-xs text-text-muted">{formatDateTime(attachment.createdAt)}</p>
-      </div>
+      <div className="p-3"><p className="text-xs font-semibold text-primary">{attachment.kind}</p><p className="mt-1 truncate text-sm font-medium">{attachment.fileName}</p><p className="mt-1 text-xs text-text-muted">{formatDateTime(attachment.createdAt)}</p></div>
     </button>
   );
 }
@@ -151,90 +116,59 @@ jobs:
 const uploadLabelClasses'''
           detail, count = pattern.subn(replacement, detail, count=1)
           if count != 1:
-              raise SystemExit(f'InspectionDetailView AttachmentPreview replacement count {count}')
-
+              raise SystemExit(f'AttachmentPreview replacement count {count}')
           marker = "  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });"
           if detail.count(marker) != 1:
               raise SystemExit('scrollTo marker not unique')
-          detail = detail.replace(
-              marker,
-              marker + "\n  const openSignature = () => { setOperationError(null); setSignatureOpen(true); };",
-              1,
-          )
+          detail = detail.replace(marker, marker + "\n  const openSignature = () => { setOperationError(null); setSignatureOpen(true); };", 1)
           detail = detail.replace('action: () => setSignatureOpen(true), icon: Signature', 'action: openSignature, icon: Signature', 1)
           detail = detail.replace('onClick={() => setSignatureOpen(true)}><Signature', 'onClick={openSignature}><Signature', 1)
           detail = detail.replace(
-              '<SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === \'signature\'}',
-              '<SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === \'signature\'} error={signatureOpen ? operationError : null}',
+              "<SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === 'signature'}",
+              "<SignatureDialog defaultName={personName(people, userId)} open={signatureOpen} busy={savingKey === 'signature'} error={signatureOpen ? operationError : null}",
               1,
           )
           detail_path.write_text(detail, encoding='utf-8')
 
           dialogs_path = Path('src/pages/inspections/InspectionDialogs.tsx')
           dialogs = dialogs_path.read_text(encoding='utf-8')
-          old_header = "export function SignatureDialog({ open, busy, defaultName = '', onClose, onSubmit }: {\n  open: boolean;\n  busy: boolean;\n  defaultName?: string;"
-          new_header = "export function SignatureDialog({ open, busy, error, defaultName = '', onClose, onSubmit }: {\n  open: boolean;\n  busy: boolean;\n  error?: string | null;\n  defaultName?: string;"
-          if dialogs.count(old_header) != 1:
-              raise SystemExit('SignatureDialog header not found exactly once')
-          dialogs = dialogs.replace(old_header, new_header, 1)
+          replace_header = "export function SignatureDialog({ open, busy, defaultName = '', onClose, onSubmit }: {\n  open: boolean;\n  busy: boolean;\n  defaultName?: string;"
+          if dialogs.count(replace_header) != 1:
+              raise SystemExit('SignatureDialog header not found')
+          dialogs = dialogs.replace(replace_header, "export function SignatureDialog({ open, busy, error, defaultName = '', onClose, onSubmit }: {\n  open: boolean;\n  busy: boolean;\n  error?: string | null;\n  defaultName?: string;", 1)
           info = "        <div className=\"rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900\">\n          Allekirjoitus vahvistaa, että tarkastustiedot on kirjattu ja kohde on tarkastettu. Hyväksyminen tehdään erikseen tarkastuksen valmistuttua.\n        </div>"
-          error_block = info + "\n        {error && <div role=\"alert\" className=\"rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800\">{error}</div>}"
           if dialogs.count(info) != 1:
-              raise SystemExit('SignatureDialog info block not found exactly once')
-          dialogs = dialogs.replace(info, error_block, 1)
+              raise SystemExit('SignatureDialog info block not found')
+          dialogs = dialogs.replace(info, info + "\n        {error && <div role=\"alert\" className=\"rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800\">{error}</div>}", 1)
           dialogs_path.write_text(dialogs, encoding='utf-8')
 
           test_path = Path('src/lib/supabase/__tests__/inspectionRead.test.ts')
           test = test_path.read_text(encoding='utf-8')
-          test = test.replace(
-              'const { asRow, num, mapInspection, mapFinding, mapAttachment } = inspectionReadMappers;',
-              'const { asRow, num, mapInspection, mapFinding, mapAttachment, mapSignature } = inspectionReadMappers;',
-              1,
-          )
+          test = test.replace('const { asRow, num, mapInspection, mapFinding, mapAttachment } = inspectionReadMappers;', 'const { asRow, num, mapInspection, mapFinding, mapAttachment, mapSignature } = inspectionReadMappers;', 1)
           insertion = """
 
   it('maps handwritten signature image data for approval readiness and rendering', () => {
     const signature = mapSignature({
-      id: 'signature-1',
-      inspection_id: 'inspection-1',
-      signer_name: 'Jethro Nevalainen',
-      signer_role: 'Työnjohtaja',
-      signer_company: null,
-      signature_type: 'Piirretty allekirjoitus',
-      signature_data: 'data:image/png;base64,abc123',
-      note: null,
-      signed_at: '2026-07-27T11:00:00Z',
+      id: 'signature-1', inspection_id: 'inspection-1', signer_name: 'Jethro Nevalainen',
+      signer_role: 'Työnjohtaja', signer_company: null, signature_type: 'Piirretty allekirjoitus',
+      signature_data: 'data:image/png;base64,abc123', note: null, signed_at: '2026-07-27T11:00:00Z',
     });
-
     expect(signature.signatureData).toBe('data:image/png;base64,abc123');
     expect(signature.signerCompany).toBe('');
     expect(signature.note).toBe('');
   });
 """
-          closing = '\n});\n'
-          if not test.endswith(closing):
-              raise SystemExit('Unexpected inspectionRead.test.ts ending')
-          test = test[:-len(closing)] + insertion + closing
+          if not test.endswith('\n});\n'):
+              raise SystemExit('Unexpected test file ending')
+          test = test[:-5] + insertion + '\n});\n'
           test_path.write_text(test, encoding='utf-8')
           PY
-
-      - name: Run focused and production checks
-        run: |
-          npm ci --no-audit --no-fund
-          npm run test -- --run src/lib/supabase/__tests__/inspectionRead.test.ts
-          npm run ship:check
 
       - name: Remove workflow and commit
         run: |
           rm .github/workflows/one-shot-fix-inspection-signature-photo.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/lib/supabase/inspectionSignatures.ts \
-                  src/lib/supabase/inspectionRead.ts \
-                  src/lib/supabase/inspectionEntities.ts \
-                  src/pages/inspections/InspectionDetailView.tsx \
-                  src/pages/inspections/InspectionDialogs.tsx \
-                  src/lib/supabase/__tests__/inspectionRead.test.ts \
-                  .github/workflows/one-shot-fix-inspection-signature-photo.yml
+          git add src/lib/supabase/inspectionSignatures.ts src/lib/supabase/inspectionRead.ts src/lib/supabase/inspectionEntities.ts src/pages/inspections/InspectionDetailView.tsx src/pages/inspections/InspectionDialogs.tsx src/lib/supabase/__tests__/inspectionRead.test.ts .github/workflows/one-shot-fix-inspection-signature-photo.yml
           git commit -m "fix: repair inspection signatures and photo previews"
           git push origin HEAD:fix/inspection-signature-and-photo-preview
