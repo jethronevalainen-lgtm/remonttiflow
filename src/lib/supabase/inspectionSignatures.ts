@@ -41,7 +41,7 @@ export async function addHandwrittenInspectionSignature(input: {
     signer_name: input.signerName.trim(),
     signer_role: input.signerRole.trim(),
     signer_company: input.signerCompany?.trim() || null,
-    signature_type: 'Käsin allekirjoitettu',
+    signature_type: 'Piirretty allekirjoitus',
     signature_data: input.signatureData,
     note: input.note?.trim() || null,
     signed_by: input.userId ?? null,
