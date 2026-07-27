@@ -10,7 +10,6 @@ import {
   ChevronRight,
   CircleDollarSign,
   Clock3,
-  Euro,
   FileText,
   Handshake,
   LayoutDashboard,
@@ -25,7 +24,6 @@ import {
   TrendingUp,
   UserRound,
   UsersRound,
-  XCircle,
 } from 'lucide-react';
 
 import {
@@ -331,7 +329,6 @@ export default function CRM() {
   const [saving, setSaving] = useState(false);
 
   const today = new Date();
-  const todayIso = today.toISOString();
   const in14Days = new Date(today.getTime() + 14 * 86_400_000).toISOString().slice(0, 10);
   const normalizedQuery = search.trim().toLocaleLowerCase('fi-FI');
 
