@@ -16,10 +16,14 @@ const mocks = vi.hoisted(() => ({
   eq: vi.fn(),
   maybeSingle: vi.fn(),
   unsubscribe: vi.fn(),
+  subscribeActiveClient: vi.fn(),
+  unsubscribeActiveClient: vi.fn(),
+  isImpersonationActive: vi.fn(),
+  deactivateImpersonation: vi.fn(),
 }));
 
-vi.mock('@/lib/supabase/client', () => ({
-  supabase: {
+vi.mock('@/lib/supabase/client', () => {
+  const client = {
     auth: {
       getSession: mocks.getSession,
       onAuthStateChange: mocks.onAuthStateChange,
@@ -27,8 +31,16 @@ vi.mock('@/lib/supabase/client', () => ({
       signOut: mocks.signOut,
     },
     from: mocks.from,
-  },
-}));
+  };
+  return {
+    supabase: client,
+    administratorSupabase: client,
+    getActiveSupabaseClient: () => client,
+    subscribeActiveSupabaseClient: mocks.subscribeActiveClient,
+    isImpersonationClientActive: mocks.isImpersonationActive,
+    deactivateImpersonationSession: mocks.deactivateImpersonation,
+  };
+});
 
 import { AuthProvider, useAuth, ROLE_LABELS, type UserRole } from '../AuthContext';
 
@@ -107,6 +119,9 @@ describe('AuthContext (Supabase)', () => {
     mocks.onAuthStateChange.mockReturnValue({
       data: { subscription: { unsubscribe: mocks.unsubscribe } },
     });
+    mocks.subscribeActiveClient.mockReturnValue(mocks.unsubscribeActiveClient);
+    mocks.isImpersonationActive.mockReturnValue(false);
+    mocks.deactivateImpersonation.mockResolvedValue(undefined);
     mocks.from.mockReturnValue({ select: mocks.select });
     mocks.select.mockReturnValue({ eq: mocks.eq });
     mocks.eq.mockReturnValue({ maybeSingle: mocks.maybeSingle });
@@ -126,14 +141,16 @@ describe('AuthContext (Supabase)', () => {
     expect(mocks.getSession).toHaveBeenCalledTimes(1);
   });
 
-  it('subscribes to onAuthStateChange and unsubscribes on unmount', async () => {
+  it('subscribes to auth and active-client changes and unsubscribes on unmount', async () => {
     const { unmount } = renderWithProvider();
     await waitFor(() =>
       expect(screen.getByTestId('loading')).toHaveTextContent('false'),
     );
     expect(mocks.onAuthStateChange).toHaveBeenCalledTimes(1);
+    expect(mocks.subscribeActiveClient).toHaveBeenCalledTimes(1);
     unmount();
     expect(mocks.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(mocks.unsubscribeActiveClient).toHaveBeenCalledTimes(1);
   });
 
   it('exposes the session/user and fetches the profile when a session exists', async () => {

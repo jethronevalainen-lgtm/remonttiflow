@@ -11,6 +11,13 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import type { CustomerPreviewScope } from '@/lib/customerPortalAccess';
+import { queryClient } from '@/lib/queryClient';
+import { isImpersonationClientActive } from '@/lib/supabase/client';
+import {
+  startAdministratorImpersonation,
+  stopAdministratorImpersonation,
+  type ActiveImpersonation,
+} from '@/lib/supabase/impersonation';
 import type { OrganizationRole } from '@/lib/supabase/types';
 
 export interface ViewAsTarget {
@@ -28,48 +35,90 @@ interface ViewAsContextValue {
   effectiveDisplayName: string;
   previewTarget: ViewAsTarget | null;
   customerPreview: CustomerPreviewScope | null;
+  /** Legacy compatibility flag. Real impersonation is never preview-only. */
   isPreviewing: boolean;
-  startPreview: (target: ViewAsTarget) => void;
-  stopPreview: () => void;
+  isImpersonating: boolean;
+  switching: boolean;
+  startPreview: (target: ViewAsTarget) => Promise<void>;
+  stopPreview: () => Promise<void>;
 }
 
 const ViewAsContext = createContext<ViewAsContextValue | null>(null);
 
 export function ViewAsProvider({ children }: { children: ReactNode }) {
-  const { user, profile } = useAuth();
-  const { currentOrg, actualRole } = useOrganization();
-  const organizationId = currentOrg?.id ?? null;
-  const [previewTarget, setPreviewTarget] = useState<ViewAsTarget | null>(null);
+  const { user, profile, loading: authLoading } = useAuth();
+  const { currentOrg, actualRole: organizationRole } = useOrganization();
+  const [impersonation, setImpersonation] = useState<ActiveImpersonation | null>(null);
+  const [switching, setSwitching] = useState(false);
 
-  // Preview is intentionally memory-only. A reload, sign-in or organization
-  // switch always returns the administrator to their real role.
   useEffect(() => {
-    setPreviewTarget(null);
-  }, [actualRole, organizationId, user?.id]);
+    if (!impersonation || authLoading) return;
+    if (!user || (!isImpersonationClientActive() && user.id !== impersonation.target.userId)) {
+      setImpersonation(null);
+      queryClient.clear();
+    }
+  }, [authLoading, impersonation, user]);
 
-  const startPreview = useCallback((target: ViewAsTarget) => {
-    if (actualRole !== 'admin' || !organizationId) return;
-    setPreviewTarget(target);
-  }, [actualRole, organizationId]);
+  const startPreview = useCallback(async (target: ViewAsTarget) => {
+    const organizationId = currentOrg?.id;
+    if (organizationRole !== 'admin' || !organizationId) {
+      throw new Error('Vain organisaation ylläpitäjä voi toimia toisena käyttäjänä.');
+    }
+    if (impersonation || isImpersonationClientActive()) {
+      throw new Error('Lopeta nykyinen käyttäjänä toimiminen ennen uuden käyttäjän valintaa.');
+    }
 
-  const stopPreview = useCallback(() => {
-    setPreviewTarget(null);
-  }, []);
+    setSwitching(true);
+    queryClient.clear();
+    try {
+      const next = await startAdministratorImpersonation({
+        organizationId,
+        targetUserId: target.userId,
+      });
+      setImpersonation(next);
+      queryClient.clear();
+    } finally {
+      setSwitching(false);
+    }
+  }, [currentOrg?.id, impersonation, organizationRole]);
+
+  const stopPreview = useCallback(async () => {
+    if (!impersonation) return;
+    setSwitching(true);
+    queryClient.clear();
+    try {
+      await stopAdministratorImpersonation(impersonation);
+    } finally {
+      setImpersonation(null);
+      queryClient.clear();
+      setSwitching(false);
+    }
+  }, [impersonation]);
 
   const value = useMemo<ViewAsContextValue>(() => {
     const signedInDisplayName = profile?.full_name ?? user?.email ?? '';
+    const target = impersonation?.target ?? null;
     return {
-      actualRole,
-      effectiveRole: previewTarget?.role ?? actualRole,
-      effectiveUserId: previewTarget?.userId ?? user?.id ?? null,
-      effectiveDisplayName: previewTarget?.displayName || previewTarget?.email || signedInDisplayName,
-      previewTarget,
-      customerPreview: previewTarget?.role === 'customer' ? previewTarget.customerPreview ?? null : null,
-      isPreviewing: Boolean(previewTarget),
+      actualRole: target?.role ?? organizationRole,
+      effectiveRole: target?.role ?? organizationRole,
+      effectiveUserId: target?.userId ?? user?.id ?? null,
+      effectiveDisplayName: target?.displayName || target?.email || signedInDisplayName,
+      previewTarget: target
+        ? {
+            userId: target.userId,
+            displayName: target.displayName,
+            email: target.email,
+            role: target.role,
+          }
+        : null,
+      customerPreview: null,
+      isPreviewing: false,
+      isImpersonating: Boolean(target),
+      switching,
       startPreview,
       stopPreview,
     };
-  }, [actualRole, previewTarget, profile?.full_name, startPreview, stopPreview, user?.email, user?.id]);
+  }, [impersonation?.target, organizationRole, profile?.full_name, startPreview, stopPreview, switching, user?.email, user?.id]);
 
   return <ViewAsContext.Provider value={value}>{children}</ViewAsContext.Provider>;
 }

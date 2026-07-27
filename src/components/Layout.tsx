@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -34,10 +34,6 @@ const customerBottomItems = [
   { path: '/tyoturvallisuus', label: 'Turvallisuus', icon: ShieldCheck },
 ];
 
-const customerPreviewBottomItems = [
-  { path: '/tilaajan-tyot', label: 'Projektit', icon: FolderKanban },
-];
-
 const managementBottomItems = [
   { path: '/dashboard', label: 'Etusivu', icon: Home },
   { path: '/projektit', label: 'Projektit', icon: FolderKanban },
@@ -49,29 +45,27 @@ const managementBottomItems = [
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const previewContentRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const { effectiveRole, isPreviewing, previewTarget, stopPreview } = useViewAs();
+  const {
+    effectiveRole,
+    isImpersonating,
+    previewTarget,
+    stopPreview,
+    switching,
+  } = useViewAs();
   const { loading, refreshing, error, operationError, refresh } = useAppDataContext();
   const visibleError = operationError ?? error;
-  const lockPreviewContent = isPreviewing && effectiveRole !== 'customer';
   const bottomItems = effectiveRole === 'customer'
-    ? isPreviewing ? customerPreviewBottomItems : customerBottomItems
+    ? customerBottomItems
     : effectiveRole === 'worker'
       ? workerBottomItems
       : managementBottomItems;
 
-  useEffect(() => {
-    const node = previewContentRef.current;
-    if (!node) return;
-    if (lockPreviewContent) {
-      node.setAttribute('inert', '');
-      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    } else {
-      node.removeAttribute('inert');
-    }
-  }, [lockPreviewContent, location.pathname]);
+  const returnToAdministrator = async () => {
+    await stopPreview();
+    navigate('/dashboard', { replace: true });
+  };
 
   return (
     <div className="flex h-[100dvh] min-h-[100dvh] w-full max-w-full overflow-hidden bg-slate-50">
@@ -87,13 +81,25 @@ export default function Layout() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onMenuClick={() => setMobileOpen(true)} />
 
-        {isPreviewing && previewTarget && (
-          <div className="flex flex-col gap-2 border-b border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-950 sm:flex-row sm:items-center sm:px-4">
+        {isImpersonating && previewTarget && (
+          <div className="flex flex-col gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 sm:flex-row sm:items-center sm:px-4">
             <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center">
-              <Eye size={17} className="mt-0.5 flex-shrink-0 text-indigo-700 sm:mt-0" />
-              <p className="min-w-0 leading-5"><span className="font-semibold">Esikatselutila:</span>{' '}<span className="font-medium">{previewTarget.displayName || previewTarget.email}</span>{' '}<span className="text-indigo-700">({ROLE_LABELS[previewTarget.role]})</span>.<span className="hidden sm:inline"> Sivujen kaikki muokkaustoiminnot on poistettu käytöstä esikatselun ajaksi.</span></p>
+              <Eye size={17} className="mt-0.5 flex-shrink-0 text-amber-700 sm:mt-0" />
+              <p className="min-w-0 leading-5">
+                <span className="font-semibold">Toimit käyttäjänä:</span>{' '}
+                <span className="font-medium">{previewTarget.displayName || previewTarget.email}</span>{' '}
+                <span className="text-amber-800">({ROLE_LABELS[previewTarget.role]})</span>.
+                <span className="hidden sm:inline"> Kaikki toiminnot ja tallennukset ovat oikeita ja ne suoritetaan tämän käyttäjän oikeuksilla.</span>
+              </p>
             </div>
-            <button type="button" onClick={stopPreview} className="flex min-h-10 flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-white px-3 py-2 font-semibold text-indigo-800 transition-colors hover:bg-indigo-100"><X size={16} /> Palaa admin-näkymään</button>
+            <button
+              type="button"
+              disabled={switching}
+              onClick={() => void returnToAdministrator()}
+              className="flex min-h-10 flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-400 bg-white px-3 py-2 font-semibold text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              <X size={16} /> {switching ? 'Palautetaan…' : 'Palaa admin-istuntoon'}
+            </button>
           </div>
         )}
 
@@ -108,10 +114,8 @@ export default function Layout() {
         <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 pb-24 sm:px-4 sm:py-5 md:px-6 md:py-6 md:pb-8">
           <AnimatePresence mode="wait">
             <motion.div
-              ref={previewContentRef}
               key={location.pathname}
-              className={`min-w-0 max-w-full ${lockPreviewContent ? 'pointer-events-none select-text' : ''}`}
-              aria-disabled={lockPreviewContent || undefined}
+              className="min-w-0 max-w-full"
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
