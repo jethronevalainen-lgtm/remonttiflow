@@ -7,14 +7,16 @@ import {
 } from '@/lib/workspaceRules';
 
 describe('worker route boundaries', () => {
-  it('contains personal work, safety and project collaboration tools', () => {
+  it('contains personal work, records, safety and project collaboration tools', () => {
     expect(ROLE_ROUTES.worker).toEqual([
       '/dashboard',
       '/tarkastukset',
       '/tyomaaraykset',
       '/kuittaukset',
       '/tuntikirjaukset',
+      '/kirjaukset',
       '/matkakulut',
+      '/henkilokortit',
       '/tyoturvallisuus',
       '/projektikeskustelut',
       '/viestinta',
