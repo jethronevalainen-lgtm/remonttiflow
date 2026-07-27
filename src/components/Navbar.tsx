@@ -150,7 +150,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { effectiveRole, effectiveDisplayName, isPreviewing } = useViewAs();
+  const { effectiveRole, effectiveDisplayName, isImpersonating } = useViewAs();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     overview: true,
     'work-control': true,
@@ -180,7 +180,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
                 items: [
                   { label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' },
                   { label: 'Varmuuskopiot', icon: DatabaseBackup, path: '/varmuuskopiot' },
-                  { label: 'Käyttäjänäkymän esikatselu', icon: Eye, path: '/kayttajaesikatselu' },
+                  { label: 'Toimi käyttäjänä', icon: Eye, path: '/kayttajaesikatselu' },
                 ],
               }]
             : []),
@@ -276,7 +276,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
           {!collapsed && (
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white">{displayName}</p>
-              <p className="truncate text-[11px] text-slate-400">{isPreviewing ? `Esikatselu: ${ROLE_LABELS[role]}` : ROLE_LABELS[role]}</p>
+              <p className="truncate text-[11px] text-slate-400">{isImpersonating ? `Käyttäjänä: ${ROLE_LABELS[role]}` : ROLE_LABELS[role]}</p>
             </div>
           )}
         </div>
