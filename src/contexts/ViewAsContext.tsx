@@ -10,6 +10,7 @@ import {
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import type { CustomerPreviewScope } from '@/lib/customerPortalAccess';
 import type { OrganizationRole } from '@/lib/supabase/types';
 
 export interface ViewAsTarget {
@@ -17,6 +18,7 @@ export interface ViewAsTarget {
   displayName: string;
   email: string | null;
   role: OrganizationRole;
+  customerPreview?: CustomerPreviewScope;
 }
 
 interface ViewAsContextValue {
@@ -25,6 +27,7 @@ interface ViewAsContextValue {
   effectiveUserId: string | null;
   effectiveDisplayName: string;
   previewTarget: ViewAsTarget | null;
+  customerPreview: CustomerPreviewScope | null;
   isPreviewing: boolean;
   startPreview: (target: ViewAsTarget) => void;
   stopPreview: () => void;
@@ -61,6 +64,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
       effectiveUserId: previewTarget?.userId ?? user?.id ?? null,
       effectiveDisplayName: previewTarget?.displayName || previewTarget?.email || signedInDisplayName,
       previewTarget,
+      customerPreview: previewTarget?.role === 'customer' ? previewTarget.customerPreview ?? null : null,
       isPreviewing: Boolean(previewTarget),
       startPreview,
       stopPreview,
