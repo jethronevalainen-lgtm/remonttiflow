@@ -1,12 +1,6 @@
 import { useMemo, useState, type DragEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  addDays,
-  addWeeks,
-  format,
-  parseISO,
-  startOfWeek,
-} from 'date-fns';
+import { addDays, addWeeks, format, startOfWeek } from 'date-fns';
 import { fi } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 import {
@@ -37,7 +31,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -46,8 +39,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ROLE_LABELS } from '@/contexts/AuthContext';
-import { useAuth } from '@/contexts/AuthContext';
+import { ROLE_LABELS, useAuth } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
@@ -106,32 +98,32 @@ function isoDate(date: Date) {
   return format(date, 'yyyy-MM-dd');
 }
 
-function tone(shift: Shift, conflict: boolean) {
-  if (conflict) return 'border-red-300 bg-red-50 text-red-900 ring-1 ring-red-200';
-  if (shift.sourceType === 'work_order') return 'border-blue-300 bg-blue-50 text-blue-900';
-  const normalized = shift.shiftType.toLocaleLowerCase('fi');
-  if (normalized.includes('loma')) return 'border-purple-200 bg-purple-50 text-purple-800';
-  if (normalized.includes('koulutus')) return 'border-cyan-200 bg-cyan-50 text-cyan-800';
-  if (normalized.includes('sairas')) return 'border-red-200 bg-red-50 text-red-800';
-  return 'border-orange-200 bg-orange-50 text-orange-900';
-}
-
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || '?';
 }
 
-function manualShiftFrom(values: ShiftForm, projectName: string): Omit<Shift, 'id'> {
+function cardTone(shift: Shift, conflict: boolean) {
+  if (conflict) return 'border-red-300 bg-red-50 text-red-900 ring-1 ring-red-200';
+  if (shift.sourceType === 'work_order') return 'border-blue-300 bg-blue-50 text-blue-900';
+  const type = shift.shiftType.toLocaleLowerCase('fi');
+  if (type.includes('loma')) return 'border-purple-200 bg-purple-50 text-purple-800';
+  if (type.includes('koulutus')) return 'border-cyan-200 bg-cyan-50 text-cyan-800';
+  if (type.includes('sairas')) return 'border-red-200 bg-red-50 text-red-800';
+  return 'border-orange-200 bg-orange-50 text-orange-900';
+}
+
+function manualShift(form: ShiftForm, projectName: string): Omit<Shift, 'id'> {
   return {
-    userId: values.userId,
-    employeeName: values.employeeName,
-    projectId: values.projectId || undefined,
+    userId: form.userId,
+    employeeName: form.employeeName,
+    projectId: form.projectId || undefined,
     project: projectName,
-    title: values.title.trim(),
-    date: values.date,
-    startTime: values.startTime,
-    endTime: values.endTime,
-    shiftType: values.shiftType.trim(),
-    notes: values.notes.trim(),
+    title: form.title.trim(),
+    date: form.date,
+    startTime: form.startTime,
+    endTime: form.endTime,
+    shiftType: form.shiftType.trim(),
+    notes: form.notes.trim(),
     sourceType: 'manual',
   };
 }
@@ -141,11 +133,7 @@ export default function Tyovuorokalenteri() {
   const { user } = useAuth();
   const { currentOrg } = useOrganization();
   const { projects } = useAppDataContext();
-  const {
-    people,
-    workOrders,
-    refresh: refreshWorkspace,
-  } = useRoleWorkspace();
+  const { people, workOrders, refresh: refreshWorkspace } = useRoleWorkspace();
   const { shifts, loading, error, refresh } = useSchedulingData();
 
   const [weekOffset, setWeekOffset] = useState(0);
@@ -195,35 +183,26 @@ export default function Tyovuorokalenteri() {
       .sort((a, b) => a.name.localeCompare(b.name, 'fi'));
   }, [people, personSearch, shifts]);
 
-  const totalHours = filteredWeekShifts.reduce(
-    (sum, shift) => sum + hoursBetween(shift.startTime, shift.endTime),
-    0,
-  );
-  const scheduledUsers = new Set(filteredWeekShifts.map((shift) => shift.userId || shift.employeeName)).size;
-  const conflictCount = rowPeople.reduce((count, person) => count + visibleDays.filter((day) => {
-    const date = isoDate(day);
-    const dayShifts = filteredWeekShifts.filter((shift) => shift.date === date && (
-      person.userId ? shift.userId === person.userId : !shift.userId && shift.employeeName === person.name
-    ));
-    return hasScheduleConflict(dayShifts);
-  }).length, 0);
-
-  const personShiftsForDate = (person: CalendarPerson, date: string) => filteredWeekShifts.filter((shift) => (
+  const shiftsFor = (person: CalendarPerson, date: string) => filteredWeekShifts.filter((shift) => (
     shift.date === date
     && (person.userId
       ? shift.userId === person.userId
       : !shift.userId && shift.employeeName === person.name)
   ));
 
+  const totalHours = filteredWeekShifts.reduce(
+    (sum, shift) => sum + hoursBetween(shift.startTime, shift.endTime),
+    0,
+  );
+  const scheduledUsers = new Set(filteredWeekShifts.map((shift) => shift.userId || shift.employeeName)).size;
+  const conflictCount = rowPeople.reduce((count, person) => count + visibleDays.filter((day) => (
+    hasScheduleConflict(shiftsFor(person, isoDate(day)))
+  )).length, 0);
+
   const openCreate = (date = isoDate(weekStart), userId = '') => {
     const person = peopleById.get(userId);
     setEditing(null);
-    setForm({
-      ...EMPTY_FORM,
-      date,
-      userId,
-      employeeName: person?.name ?? '',
-    });
+    setForm({ ...EMPTY_FORM, date, userId, employeeName: person?.name ?? '' });
     setFormErrors([]);
     setOperationError(null);
     setSuccessMessage(null);
@@ -254,13 +233,13 @@ export default function Tyovuorokalenteri() {
   };
 
   const validateForm = () => {
-    const nextErrors: string[] = [];
-    if (!form.userId) nextErrors.push('Valitse kirjautuva käyttäjä.');
-    if (!form.date) nextErrors.push('Päivä on pakollinen.');
-    if (!form.startTime || !form.endTime) nextErrors.push('Alku- ja päättymisaika ovat pakollisia.');
-    if (form.startTime && form.endTime && form.endTime <= form.startTime) nextErrors.push('Päättymisajan pitää olla alkamisajan jälkeen.');
-    if (!form.shiftType.trim()) nextErrors.push('Varaustyyppi on pakollinen.');
-    return nextErrors;
+    const next: string[] = [];
+    if (!form.userId) next.push('Valitse kirjautuva käyttäjä.');
+    if (!form.date) next.push('Päivä on pakollinen.');
+    if (!form.startTime || !form.endTime) next.push('Alku- ja päättymisaika ovat pakollisia.');
+    if (form.startTime && form.endTime && form.endTime <= form.startTime) next.push('Päättymisajan pitää olla alkamisajan jälkeen.');
+    if (!form.shiftType.trim()) next.push('Varaustyyppi on pakollinen.');
+    return next;
   };
 
   const save = async () => {
@@ -270,11 +249,10 @@ export default function Tyovuorokalenteri() {
 
     const person = peopleById.get(form.userId);
     const project = projects.find((item) => item.id === form.projectId);
-    const values = {
+    const payload = manualShift({
       ...form,
       employeeName: person?.name ?? form.employeeName,
-    };
-    const payload = manualShiftFrom(values, project?.name ?? '');
+    }, project?.name ?? '');
 
     setSaving(true);
     setOperationError(null);
@@ -427,7 +405,7 @@ export default function Tyovuorokalenteri() {
       onDragStart={(event) => startDrag(event, shift)}
       onDragEnd={() => { setDragState(null); setDropTarget(null); }}
       onClick={() => openEdit(shift)}
-      className={`group w-full rounded-lg border p-2 text-left text-xs shadow-sm transition hover:shadow-md ${tone(shift, conflict)}`}
+      className={`group w-full rounded-lg border p-2 text-left text-xs shadow-sm transition hover:shadow-md ${cardTone(shift, conflict)}`}
       title={shift.sourceType === 'manual' ? 'Vedä siirtääksesi. Alt/Option + vedä kopioidaksesi.' : 'Vedä siirtääksesi koko työmääräyksen työjaksoa.'}
     >
       <div className="flex items-start justify-between gap-1">
@@ -456,18 +434,14 @@ export default function Tyovuorokalenteri() {
           <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300"><CalendarDays size={16} /> Resursointi</div>
           <h1 className="text-3xl font-bold tracking-tight">Resurssikalenteri</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-            Siirrä varaus vetämällä. Pidä Alt/Option pohjassa kopioidaksesi käsin luodun varauksen. Työmääräyksestä syntynyt varaus siirtää koko työjakson.
+            Siirrä varaus vetämällä. Pidä Alt/Option pohjassa kopioidaksesi käsin luodun varauksen. Työmääräysvaraus siirtää koko työjakson.
           </p>
         </div>
         <Button onClick={() => openCreate()} className="gap-2 bg-orange-500 hover:bg-orange-600"><Plus size={16} /> Lisää varaus</Button>
       </div>
 
-      {(error || operationError) && (
-        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} />{operationError ?? error}</div>
-      )}
-      {successMessage && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{successMessage}</div>
-      )}
+      {(error || operationError) && <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={16} />{operationError ?? error}</div>}
+      {successMessage && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{successMessage}</div>}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[
@@ -485,20 +459,9 @@ export default function Tyovuorokalenteri() {
           <Button variant="outline" size="sm" onClick={() => setWeekOffset(0)}>Tämä viikko</Button>
           <Button variant="outline" size="sm" onClick={() => setWeekOffset((value) => value + 1)}><ChevronRight size={16} /></Button>
         </div>
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <Input value={personSearch} onChange={(event) => setPersonSearch(event.target.value)} placeholder="Hae työntekijää tai roolia…" className="pl-9" />
-        </div>
-        <Select value={projectFilter} onValueChange={setProjectFilter}>
-          <SelectTrigger><Filter size={15} className="mr-2" /><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_PROJECTS}>Kaikki projektit ja varaukset</SelectItem>
-            {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
-          <Checkbox checked={showWeekends} onCheckedChange={(checked) => { setShowWeekends(checked === true); setMobileDayIndex(0); }} /> Näytä viikonloput
-        </label>
+        <div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input value={personSearch} onChange={(event) => setPersonSearch(event.target.value)} placeholder="Hae työntekijää tai roolia…" className="pl-9" /></div>
+        <Select value={projectFilter} onValueChange={setProjectFilter}><SelectTrigger><Filter size={15} className="mr-2" /><SelectValue /></SelectTrigger><SelectContent><SelectItem value={ALL_PROJECTS}>Kaikki projektit ja varaukset</SelectItem>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select>
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700"><Checkbox checked={showWeekends} onCheckedChange={(checked) => { setShowWeekends(checked === true); setMobileDayIndex(0); }} /> Näytä viikonloput</label>
         <p className="font-semibold text-slate-800 xl:col-span-4 xl:text-right">{format(weekStart, 'd.M.yyyy', { locale: fi })} – {format(weekEnd, 'd.M.yyyy', { locale: fi })}</p>
       </div>
 
@@ -515,21 +478,13 @@ export default function Tyovuorokalenteri() {
             return (
               <div key={person.userId ?? `legacy:${person.name}`} className="grid border-b" style={{ gridTemplateColumns: `220px repeat(${visibleDays.length}, minmax(150px, 1fr))` }}>
                 <div className="border-r p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{person.name}</p>
-                      <p className="truncate text-[11px] text-slate-500">{person.role ? ROLE_LABELS[person.role] : 'Vanha nimipohjainen rivi'} · {weeklyHours.toFixed(1)} h</p>
-                    </div>
-                  </div>
-                  {person.userId && (
-                    <Button variant="ghost" size="sm" onClick={() => void copyPersonWeek(person)} disabled={saving} className="mt-2 h-7 w-full justify-start gap-1 px-2 text-xs text-slate-500"><Copy size={13} /> Kopioi käsivuorot ensi viikolle</Button>
-                  )}
+                  <div className="flex items-center gap-2"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{person.name}</p><p className="truncate text-[11px] text-slate-500">{person.role ? ROLE_LABELS[person.role] : 'Vanha nimipohjainen rivi'} · {weeklyHours.toFixed(1)} h</p></div></div>
+                  {person.userId && <Button variant="ghost" size="sm" onClick={() => void copyPersonWeek(person)} disabled={saving} className="mt-2 h-7 w-full justify-start gap-1 px-2 text-xs text-slate-500"><Copy size={13} /> Kopioi käsivuorot ensi viikolle</Button>}
                 </div>
 
                 {visibleDays.map((day) => {
                   const date = isoDate(day);
-                  const dayShifts = personShiftsForDate(person, date);
+                  const dayShifts = shiftsFor(person, date);
                   const conflict = hasScheduleConflict(dayShifts);
                   const targetKey = `${person.userId ?? person.name}:${date}`;
                   return (
@@ -541,9 +496,7 @@ export default function Tyovuorokalenteri() {
                       className={`min-h-32 space-y-2 border-r p-2 transition-colors ${dropTarget === targetKey ? 'bg-blue-50 ring-2 ring-inset ring-blue-300' : ''}`}
                     >
                       {dayShifts.map((shift) => renderShiftCard(shift, conflict))}
-                      {person.userId && (
-                        <button type="button" onClick={() => openCreate(date, person.userId)} className="flex w-full items-center justify-center rounded-md border border-dashed border-slate-200 py-1 text-slate-400 hover:border-orange-400 hover:text-orange-600"><Plus size={13} /></button>
-                      )}
+                      {person.userId && <button type="button" onClick={() => openCreate(date, person.userId)} className="flex w-full items-center justify-center rounded-md border border-dashed border-slate-200 py-1 text-slate-400 hover:border-orange-400 hover:text-orange-600"><Plus size={13} /></button>}
                       {conflict && <p className="flex items-center gap-1 text-[10px] font-semibold text-red-700"><AlertTriangle size={11} /> Päällekkäinen varaus</p>}
                     </div>
                   );
@@ -558,25 +511,16 @@ export default function Tyovuorokalenteri() {
 
       <div className="space-y-3 lg:hidden">
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {visibleDays.map((day, index) => (
-            <button key={day.toISOString()} type="button" onClick={() => setMobileDayIndex(index)} className={`min-w-20 rounded-xl border px-3 py-2 text-center ${index === mobileDayIndex ? 'border-orange-300 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600'}`}>
-              <span className="block text-xs uppercase">{format(day, 'EEE', { locale: fi })}</span>
-              <span className="block font-semibold">{format(day, 'd.M.')}</span>
-            </button>
-          ))}
+          {visibleDays.map((day, index) => <button key={day.toISOString()} type="button" onClick={() => setMobileDayIndex(index)} className={`min-w-20 rounded-xl border px-3 py-2 text-center ${index === mobileDayIndex ? 'border-orange-300 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600'}`}><span className="block text-xs uppercase">{format(day, 'EEE', { locale: fi })}</span><span className="block font-semibold">{format(day, 'd.M.')}</span></button>)}
         </div>
         {rowPeople.map((person) => {
           const date = isoDate(selectedMobileDay);
-          const dayShifts = personShiftsForDate(person, date);
+          const dayShifts = shiftsFor(person, date);
           const conflict = hasScheduleConflict(dayShifts);
           return (
             <Card key={person.userId ?? `legacy:${person.name}`} className={conflict ? 'border-red-300' : 'border-slate-200'}>
               <CardContent className="space-y-3 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div>
-                  <div className="min-w-0 flex-1"><p className="truncate font-medium">{person.name}</p><p className="text-xs text-slate-500">{person.role ? ROLE_LABELS[person.role] : 'Vanha rivi'}</p></div>
-                  {person.userId && <Button variant="outline" size="sm" onClick={() => openCreate(date, person.userId)}><Plus size={15} /></Button>}
-                </div>
+                <div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div><div className="min-w-0 flex-1"><p className="truncate font-medium">{person.name}</p><p className="text-xs text-slate-500">{person.role ? ROLE_LABELS[person.role] : 'Vanha rivi'}</p></div>{person.userId && <Button variant="outline" size="sm" onClick={() => openCreate(date, person.userId)}><Plus size={15} /></Button>}</div>
                 {dayShifts.length > 0 ? dayShifts.map((shift) => renderShiftCard(shift, conflict)) : <p className="rounded-lg border border-dashed p-3 text-center text-sm text-slate-400">Ei varauksia</p>}
                 {conflict && <p className="flex items-center gap-1 text-xs font-semibold text-red-700"><AlertTriangle size={13} /> Päällekkäinen varaus</p>}
               </CardContent>
@@ -605,6 +549,7 @@ export default function Tyovuorokalenteri() {
             <div className="flex flex-wrap gap-2">
               {editing && <Button variant="outline" onClick={() => void copyEditingShift(1)} disabled={saving} className="gap-1"><Copy size={14} /> Seuraava päivä</Button>}
               {editing && <Button variant="outline" onClick={() => void copyEditingShift(7)} disabled={saving} className="gap-1"><Copy size={14} /> Ensi viikko</Button>}
+              {editing && <Button variant="ghost" onClick={() => { setDeleteTarget(editing); setDialogOpen(false); }} disabled={saving} className="gap-1 text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 size={14} /> Poista</Button>}
             </div>
             <div className="flex gap-2"><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void save()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></div>
           </DialogFooter>
@@ -614,10 +559,6 @@ export default function Tyovuorokalenteri() {
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Poista varaus</AlertDialogTitle><AlertDialogDescription>Poistetaanko {deleteTarget?.employeeName} varaus päivältä {deleteTarget?.date}?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction onClick={() => void remove()} className="bg-red-600 hover:bg-red-700">Poista</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
       </AlertDialog>
-
-      {editing && editing.sourceType === 'manual' && dialogOpen && (
-        <Button type="button" variant="ghost" className="hidden" onClick={() => setDeleteTarget(editing)}><Trash2 size={16} /></Button>
-      )}
     </motion.div>
   );
 }
