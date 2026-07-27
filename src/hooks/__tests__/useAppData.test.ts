@@ -188,9 +188,9 @@ describe('useAppData — local CRUD helpers', () => {
     expect(created?.id).toMatch(/^LEAD-/);
 
     act(() => {
-      result.current.updateCrmLead(created!.id, { stage: 'Sopimus' });
+      result.current.updateCrmLead(created!.id, { stage: 'Voitettu' });
     });
-    expect(result.current.crmLeads[0].stage).toBe('Sopimus');
+    expect(result.current.crmLeads[0].stage).toBe('Voitettu');
 
     act(() => {
       result.current.deleteCrmLead(created!.id);

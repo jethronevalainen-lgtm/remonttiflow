@@ -53,7 +53,14 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!impersonation || authLoading) return;
-    if (!user || (!isImpersonationClientActive() && user.id !== impersonation.target.userId)) {
+
+    // The memory-only impersonation client publishes before AuthContext has
+    // finished hydrating its target session. During that short handoff `user`
+    // can be null. Clearing the metadata at that point would strand the browser
+    // in the target user's real session without the return-to-admin control.
+    if (isImpersonationClientActive()) return;
+
+    if (!user || user.id !== impersonation.target.userId) {
       setImpersonation(null);
       queryClient.clear();
     }

@@ -186,7 +186,17 @@ const EMPLOYEE_STATUSES = ['Aktiivinen', 'Lomalla', 'Sairas', 'Koulutuksessa', '
 const EQUIPMENT_STATUSES = ['Käytössä', 'Vapaa', 'Huollossa', 'Vuokralla'] as const;
 const CUSTOMER_TYPES = ['Yritys', 'Yksityinen', 'Taloyhtiö'] as const;
 const CUSTOMER_STATUSES = ['Aktiivinen', 'Epäaktiivinen'] as const;
-const CRM_STAGES = ['Uusi', 'Tarjous tehty', 'Neuvottelu', 'Sopimus'] as const;
+const CRM_STAGES = [
+  'Uusi',
+  'Kartoitus sovittu',
+  'Kartoitettu',
+  'Tarjous laskennassa',
+  'Tarjous lähetetty',
+  'Neuvottelu',
+  'Voitettu',
+  'Hävitty',
+  'Jäissä',
+] as const;
 const SAFETY_TYPES = ['incident', 'risk', 'inspection', 'training'] as const;
 const SAFETY_SEVERITIES = ['Lievä', 'Keskitasoinen', 'Vakava'] as const;
 

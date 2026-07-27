@@ -18,6 +18,7 @@ export function useCustomerRelations() {
 
   return {
     contacts: query.data?.contacts ?? [],
+    sites: query.data?.sites ?? [],
     activities: query.data?.activities ?? [],
     loading: query.isLoading,
     refreshing: query.isFetching,
