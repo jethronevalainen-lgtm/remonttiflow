@@ -64,8 +64,8 @@ export default function Login() {
         <Card className="border-white/10 bg-white shadow-2xl shadow-black/30">
           <CardHeader className="items-center text-center">
             <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-xl bg-orange-500 text-xl font-black text-white shadow-lg shadow-orange-500/25">{BRAND.shortName}</div>
-            <CardTitle className="text-2xl">Kirjaudu {BRAND.name}-työtilaan</CardTitle>
-            <CardDescription>{BRAND.tagline}</CardDescription>
+            <CardTitle className="text-2xl">{BRAND.name}</CardTitle>
+            <CardDescription>Kirjaudu työtilaan · {BRAND.tagline}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
