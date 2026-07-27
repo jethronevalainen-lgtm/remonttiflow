@@ -41,8 +41,28 @@ export const ROLE_TEST_USERS: Record<UserRole, RoleTestUser> = {
       'project_chat.internal',
       'project_documents.customer.share',
       'change_orders.customer.submit',
+      'time_entries.read.all',
     ],
     forbiddenPermissions: ['organization.manage', 'change_orders.customer.decide'],
+  },
+  project_coordinator: {
+    id: '00000000-0000-4000-8000-000000000005',
+    email: 'project-coordinator@roles.vakantti.invalid',
+    displayName: 'Automaatiotesti Projektikoordinaattori',
+    role: 'project_coordinator',
+    home: '/dashboard',
+    requiredPermissions: [
+      'projects.manage',
+      'work_orders.manage',
+      'project_chat.internal',
+      'project_documents.customer.share',
+      'time_entries.read.all',
+    ],
+    forbiddenPermissions: [
+      'organization.manage',
+      'members.manage',
+      'change_orders.customer.decide',
+    ],
   },
   worker: {
     id: '00000000-0000-4000-8000-000000000003',
