@@ -65,6 +65,7 @@ export function generateProjectWorkTargets(values: {
   padLength?: number;
 }): ProjectWorkTargetDraft[] {
   const prefix = values.prefix.trim();
+  const separator = prefix && /[a-z0-9åäö]$/i.test(prefix) ? ' ' : '';
   const start = Number.isFinite(values.start) ? Math.max(0, Math.floor(values.start)) : 1;
   const count = Number.isFinite(values.count) ? Math.min(100, Math.max(1, Math.floor(values.count))) : 1;
   const padLength = Number.isFinite(values.padLength)
@@ -73,7 +74,7 @@ export function generateProjectWorkTargets(values: {
 
   return Array.from({ length: count }, (_, index) => {
     const number = String(start + index).padStart(padLength, '0');
-    const title = `${prefix}${number}`.trim();
+    const title = `${prefix}${separator}${number}`.trim();
     return {
       id: `target-${index}-${normalizedKey(title, index)}`,
       key: normalizedKey(title, index),
