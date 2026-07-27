@@ -8,12 +8,12 @@ import { ErrorState, LoadingState } from '@/components/states';
 import {
   Dashboard, Tyonjohto, Tarkastukset, Projektit, ProjectWorkspace, Aikataulutus,
   Paivakirjat, Kuittaukset, Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset,
-  Tyovuorokalenteri, Tuntikirjaukset, Kirjaukset, Matkakulut, CRM, Asiakkaat,
-  AIPage, Viestinta, Kalusto, Henkilosto, Henkilokortit, PalkkaAineisto, Lomakkeet,
-  Raportit, Hallinta, KayttajaEsikatselu, Tilaukset, TilaajanTyot, CustomerProject,
-  CustomerCollaborationManager, ProjectDiscussions, ProjectConversation,
-  ProjectRequests, SafetyPortal, QrHallinta, QrKirjautuminen, Varmuuskopiot,
-  Toiminnanohjaus,
+  Tyovuorokalenteri, Tuntikirjaukset, CoordinatorTimeEntries, Kirjaukset, Matkakulut,
+  CRM, Asiakkaat, AIPage, Viestinta, Kalusto, Henkilosto, Henkilokortit,
+  PalkkaAineisto, Lomakkeet, Raportit, Hallinta, KayttajaEsikatselu, Tilaukset,
+  TilaajanTyot, CustomerProject, CustomerCollaborationManager, ProjectDiscussions,
+  ProjectConversation, ProjectRequests, SafetyPortal, QrHallinta, QrKirjautuminen,
+  Varmuuskopiot, Toiminnanohjaus,
 } from './pages';
 import HenkilokortitPreview from './pages/HenkilokortitPreview';
 import Login from './pages/Login';
@@ -23,11 +23,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
   const location = useLocation();
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <LoadingState text="Ladataan…" />
-      </div>
-    );
+    return <div className="flex min-h-screen items-center justify-center"><LoadingState text="Ladataan…" /></div>;
   }
   if (!session) {
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
@@ -35,13 +31,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function WorkspaceError({
-  error,
-  onRetry,
-}: {
-  error: string | null;
-  onRetry: () => void;
-}) {
+function WorkspaceError({ error, onRetry }: { error: string | null; onRetry: () => void }) {
   return (
     <div className="flex min-h-[40vh] items-center justify-center px-4">
       <ErrorState
@@ -69,20 +59,10 @@ function RoleGuard({
   const retry = () => { void refreshOrganizations().catch(() => undefined); };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <LoadingState text="Ladataan käyttöoikeuksia…" />
-      </div>
-    );
+    return <div className="flex min-h-[40vh] items-center justify-center"><LoadingState text="Ladataan käyttöoikeuksia…" /></div>;
   }
-
-  if (error || !role) {
-    return <WorkspaceError error={error} onRetry={retry} />;
-  }
-
-  if (!allowedRoles.includes(role)) {
-    return <Navigate to={homeForRole(role)} replace />;
-  }
+  if (error || !role) return <WorkspaceError error={error} onRetry={retry} />;
+  if (!allowedRoles.includes(role)) return <Navigate to={homeForRole(role)} replace />;
   return <>{children}</>;
 }
 
@@ -101,70 +81,68 @@ function RoleHome() {
   const retry = () => { void refreshOrganizations().catch(() => undefined); };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <LoadingState text="Avataan työtilaa…" />
-      </div>
-    );
+    return <div className="flex min-h-[40vh] items-center justify-center"><LoadingState text="Avataan työtilaa…" /></div>;
   }
-
-  if (error || !effectiveRole) {
-    return <WorkspaceError error={error} onRetry={retry} />;
-  }
-
+  if (error || !effectiveRole) return <WorkspaceError error={error} onRetry={retry} />;
   return <Navigate to={homeForRole(effectiveRole)} replace />;
 }
 
 function EmployeeCardsRoute() {
   const { effectiveRole, isPreviewing } = useViewAs();
-  return isPreviewing && effectiveRole !== 'admin'
-    ? <HenkilokortitPreview />
-    : <Henkilokortit />;
+  return isPreviewing && effectiveRole !== 'admin' ? <HenkilokortitPreview /> : <Henkilokortit />;
+}
+
+function TimeEntriesRoute() {
+  const { effectiveRole } = useViewAs();
+  return effectiveRole === 'project_coordinator' ? <CoordinatorTimeEntries /> : <Tuntikirjaukset />;
 }
 
 function AppRoutes() {
-  const allRoles: UserRole[] = ['admin', 'supervisor', 'worker', 'customer'];
-  const internalRoles: UserRole[] = ['admin', 'supervisor', 'worker'];
+  const allRoles: UserRole[] = ['admin', 'supervisor', 'project_coordinator', 'worker', 'customer'];
+  const internalRoles: UserRole[] = ['admin', 'supervisor', 'project_coordinator', 'worker'];
+  const operationalManagers: UserRole[] = ['admin', 'supervisor', 'project_coordinator'];
+  const workforceRoles: UserRole[] = ['admin', 'supervisor', 'worker'];
+
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/" element={<RoleHome />} />
         <Route path="/dashboard" element={<RoleGuard allowedRoles={internalRoles}><Dashboard /></RoleGuard>} />
-        <Route path="/tyonjohto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tyonjohto /></RoleGuard>} />
+        <Route path="/tyonjohto" element={<RoleGuard allowedRoles={operationalManagers}><Tyonjohto /></RoleGuard>} />
         <Route path="/tarkastukset" element={<RoleGuard allowedRoles={internalRoles}><Tarkastukset /></RoleGuard>} />
-        <Route path="/projektit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Projektit /></RoleGuard>} />
-        <Route path="/projektit/:projectId" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><ProjectWorkspace /></RoleGuard>} />
-        <Route path="/projektit/:projectId/tilaajayhteistyo" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><CustomerCollaborationManager /></RoleGuard>} />
-        <Route path="/projektipyynnot" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><ProjectRequests /></RoleGuard>} />
+        <Route path="/projektit" element={<RoleGuard allowedRoles={operationalManagers}><Projektit /></RoleGuard>} />
+        <Route path="/projektit/:projectId" element={<RoleGuard allowedRoles={operationalManagers}><ProjectWorkspace /></RoleGuard>} />
+        <Route path="/projektit/:projectId/tilaajayhteistyo" element={<RoleGuard allowedRoles={operationalManagers}><CustomerCollaborationManager /></RoleGuard>} />
+        <Route path="/projektipyynnot" element={<RoleGuard allowedRoles={operationalManagers}><ProjectRequests /></RoleGuard>} />
         <Route path="/projektikeskustelut" element={<RoleGuard allowedRoles={allRoles}><CustomerPreviewBoundary><ProjectDiscussions /></CustomerPreviewBoundary></RoleGuard>} />
         <Route path="/projektikeskustelut/:projectId" element={<RoleGuard allowedRoles={allRoles}><CustomerPreviewBoundary><ProjectConversation /></CustomerPreviewBoundary></RoleGuard>} />
-        <Route path="/aikataulutus" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Aikataulutus /></RoleGuard>} />
-        <Route path="/paivakirjat" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Paivakirjat /></RoleGuard>} />
+        <Route path="/aikataulutus" element={<RoleGuard allowedRoles={operationalManagers}><Aikataulutus /></RoleGuard>} />
+        <Route path="/paivakirjat" element={<RoleGuard allowedRoles={operationalManagers}><Paivakirjat /></RoleGuard>} />
         <Route path="/kuittaukset" element={<RoleGuard allowedRoles={internalRoles}><Kuittaukset /></RoleGuard>} />
-        <Route path="/laskenta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Laskenta /></RoleGuard>} />
-        <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Maaralaskenta /></RoleGuard>} />
-        <Route path="/jatehuolto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Jatehuolto /></RoleGuard>} />
+        <Route path="/laskenta" element={<RoleGuard allowedRoles={operationalManagers}><Laskenta /></RoleGuard>} />
+        <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={operationalManagers}><Maaralaskenta /></RoleGuard>} />
+        <Route path="/jatehuolto" element={<RoleGuard allowedRoles={operationalManagers}><Jatehuolto /></RoleGuard>} />
         <Route path="/tyomaaraykset" element={<RoleGuard allowedRoles={internalRoles}><Tyomaaraykset /></RoleGuard>} />
-        <Route path="/tilaukset" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tilaukset /></RoleGuard>} />
+        <Route path="/tilaukset" element={<RoleGuard allowedRoles={operationalManagers}><Tilaukset /></RoleGuard>} />
         <Route path="/tilaajan-tyot" element={<RoleGuard allowedRoles={['customer']}><TilaajanTyot /></RoleGuard>} />
         <Route path="/tilaajan-projektit/:projectId" element={<RoleGuard allowedRoles={['customer']}><CustomerProject /></RoleGuard>} />
         <Route path="/tyovuorokalenteri" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tyovuorokalenteri /></RoleGuard>} />
-        <Route path="/tuntikirjaukset" element={<RoleGuard allowedRoles={internalRoles}><Tuntikirjaukset /></RoleGuard>} />
-        <Route path="/kirjaukset" element={<RoleGuard allowedRoles={internalRoles}><Kirjaukset /></RoleGuard>} />
+        <Route path="/tuntikirjaukset" element={<RoleGuard allowedRoles={internalRoles}><TimeEntriesRoute /></RoleGuard>} />
+        <Route path="/kirjaukset" element={<RoleGuard allowedRoles={workforceRoles}><Kirjaukset /></RoleGuard>} />
         <Route path="/palkka-aineisto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><PalkkaAineisto /></RoleGuard>} />
         <Route path="/qr-kirjautuminen" element={<RoleGuard allowedRoles={internalRoles}><QrKirjautuminen /></RoleGuard>} />
-        <Route path="/qr-hallinta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><QrHallinta /></RoleGuard>} />
-        <Route path="/matkakulut" element={<RoleGuard allowedRoles={internalRoles}><Matkakulut /></RoleGuard>} />
+        <Route path="/qr-hallinta" element={<RoleGuard allowedRoles={operationalManagers}><QrHallinta /></RoleGuard>} />
+        <Route path="/matkakulut" element={<RoleGuard allowedRoles={workforceRoles}><Matkakulut /></RoleGuard>} />
         <Route path="/tyoturvallisuus" element={<RoleGuard allowedRoles={allRoles}><CustomerPreviewBoundary><SafetyPortal /></CustomerPreviewBoundary></RoleGuard>} />
-        <Route path="/crm" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><CRM /></RoleGuard>} />
-        <Route path="/asiakkaat" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Asiakkaat /></RoleGuard>} />
-        <Route path="/toiminnanohjaus" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Toiminnanohjaus /></RoleGuard>} />
-        <Route path="/ai" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><AIPage /></RoleGuard>} />
+        <Route path="/crm" element={<RoleGuard allowedRoles={operationalManagers}><CRM /></RoleGuard>} />
+        <Route path="/asiakkaat" element={<RoleGuard allowedRoles={operationalManagers}><Asiakkaat /></RoleGuard>} />
+        <Route path="/toiminnanohjaus" element={<RoleGuard allowedRoles={operationalManagers}><Toiminnanohjaus /></RoleGuard>} />
+        <Route path="/ai" element={<RoleGuard allowedRoles={operationalManagers}><AIPage /></RoleGuard>} />
         <Route path="/viestinta" element={<RoleGuard allowedRoles={internalRoles}><Viestinta /></RoleGuard>} />
-        <Route path="/kalusto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Kalusto /></RoleGuard>} />
+        <Route path="/kalusto" element={<RoleGuard allowedRoles={operationalManagers}><Kalusto /></RoleGuard>} />
         <Route path="/henkilosto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Henkilosto /></RoleGuard>} />
-        <Route path="/henkilokortit" element={<RoleGuard allowedRoles={internalRoles}><EmployeeCardsRoute /></RoleGuard>} />
+        <Route path="/henkilokortit" element={<RoleGuard allowedRoles={workforceRoles}><EmployeeCardsRoute /></RoleGuard>} />
         <Route path="/lomakkeet" element={<RoleGuard allowedRoles={internalRoles}><Lomakkeet /></RoleGuard>} />
         <Route path="/raportit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Raportit /></RoleGuard>} />
         <Route path="/varmuuskopiot" element={<RoleGuard allowedRoles={['admin']} useActualRole><Varmuuskopiot /></RoleGuard>} />
@@ -177,9 +155,5 @@ function AppRoutes() {
 }
 
 export default function App() {
-  return (
-    <AppDataProvider>
-      <AppRoutes />
-    </AppDataProvider>
-  );
+  return <AppDataProvider><AppRoutes /></AppDataProvider>;
 }
