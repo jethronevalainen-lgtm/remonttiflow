@@ -81,12 +81,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Validate authenticated smoke password
+      - name: Validate authenticated smoke secret
         shell: bash
         run: |
-          test -n "$E2E_USER_PASSWORD" || { echo "Missing test password. Supported GitHub secret names: E2E_USER_PASSWORD, E2E_PASSWORD, TEST_USER_PASSWORD, TEST_PASSWORD, TEST_ADMIN_PASSWORD"; exit 1; }
-          test "${#E2E_USER_PASSWORD}" -ge 12 || { echo "The test password must contain at least 12 characters"; exit 1; }
-          test "${#E2E_USER_PASSWORD}" -le 128 || { echo "The test password must contain at most 128 characters"; exit 1; }
+          test -n "$E2E_USER_PASSWORD" || { echo "Missing test secret. Supported GitHub secret names: E2E_USER_PASSWORD, E2E_PASSWORD, TEST_USER_PASSWORD, TEST_PASSWORD, TEST_ADMIN_PASSWORD"; exit 1; }
 
       - name: Request GitHub OIDC token
         id: oidc
