@@ -64,7 +64,6 @@ import {
   updateOffer,
   updateOfferLine,
   updateOfferVersion,
-  type Offer,
   type OfferLine,
   type OfferSection,
   type OfferStatus,

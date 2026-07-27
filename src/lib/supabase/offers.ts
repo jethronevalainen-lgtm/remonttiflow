@@ -186,7 +186,7 @@ export async function loadOffersData(organizationId: string): Promise<OffersData
       offerNumber: text(value, 'offer_number'),
       status: text(value, 'status') as OfferStatus,
       validUntil: optionalText(value, 'valid_until'),
-      currency: 'EUR',
+      currency: 'EUR' as const,
       notes: text(value, 'notes'),
       customerReference: text(value, 'customer_reference'),
       deliveryTime: text(value, 'delivery_time'),
