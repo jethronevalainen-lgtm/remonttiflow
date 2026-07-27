@@ -1,3 +1,4 @@
+import { lazy, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { homeForRole, useAuth, type UserRole } from './contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -5,21 +6,54 @@ import { useViewAs } from '@/contexts/ViewAsContext';
 import { AppDataProvider } from './contexts/AppDataContext';
 import Layout from './components/Layout';
 import { ErrorState, LoadingState } from '@/components/states';
-import {
-  Dashboard, Tyonjohto, Tarkastukset, Projektit, ProjectWorks, ProjectWorkspace, Aikataulutus,
-  Paivakirjat, Kuittaukset, Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset,
-  Tyovuorokalenteri, Tuntikirjaukset, CoordinatorTimeEntries, Kirjaukset, Matkakulut,
-  CRM, Asiakkaat, AIPage, Viestinta, Kalusto, Henkilosto, Henkilokortit,
-  PalkkaAineisto, Lomakkeet, Raportit, Hallinta, KayttajaEsikatselu, Tilaukset,
-  TilaajanTyot, CustomerProject, CustomerCollaborationManager, ProjectDiscussions,
-  ProjectConversation, ProjectRequests, SafetyPortal, QrHallinta, QrKirjautuminen,
-  Varmuuskopiot, Toiminnanohjaus,
-} from './pages';
-import HenkilokortitPreview from './pages/HenkilokortitPreview';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
+const Dashboard = lazy(() => import('./pages/DashboardV2'));
+const Tyonjohto = lazy(() => import('./pages/Tyonjohto'));
+const Tarkastukset = lazy(() => import('./pages/Tarkastukset'));
+const Projektit = lazy(() => import('./pages/Projektit'));
+const ProjectWorks = lazy(() => import('./pages/ProjectWorks'));
+const ProjectWorkspace = lazy(() => import('./pages/ProjectWorkspace'));
+const Aikataulutus = lazy(() => import('./pages/Aikataulutus'));
+const Paivakirjat = lazy(() => import('./pages/Paivakirjat'));
+const Kuittaukset = lazy(() => import('./pages/Kuittaukset'));
+const Laskenta = lazy(() => import('./pages/Laskenta'));
+const Maaralaskenta = lazy(() => import('./pages/Maaralaskenta'));
+const Jatehuolto = lazy(() => import('./pages/Jatehuolto'));
+const Tyomaaraykset = lazy(() => import('./pages/Tyomaaraykset'));
+const Tyovuorokalenteri = lazy(() => import('./pages/Tyovuorokalenteri'));
+const Tuntikirjaukset = lazy(() => import('./pages/TuntikirjauksetV2'));
+const CoordinatorTimeEntries = lazy(() => import('./pages/CoordinatorTimeEntries'));
+const Kirjaukset = lazy(() => import('./pages/Kirjaukset'));
+const Matkakulut = lazy(() => import('./pages/MatkakulutV2'));
+const CRM = lazy(() => import('./pages/CRM'));
+const Asiakkaat = lazy(() => import('./pages/Asiakkaat'));
+const AIPage = lazy(() => import('./pages/AI'));
+const Viestinta = lazy(() => import('./pages/Viestinta'));
+const Kalusto = lazy(() => import('./pages/Kalusto'));
+const Henkilosto = lazy(() => import('./pages/HenkilostoWithSupervisors'));
+const Henkilokortit = lazy(() => import('./pages/Henkilokortit'));
+const HenkilokortitPreview = lazy(() => import('./pages/HenkilokortitPreview'));
+const PalkkaAineisto = lazy(() => import('./pages/PalkkaAineistoV4'));
+const Lomakkeet = lazy(() => import('./pages/Lomakkeet'));
+const Raportit = lazy(() => import('./pages/RaportitV2'));
+const Hallinta = lazy(() => import('./pages/HallintaV2'));
+const KayttajaEsikatselu = lazy(() => import('./pages/KayttajaEsikatseluV2'));
+const Tilaukset = lazy(() => import('./pages/Tilaukset'));
+const TilaajanTyot = lazy(() => import('./pages/TilaajanTyotV2'));
+const CustomerProject = lazy(() => import('./pages/CustomerProjectV2'));
+const CustomerCollaborationManager = lazy(() => import('./pages/CustomerCollaborationManager'));
+const ProjectDiscussions = lazy(() => import('./pages/ProjectDiscussions'));
+const ProjectConversation = lazy(() => import('./pages/ProjectConversation'));
+const ProjectRequests = lazy(() => import('./pages/ProjectRequests'));
+const SafetyPortal = lazy(() => import('./pages/SafetyPortal'));
+const QrHallinta = lazy(() => import('./pages/QrHallinta'));
+const QrKirjautuminen = lazy(() => import('./pages/QrKirjautuminen'));
+const Varmuuskopiot = lazy(() => import('./pages/Varmuuskopiot'));
+const Toiminnanohjaus = lazy(() => import('./pages/Toiminnanohjaus'));
+
+function RequireAuth({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
   const location = useLocation();
   if (loading) {
@@ -49,7 +83,7 @@ function RoleGuard({
   allowedRoles,
   useActualRole = false,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   allowedRoles: UserRole[];
   useActualRole?: boolean;
 }) {
@@ -66,7 +100,7 @@ function RoleGuard({
   return <>{children}</>;
 }
 
-function CustomerPreviewBoundary({ children }: { children: React.ReactNode }) {
+function CustomerPreviewBoundary({ children }: { children: ReactNode }) {
   const { effectiveRole, isPreviewing, customerPreview } = useViewAs();
   if (isPreviewing && effectiveRole === 'customer') {
     if (!customerPreview) return <Navigate to="/kayttajaesikatselu" replace />;
