@@ -29,6 +29,14 @@ export type Permission =
   | 'change_orders.customer.submit'
   | 'change_orders.customer.decide';
 
+export const USER_ROLES: readonly UserRole[] = [
+  'admin',
+  'supervisor',
+  'project_coordinator',
+  'worker',
+  'customer',
+];
+
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Järjestelmänvalvoja',
   supervisor: 'Työnjohtaja',
@@ -85,6 +93,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
     '/dashboard', '/tarkastukset', '/tyomaaraykset', '/kuittaukset',
     '/tuntikirjaukset', '/kirjaukset', '/matkakulut', '/henkilokortit',
     '/tyoturvallisuus', '/projektikeskustelut', '/viestinta', '/lomakkeet',
+    '/qr-kirjautuminen',
   ],
   customer: [
     '/tilaajan-tyot', '/tilaajan-projektit', '/projektikeskustelut',
@@ -137,6 +146,10 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
 
 export function hasPermission(role: UserRole | null | undefined, permission: Permission): boolean {
   return Boolean(role && ROLE_PERMISSIONS[role].has(permission));
+}
+
+export function rolesForRoute(route: string): UserRole[] {
+  return USER_ROLES.filter((role) => ROLE_ROUTES[role].includes(route));
 }
 
 export function homeForRole(role: UserRole | null | undefined): string {
