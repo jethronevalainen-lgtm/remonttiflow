@@ -163,10 +163,6 @@ export async function loadRoleWorkspace(
       : [];
 
   const profiles = new Map(profileRows.map((item) => [text(item, 'id'), item]));
-  const roleByUser = new Map(directoryRows.map((item) => [
-    text(item, 'user_id'),
-    role(item.role),
-  ]));
 
   const people = canManage
     ? directoryRows.map((item): OrganizationPerson => ({
