@@ -218,6 +218,7 @@ test.describe('smoke: authenticated role and dynamic route matrix', () => {
     await startImpersonation(page, 'worker');
     await expectRoleStaticRoutes(page, 'worker');
     await expectApplicationSection(page, `/projektikeskustelut/${fixtures.projectId}`);
+    await expectApplicationSection(page, '/tyomaaraykset');
     await expect(page.getByText('Automaatiotestin työmääräys', { exact: true })).toBeVisible({ timeout: 30_000 });
     await stopImpersonation(page);
 
