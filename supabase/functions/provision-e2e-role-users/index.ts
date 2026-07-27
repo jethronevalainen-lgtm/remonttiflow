@@ -1,12 +1,27 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient, type User } from 'npm:@supabase/supabase-js@2.110.8';
+import { createRemoteJWKSet, jwtVerify } from 'npm:jose@5.9.6';
+
+const EXPECTED_REPOSITORY = 'jethronevalainen-lgtm/remonttiflow';
+const EXPECTED_WORKFLOW_PATH = '/.github/workflows/pr-quality-gate.yml@';
+const GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
+const GITHUB_OIDC_AUDIENCE = 'vakantti-e2e-provisioner';
+const GITHUB_OIDC_JWKS = createRemoteJWKSet(
+  new URL(`${GITHUB_OIDC_ISSUER}/.well-known/jwks`),
+);
+const E2E_ADMIN_EMAIL = 'admin@roles.vakantti.invalid';
+const E2E_ADMIN_NAME = 'Automaatiotesti Järjestelmänvalvoja';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-const JSON_HEADERS = { ...CORS, 'Content-Type': 'application/json; charset=utf-8' };
+const JSON_HEADERS = {
+  ...CORS,
+  'Cache-Control': 'private, no-store',
+  'Content-Type': 'application/json; charset=utf-8',
+};
 
 const ROLE_USERS = [
   {
@@ -33,6 +48,10 @@ const ROLE_USERS = [
 
 type RoleUser = (typeof ROLE_USERS)[number];
 
+interface ProvisionRequest {
+  password?: unknown;
+}
+
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
@@ -56,6 +75,22 @@ function namedSecret(name: string, fallback: string): string | null {
   return Deno.env.get(fallback) ?? null;
 }
 
+async function verifyGitHubActionsToken(token: string): Promise<void> {
+  const { payload } = await jwtVerify(token, GITHUB_OIDC_JWKS, {
+    issuer: GITHUB_OIDC_ISSUER,
+    audience: GITHUB_OIDC_AUDIENCE,
+  });
+
+  const repository = typeof payload.repository === 'string' ? payload.repository : '';
+  const workflowRef = typeof payload.workflow_ref === 'string' ? payload.workflow_ref : '';
+  if (repository !== EXPECTED_REPOSITORY) {
+    throw new Error('OIDC-token ei kuulu VaKantti-repositoriolle.');
+  }
+  if (!workflowRef.startsWith(EXPECTED_REPOSITORY) || !workflowRef.includes(EXPECTED_WORKFLOW_PATH)) {
+    throw new Error('OIDC-token ei kuulu hyväksytylle PR-laadunvarmistuksen työnkululle.');
+  }
+}
+
 async function findUserByEmail(admin: SupabaseClient, email: string): Promise<User | null> {
   const normalized = email.trim().toLowerCase();
   for (let page = 1; page <= 20; page += 1) {
@@ -68,32 +103,44 @@ async function findUserByEmail(admin: SupabaseClient, email: string): Promise<Us
   throw new Error('Auth-käyttäjälistaus ylitti sallitun sivumäärän.');
 }
 
-async function ensureRoleUser(
+async function ensureUser(
   admin: SupabaseClient,
   organizationId: string,
-  spec: RoleUser,
+  email: string,
+  displayName: string,
+  role: 'admin' | RoleUser['role'],
+  password?: string,
 ): Promise<User> {
-  let user = await findUserByEmail(admin, spec.email);
+  let user = await findUserByEmail(admin, email);
+  const metadata = {
+    ...(user?.user_metadata ?? {}),
+    full_name: displayName,
+    e2e_role_user: true,
+  };
+
   if (!user) {
-    const password = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
     const { data, error } = await admin.auth.admin.createUser({
-      email: spec.email,
-      password,
+      email,
+      password: password ?? `${crypto.randomUUID()}-${crypto.randomUUID()}`,
       email_confirm: true,
-      user_metadata: { full_name: spec.displayName, e2e_role_user: true },
+      user_metadata: metadata,
     });
-    if (error || !data.user) throw error ?? new Error(`Käyttäjää ${spec.email} ei voitu luoda.`);
+    if (error || !data.user) throw error ?? new Error(`Käyttäjää ${email} ei voitu luoda.`);
     user = data.user;
-  } else if (!user.email_confirmed_at) {
-    const { data, error } = await admin.auth.admin.updateUserById(user.id, { email_confirm: true });
-    if (error || !data.user) throw error ?? new Error(`Käyttäjää ${spec.email} ei voitu vahvistaa.`);
+  } else {
+    const { data, error } = await admin.auth.admin.updateUserById(user.id, {
+      ...(password ? { password } : {}),
+      email_confirm: true,
+      user_metadata: metadata,
+    });
+    if (error || !data.user) throw error ?? new Error(`Käyttäjää ${email} ei voitu päivittää.`);
     user = data.user;
   }
 
   const { error: profileError } = await admin.from('profiles').upsert({
     id: user.id,
-    email: spec.email,
-    full_name: spec.displayName,
+    email,
+    full_name: displayName,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'id' });
   if (profileError) throw profileError;
@@ -101,11 +148,33 @@ async function ensureRoleUser(
   const { error: membershipError } = await admin.from('organization_members').upsert({
     organization_id: organizationId,
     user_id: user.id,
-    role: spec.role,
+    role,
   }, { onConflict: 'organization_id,user_id' });
   if (membershipError) throw membershipError;
 
   return user;
+}
+
+async function resolveOrganizationId(admin: SupabaseClient): Promise<string> {
+  const { data: membership, error: membershipError } = await admin
+    .from('organization_members')
+    .select('organization_id')
+    .eq('role', 'admin')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (membership?.organization_id) return String(membership.organization_id);
+
+  const { data: organization, error: organizationError } = await admin
+    .from('organizations')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (organizationError) throw organizationError;
+  if (!organization?.id) throw new Error('Testiorganisaatiota ei löytynyt.');
+  return String(organization.id);
 }
 
 Deno.serve(async (request) => {
@@ -114,44 +183,54 @@ Deno.serve(async (request) => {
 
   const authorization = request.headers.get('Authorization');
   if (!authorization?.startsWith('Bearer ')) {
-    return response({ error: 'Kirjautuminen vaaditaan.' }, 401);
+    return response({ error: 'GitHub Actions OIDC -todennus vaaditaan.' }, 401);
+  }
+
+  try {
+    await verifyGitHubActionsToken(authorization.slice('Bearer '.length));
+  } catch (caught) {
+    console.error(caught);
+    return response({ error: 'GitHub Actions OIDC -todennus epäonnistui.' }, 403);
+  }
+
+  let body: ProvisionRequest;
+  try {
+    body = await request.json() as ProvisionRequest;
+  } catch {
+    return response({ error: 'Pyyntörunko ei ole kelvollista JSON-dataa.' }, 400);
+  }
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (password.length < 12 || password.length > 128) {
+    return response({ error: 'E2E-salasanan pituuden on oltava 12–128 merkkiä.' }, 400);
   }
 
   const url = Deno.env.get('SUPABASE_URL');
-  const publishableKey = namedSecret('SUPABASE_PUBLISHABLE_KEYS', 'SUPABASE_ANON_KEY');
   const serviceKey = namedSecret('SUPABASE_SECRET_KEYS', 'SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !publishableKey || !serviceKey) {
+  if (!url || !serviceKey) {
     return response({ error: 'Palvelimen Supabase-konfiguraatio puuttuu.' }, 503);
   }
 
-  const token = authorization.slice('Bearer '.length);
-  const userClient = createClient(url, publishableKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    global: { headers: { Authorization: authorization } },
-  });
-  const { data: actorData, error: actorError } = await userClient.auth.getUser(token);
-  if (actorError || !actorData.user) return response({ error: 'Istunto ei ole voimassa.' }, 401);
-
-  const { data: membership, error: membershipError } = await userClient
-    .from('organization_members')
-    .select('organization_id, role')
-    .eq('user_id', actorData.user.id)
-    .eq('role', 'admin')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (membershipError) return response({ error: 'Ylläpitäjän jäsenyyttä ei voitu tarkistaa.' }, 500);
-  if (!membership) return response({ error: 'Vain organisaation ylläpitäjä voi valmistella E2E-roolit.' }, 403);
-
-  const organizationId = membership.organization_id as string;
   const admin = createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
   try {
+    const organizationId = await resolveOrganizationId(admin);
+    const testAdmin = await ensureUser(
+      admin,
+      organizationId,
+      E2E_ADMIN_EMAIL,
+      E2E_ADMIN_NAME,
+      'admin',
+      password,
+    );
+
     const ensuredUsers = new Map<RoleUser['role'], User>();
     for (const spec of ROLE_USERS) {
-      ensuredUsers.set(spec.role, await ensureRoleUser(admin, organizationId, spec));
+      ensuredUsers.set(
+        spec.role,
+        await ensureUser(admin, organizationId, spec.email, spec.displayName, spec.role),
+      );
     }
 
     const { data: customer, error: customerReadError } = await admin
@@ -170,7 +249,7 @@ Deno.serve(async (request) => {
         type: 'Yritys',
         email: 'customer@roles.vakantti.invalid',
         status: 'Aktiivinen',
-        created_by: actorData.user.id,
+        created_by: testAdmin.id,
         notes: 'Automaattisen käyttöoikeus- ja reittitestauksen hallittu testiasiakas.',
       }).select('id').single();
       if (error || !data) throw error ?? new Error('Testiasiakasta ei voitu luoda.');
@@ -199,7 +278,7 @@ Deno.serve(async (request) => {
         spent: 0,
         project_number: 'E2E-ROLE-AUDIT',
         description: 'Hallittu testiprojekti dynaamisten reittien, roolien ja RLS-oikeuksien tarkistukseen.',
-        created_by: actorData.user.id,
+        created_by: testAdmin.id,
       }).select('id').single();
       if (error || !data) throw error ?? new Error('Testiprojektia ei voitu luoda.');
       projectId = data.id as string;
@@ -229,7 +308,7 @@ Deno.serve(async (request) => {
       customer_id: customerId,
       user_id: customerUser.id,
       project_id: projectId,
-      created_by: actorData.user.id,
+      created_by: testAdmin.id,
     }, { onConflict: 'organization_id,customer_id,user_id,project_id' });
     if (customerProjectError) throw customerProjectError;
 
@@ -255,7 +334,7 @@ Deno.serve(async (request) => {
         assignment_scope: 'people',
         work_reference: 'E2E-ROLE-AUDIT-WORK',
         description: 'Hallittu testityö työntekijän dynaamisten näkymien tarkistukseen.',
-        created_by: actorData.user.id,
+        created_by: testAdmin.id,
       }).select('id').single();
       if (error || !data) throw error ?? new Error('Testityömääräystä ei voitu luoda.');
       workOrderId = data.id as string;
@@ -265,13 +344,14 @@ Deno.serve(async (request) => {
       organization_id: organizationId,
       work_order_id: workOrderId,
       user_id: worker.id,
-      assigned_by: actorData.user.id,
+      assigned_by: testAdmin.id,
       responsibility: 'Automaatiotesti',
     }, { onConflict: 'work_order_id,user_id' });
     if (assigneeError) throw assigneeError;
 
     return response({
       ok: true,
+      adminEmail: E2E_ADMIN_EMAIL,
       organizationId,
       projectId,
       workOrderId,
