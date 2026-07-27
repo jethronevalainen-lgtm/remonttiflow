@@ -9,8 +9,8 @@ import {
   Dashboard, Tyonjohto, Tarkastukset, Projektit, ProjectWorkspace, Aikataulutus,
   Paivakirjat, Kuittaukset, Laskenta, Maaralaskenta, Jatehuolto, Tyomaaraykset,
   Tyovuorokalenteri, Tuntikirjaukset, Matkakulut, CRM, Asiakkaat,
-  AIPage, Viestinta, Kalusto, Henkilosto, Henkilokortit, Lomakkeet, Raportit, Hallinta,
-  KayttajaEsikatselu, Tilaukset, TilaajanTyot, CustomerProject,
+  AIPage, Viestinta, Kalusto, Henkilosto, Henkilokortit, PalkkaAineisto, Lomakkeet,
+  Raportit, Hallinta, KayttajaEsikatselu, Tilaukset, TilaajanTyot, CustomerProject,
   CustomerCollaborationManager, ProjectDiscussions, ProjectConversation,
   ProjectRequests, SafetyPortal, QrHallinta, QrKirjautuminen, Varmuuskopiot,
 } from './pages';
@@ -133,6 +133,7 @@ function AppRoutes() {
         <Route path="/tilaajan-projektit/:projectId" element={<RoleGuard allowedRoles={['customer']}><CustomerProject /></RoleGuard>} />
         <Route path="/tyovuorokalenteri" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tyovuorokalenteri /></RoleGuard>} />
         <Route path="/tuntikirjaukset" element={<RoleGuard allowedRoles={internalRoles}><Tuntikirjaukset /></RoleGuard>} />
+        <Route path="/palkka-aineisto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><PalkkaAineisto /></RoleGuard>} />
         <Route path="/qr-kirjautuminen" element={<RoleGuard allowedRoles={internalRoles}><QrKirjautuminen /></RoleGuard>} />
         <Route path="/qr-hallinta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><QrHallinta /></RoleGuard>} />
         <Route path="/matkakulut" element={<RoleGuard allowedRoles={internalRoles}><Matkakulut /></RoleGuard>} />
