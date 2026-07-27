@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  BadgeEuro,
   BarChart3,
   CalendarClock,
   Car,
@@ -112,6 +113,7 @@ const managementGroups: NavGroup[] = [
       { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto' },
       { label: 'Henkilökortit ja palkat', icon: ShieldCheck, path: '/henkilokortit' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
+      { label: 'Palkka-aineisto', icon: BadgeEuro, path: '/palkka-aineisto' },
       { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
       { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
     ],
