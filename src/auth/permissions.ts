@@ -65,7 +65,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
   admin: [
     '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/projektipyynnot',
     '/projektikeskustelut', '/aikataulutus', '/paivakirjat', '/kuittaukset',
-    '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
+    '/tarjoukset', '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
     '/tyovuorokalenteri', '/tuntikirjaukset', '/kirjaukset', '/matkakulut',
     '/tyoturvallisuus', '/crm', '/asiakkaat', '/toiminnanohjaus', '/ai',
     '/viestinta', '/kalusto', '/henkilosto', '/henkilokortit', '/palkka-aineisto',
@@ -75,7 +75,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
   supervisor: [
     '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/projektipyynnot',
     '/projektikeskustelut', '/aikataulutus', '/paivakirjat', '/kuittaukset',
-    '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
+    '/tarjoukset', '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
     '/tyovuorokalenteri', '/tuntikirjaukset', '/kirjaukset', '/matkakulut',
     '/tyoturvallisuus', '/crm', '/asiakkaat', '/toiminnanohjaus', '/viestinta',
     '/kalusto', '/henkilosto', '/henkilokortit', '/palkka-aineisto', '/lomakkeet',
@@ -84,7 +84,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
   project_coordinator: [
     '/dashboard', '/tyonjohto', '/tarkastukset', '/projektit', '/projektipyynnot',
     '/projektikeskustelut', '/aikataulutus', '/paivakirjat', '/kuittaukset',
-    '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
+    '/tarjoukset', '/laskenta', '/maaralaskenta', '/jatehuolto', '/tyomaaraykset', '/tilaukset',
     '/tuntikirjaukset', '/tyoturvallisuus', '/crm', '/asiakkaat',
     '/toiminnanohjaus', '/ai', '/viestinta', '/kalusto', '/lomakkeet',
     '/qr-kirjautuminen', '/qr-hallinta',

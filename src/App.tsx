@@ -20,8 +20,7 @@ const ProjectWorkspace = lazy(() => import('./pages/ProjectWorkspace'));
 const Aikataulutus = lazy(() => import('./pages/Aikataulutus'));
 const Paivakirjat = lazy(() => import('./pages/Paivakirjat'));
 const Kuittaukset = lazy(() => import('./pages/Kuittaukset'));
-const Laskenta = lazy(() => import('./pages/Laskenta'));
-const Maaralaskenta = lazy(() => import('./pages/Maaralaskenta'));
+const Tarjoukset = lazy(() => import('./pages/Tarjoukset'));
 const Jatehuolto = lazy(() => import('./pages/Jatehuolto'));
 const Tyomaaraykset = lazy(() => import('./pages/Tyomaaraykset'));
 const Tyovuorokalenteri = lazy(() => import('./pages/Tyovuorokalenteri'));
@@ -162,8 +161,9 @@ function AppRoutes() {
         <Route path="/aikataulutus" element={<RoleGuard allowedRoles={rolesForRoute('/aikataulutus')}><Aikataulutus /></RoleGuard>} />
         <Route path="/paivakirjat" element={<RoleGuard allowedRoles={rolesForRoute('/paivakirjat')}><Paivakirjat /></RoleGuard>} />
         <Route path="/kuittaukset" element={<RoleGuard allowedRoles={rolesForRoute('/kuittaukset')}><Kuittaukset /></RoleGuard>} />
-        <Route path="/laskenta" element={<RoleGuard allowedRoles={rolesForRoute('/laskenta')}><Laskenta /></RoleGuard>} />
-        <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={rolesForRoute('/maaralaskenta')}><Maaralaskenta /></RoleGuard>} />
+        <Route path="/tarjoukset" element={<RoleGuard allowedRoles={rolesForRoute('/tarjoukset')}><Tarjoukset /></RoleGuard>} />
+        <Route path="/laskenta" element={<RoleGuard allowedRoles={rolesForRoute('/laskenta')}><Tarjoukset /></RoleGuard>} />
+        <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={rolesForRoute('/maaralaskenta')}><Tarjoukset /></RoleGuard>} />
         <Route path="/jatehuolto" element={<RoleGuard allowedRoles={rolesForRoute('/jatehuolto')}><Jatehuolto /></RoleGuard>} />
         <Route path="/tyomaaraykset" element={<RoleGuard allowedRoles={rolesForRoute('/tyomaaraykset')}><Tyomaaraykset /></RoleGuard>} />
         <Route path="/tilaukset" element={<RoleGuard allowedRoles={rolesForRoute('/tilaukset')}><Tilaukset /></RoleGuard>} />
