@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -6,9 +6,13 @@ import {
   CheckCircle2,
   Download,
   Edit3,
+  History,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
+  UserRoundCheck,
+  Users,
   Wrench,
 } from 'lucide-react';
 
@@ -66,6 +70,7 @@ import {
   type EquipmentMaintenance,
   type EquipmentReservation,
 } from '@/lib/supabase/resourceManagement';
+import { supabase } from '@/lib/supabase/client';
 import type { Equipment, EquipmentStatus } from '@/types';
 
 const EQUIPMENT_STATUSES: EquipmentStatus[] = ['Vapaa', 'Käytössä', 'Huollossa', 'Vuokralla'];
@@ -88,6 +93,16 @@ interface EquipmentForm {
   acquisitionCost: string;
   hourlyCost: string;
   currentProjectId: string;
+}
+
+interface EquipmentAssignment {
+  id: string;
+  equipmentId: string;
+  employeeId: string;
+  assignedAt: string;
+  returnedAt?: string;
+  notes?: string;
+  returnNotes?: string;
 }
 
 const emptyEquipment: EquipmentForm = {
@@ -140,14 +155,34 @@ function parseOptionalMoney(value: string): number | undefined {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : Number.NaN;
 }
 
+function mapAssignment(value: Record<string, unknown>): EquipmentAssignment {
+  const text = (key: string) => typeof value[key] === 'string' ? value[key] as string : '';
+  const optionalText = (key: string) => text(key) || undefined;
+  return {
+    id: text('id'),
+    equipmentId: text('equipment_id'),
+    employeeId: text('employee_id'),
+    assignedAt: text('assigned_at'),
+    returnedAt: optionalText('returned_at'),
+    notes: optionalText('notes'),
+    returnNotes: optionalText('return_notes'),
+  };
+}
+
 export default function Kalusto() {
   const { user } = useAuth();
   const { currentOrg } = useOrganization();
-  const { equipment, projects, refresh: refreshDomain } = useAppDataContext();
+  const {
+    equipment,
+    employees,
+    projects,
+    refresh: refreshDomain,
+  } = useAppDataContext();
   const resources = useResourceManagement();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('Kaikki');
+  const [holderFilter, setHolderFilter] = useState('Kaikki');
   const [equipmentDialog, setEquipmentDialog] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [deleteEquipment, setDeleteEquipment] = useState<Equipment | null>(null);
@@ -170,6 +205,14 @@ export default function Kalusto() {
   const [maintenanceProvider, setMaintenanceProvider] = useState('');
   const [maintenanceDescription, setMaintenanceDescription] = useState('');
 
+  const [assignments, setAssignments] = useState<EquipmentAssignment[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [assignmentDialog, setAssignmentDialog] = useState(false);
+  const [assignmentEmployeeId, setAssignmentEmployeeId] = useState('');
+  const [assignmentNotes, setAssignmentNotes] = useState('');
+  const [returnAssignment, setReturnAssignment] = useState<EquipmentAssignment | null>(null);
+  const [returnNotes, setReturnNotes] = useState('');
+
   const [deleteReservation, setDeleteReservation] = useState<EquipmentReservation | null>(null);
   const [deleteMaintenance, setDeleteMaintenance] = useState<EquipmentMaintenance | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -179,21 +222,42 @@ export default function Kalusto() {
   const today = localDateIso();
   const now = Date.now();
 
-  const filteredEquipment = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('fi');
-    return equipment.filter((item) => {
-      const matchesSearch = !query || [
-        item.name,
-        item.type,
-        item.serial,
-        item.location,
-        item.assetNumber ?? '',
-        item.model ?? '',
-      ].some((value) => value.toLocaleLowerCase('fi').includes(query));
-      return matchesSearch && (statusFilter === 'Kaikki' || item.status === statusFilter);
-    });
-  }, [equipment, search, statusFilter]);
+  const loadAssignments = useCallback(async () => {
+    if (!currentOrg) {
+      setAssignments([]);
+      return;
+    }
 
+    setAssignmentsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('equipment_assignments')
+        .select('*')
+        .eq('organization_id', currentOrg.id)
+        .order('assigned_at', { ascending: false });
+      if (error) throw new Error(`Kaluston haltijatietojen haku epäonnistui: ${error.message}`);
+      setAssignments((Array.isArray(data) ? data : []).map((item) => mapAssignment(item)));
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Haltijatietojen haku epäonnistui.');
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }, [currentOrg]);
+
+  useEffect(() => {
+    void loadAssignments();
+  }, [loadAssignments]);
+
+  const activeEmployees = useMemo(
+    () => employees
+      .filter((item) => item.status !== 'Eroonnut' && !item.archivedAt)
+      .sort((a, b) => a.name.localeCompare(b.name, 'fi')),
+    [employees],
+  );
+  const employeeById = useMemo(
+    () => new Map(employees.map((item) => [item.id, item])),
+    [employees],
+  );
   const equipmentById = useMemo(
     () => new Map(equipment.map((item) => [item.id, item])),
     [equipment],
@@ -202,6 +266,33 @@ export default function Kalusto() {
     () => new Map(projects.map((item) => [item.id, item])),
     [projects],
   );
+  const activeAssignmentByEquipment = useMemo(
+    () => new Map(assignments.filter((item) => !item.returnedAt).map((item) => [item.equipmentId, item])),
+    [assignments],
+  );
+
+  const filteredEquipment = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('fi');
+    return equipment.filter((item) => {
+      const assignment = activeAssignmentByEquipment.get(item.id);
+      const holderName = assignment ? employeeById.get(assignment.employeeId)?.name ?? '' : '';
+      const matchesSearch = !query || [
+        item.name,
+        item.type,
+        item.serial,
+        item.location,
+        item.assetNumber ?? '',
+        item.model ?? '',
+        holderName,
+      ].some((value) => value.toLocaleLowerCase('fi').includes(query));
+      const matchesStatus = statusFilter === 'Kaikki' || item.status === statusFilter;
+      const matchesHolder = holderFilter === 'Kaikki'
+        || (holderFilter === 'assigned' && Boolean(assignment))
+        || (holderFilter === 'unassigned' && !assignment)
+        || assignment?.employeeId === holderFilter;
+      return matchesSearch && matchesStatus && matchesHolder;
+    });
+  }, [activeAssignmentByEquipment, employeeById, equipment, holderFilter, search, statusFilter]);
 
   const activeReservations = useMemo(
     () => resources.reservations.filter((item) =>
@@ -216,7 +307,6 @@ export default function Kalusto() {
     const scheduled = resources.maintenance
       .filter((item) => item.scheduledAt && !CLOSED_MAINTENANCE_STATUSES.has(item.status))
       .sort((a, b) => (a.scheduledAt ?? '').localeCompare(b.scheduledAt ?? ''));
-
     scheduled.forEach((item) => {
       if (!result.has(item.equipmentId)) result.set(item.equipmentId, item);
     });
@@ -247,9 +337,7 @@ export default function Kalusto() {
       status: item.status,
       lastMaintenance: item.lastMaintenance,
       nextMaintenance: item.nextMaintenance ?? '',
-      acquisitionCost: item.acquisitionCostCents == null
-        ? ''
-        : String(item.acquisitionCostCents / 100),
+      acquisitionCost: item.acquisitionCostCents == null ? '' : String(item.acquisitionCostCents / 100),
       hourlyCost: item.hourlyCostCents == null ? '' : String(item.hourlyCostCents / 100),
       currentProjectId: item.currentProjectId ?? '',
     });
@@ -315,10 +403,70 @@ export default function Kalusto() {
     setOperationError(null);
     try {
       await deleteEquipmentRecord(currentOrg.id, deleteEquipment.id);
-      await Promise.all([refreshDomain(), resources.refresh()]);
+      await Promise.all([refreshDomain(), resources.refresh(), loadAssignments()]);
       setDeleteEquipment(null);
     } catch (caught) {
       setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openAssignment = (equipmentId: string) => {
+    const assignment = activeAssignmentByEquipment.get(equipmentId);
+    setSelectedEquipmentId(equipmentId);
+    setAssignmentEmployeeId(assignment?.employeeId ?? '');
+    setAssignmentNotes('');
+    setOperationError(null);
+    setAssignmentDialog(true);
+  };
+
+  const saveAssignment = async () => {
+    if (!currentOrg || !selectedEquipmentId || !assignmentEmployeeId) {
+      setOperationError('Valitse kalusto ja työntekijä.');
+      return;
+    }
+    const currentAssignment = activeAssignmentByEquipment.get(selectedEquipmentId);
+    if (currentAssignment?.employeeId === assignmentEmployeeId) {
+      setOperationError('Kalusto on jo valitulla työntekijällä.');
+      return;
+    }
+
+    setSaving(true);
+    setOperationError(null);
+    try {
+      const { error } = await supabase.rpc('assign_equipment_to_employee', {
+        p_organization_id: currentOrg.id,
+        p_equipment_id: selectedEquipmentId,
+        p_employee_id: assignmentEmployeeId,
+        p_notes: assignmentNotes.trim() || null,
+      });
+      if (error) throw new Error(`Kaluston luovutus epäonnistui: ${error.message}`);
+      await Promise.all([refreshDomain(), loadAssignments()]);
+      setAssignmentDialog(false);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Kaluston luovutus epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveReturn = async () => {
+    if (!currentOrg || !returnAssignment) return;
+    setSaving(true);
+    setOperationError(null);
+    try {
+      const { error } = await supabase.rpc('return_equipment_from_employee', {
+        p_organization_id: currentOrg.id,
+        p_equipment_id: returnAssignment.equipmentId,
+        p_return_notes: returnNotes.trim() || null,
+      });
+      if (error) throw new Error(`Kaluston palautus epäonnistui: ${error.message}`);
+      await Promise.all([refreshDomain(), loadAssignments()]);
+      setReturnAssignment(null);
+      setReturnNotes('');
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Kaluston palautus epäonnistui.');
     } finally {
       setSaving(false);
     }
@@ -329,7 +477,6 @@ export default function Kalusto() {
     start.setSeconds(0, 0);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
-
     setSelectedEquipmentId(equipmentId);
     setReservationProjectId('');
     setReservationStart(localDateTimeInput(start));
@@ -345,27 +492,16 @@ export default function Kalusto() {
       setOperationError('Valitse kalusto.');
       return;
     }
-
     const start = new Date(reservationStart);
     const end = new Date(reservationEnd);
-    if (
-      !reservationStart
-      || !reservationEnd
-      || Number.isNaN(start.getTime())
-      || Number.isNaN(end.getTime())
-      || end <= start
-    ) {
-      setOperationError('Anna kelvollinen varausaika.');
+    if (!reservationStart || !reservationEnd || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      setOperationError('Anna kelvollinen varauksen alku- ja päättymisaika.');
       return;
     }
-
     const overlaps = resources.reservations.some((item) => {
-      if (item.equipmentId !== selectedEquipmentId || INACTIVE_RESERVATION_STATUSES.has(item.status)) {
-        return false;
-      }
-      const existingStart = new Date(item.startsAt).getTime();
-      const existingEnd = new Date(item.endsAt).getTime();
-      return existingStart < end.getTime() && existingEnd > start.getTime();
+      if (item.equipmentId !== selectedEquipmentId || INACTIVE_RESERVATION_STATUSES.has(item.status)) return false;
+      return new Date(item.startsAt).getTime() < end.getTime()
+        && new Date(item.endsAt).getTime() > start.getTime();
     });
     if (overlaps) {
       setOperationError('Kalusto on jo varattu valitulla ajalla.');
@@ -421,11 +557,7 @@ export default function Kalusto() {
       setOperationError('Kustannuksen pitää olla nolla tai positiivinen.');
       return;
     }
-    if (
-      maintenanceScheduledAt
-      && maintenanceCompletedAt
-      && maintenanceCompletedAt < maintenanceScheduledAt
-    ) {
+    if (maintenanceScheduledAt && maintenanceCompletedAt && maintenanceCompletedAt < maintenanceScheduledAt) {
       setOperationError('Valmistumispäivä ei voi olla ennen suunniteltua päivää.');
       return;
     }
@@ -483,19 +615,23 @@ export default function Kalusto() {
   };
 
   const exportCsv = () => {
-    const rows = equipment.map((item) => [
-      item.name,
-      item.type,
-      item.assetNumber ?? '',
-      item.serial,
-      item.location,
-      item.status,
-      item.lastMaintenance,
-      item.nextMaintenance ?? '',
-      (item.hourlyCostCents ?? 0) / 100,
-    ]);
+    const rows = equipment.map((item) => {
+      const assignment = activeAssignmentByEquipment.get(item.id);
+      return [
+        item.name,
+        item.type,
+        item.assetNumber ?? '',
+        item.serial,
+        item.location,
+        item.status,
+        assignment ? employeeById.get(assignment.employeeId)?.name ?? '' : '',
+        item.lastMaintenance,
+        item.nextMaintenance ?? '',
+        (item.hourlyCostCents ?? 0) / 100,
+      ];
+    });
     const csv = [
-      ['Nimi', 'Tyyppi', 'Kalustonumero', 'Sarjanumero', 'Sijainti', 'Tila', 'Viimeisin huolto', 'Seuraava huolto', 'Tuntikustannus EUR'],
+      ['Nimi', 'Tyyppi', 'Kalustonumero', 'Sarjanumero', 'Sijainti', 'Tila', 'Haltija', 'Viimeisin huolto', 'Seuraava huolto', 'Tuntikustannus EUR'],
       ...rows,
     ].map((row) => row.map(csvCell).join(';')).join('\n');
     const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
@@ -510,9 +646,9 @@ export default function Kalusto() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-hero text-text-primary">Kalusto, varaukset ja huollot</h1>
+          <h1 className="text-hero text-text-primary">Kalusto, haltijat, varaukset ja huollot</h1>
           <p className="mt-1 text-body-sm text-text-secondary">
-            Työkalujen ja koneiden sijainti, käyttö, varaukset, kustannukset ja huoltohistoria
+            Työkalujen ja koneiden sijainti, henkilövastuu, käyttö, varaukset, kustannukset ja huoltohistoria
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -527,9 +663,10 @@ export default function Kalusto() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[
           { label: 'Kalustoa', value: equipment.length, icon: Wrench },
+          { label: 'Työntekijöillä', value: activeAssignmentByEquipment.size, icon: Users },
           { label: 'Vapaana', value: equipment.filter((item) => item.status === 'Vapaa').length, icon: CheckCircle2 },
           { label: 'Aktiivisia varauksia', value: activeReservations.length, icon: Calendar },
           { label: 'Huoltokustannukset', value: money(maintenanceCostTotal), icon: Wrench },
@@ -548,26 +685,38 @@ export default function Kalusto() {
       <Tabs defaultValue="equipment" className="space-y-4">
         <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="equipment">Kalusto</TabsTrigger>
+          <TabsTrigger value="assignments">Haltijahistoria ({assignments.length})</TabsTrigger>
           <TabsTrigger value="reservations">Varaukset ({resources.reservations.length})</TabsTrigger>
           <TabsTrigger value="maintenance">Huollot ({resources.maintenance.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="equipment" className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1 sm:max-w-md">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="relative sm:col-span-1">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Hae nimellä, tyypillä tai tunnisteella…"
+                placeholder="Hae kalustoa tai haltijaa…"
                 className="pl-9"
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-48"><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="Kaikki">Kaikki tilat</SelectItem>
                 {EQUIPMENT_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={holderFilter} onValueChange={setHolderFilter}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Kaikki">Kaikki haltijat</SelectItem>
+                <SelectItem value="assigned">Työntekijällä</SelectItem>
+                <SelectItem value="unassigned">Ei haltijaa</SelectItem>
+                {activeEmployees.map((employee) => (
+                  <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -577,8 +726,10 @@ export default function Kalusto() {
               {filteredEquipment.map((item) => {
                 const reservation = activeReservations.find((entry) => entry.equipmentId === item.id);
                 const nextMaintenance = nextMaintenanceByEquipment.get(item.id);
+                const assignment = activeAssignmentByEquipment.get(item.id);
+                const holder = assignment ? employeeById.get(assignment.employeeId) : undefined;
                 return (
-                  <div key={item.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_1fr_130px_180px] lg:items-center">
+                  <div key={item.id} className="grid gap-3 border-b px-5 py-4 xl:grid-cols-[1.2fr_1fr_1fr_1fr_120px_220px] xl:items-center">
                     <div>
                       <p className="font-semibold">{item.name}</p>
                       <p className="text-xs text-text-secondary">
@@ -594,6 +745,12 @@ export default function Kalusto() {
                       </p>
                     </div>
                     <div>
+                      <p className="text-sm font-medium">{holder?.name ?? 'Ei henkilökohtaista haltijaa'}</p>
+                      <p className="text-xs text-text-secondary">
+                        {assignment ? `Luovutettu ${dateTime(assignment.assignedAt)}` : 'Yrityksen yhteinen kalusto'}
+                      </p>
+                    </div>
+                    <div>
                       <p className="text-sm">Huollettu {item.lastMaintenance || '—'}</p>
                       <p className="text-xs text-text-secondary">
                         {nextMaintenance?.scheduledAt
@@ -605,19 +762,76 @@ export default function Kalusto() {
                     </div>
                     <div>{statusBadge(item.status)}</div>
                     <div className="flex flex-wrap justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openReservation(item.id)}><Calendar size={14} /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => openMaintenance(item.id)}><Wrench size={14} /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => openEquipmentEdit(item)}><Edit3 size={14} /></Button>
-                      <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteEquipment(item)}><Trash2 size={14} /></Button>
+                      <Button variant="ghost" size="sm" title={assignment ? 'Siirrä toiselle työntekijälle' : 'Luovuta työntekijälle'} onClick={() => openAssignment(item.id)}>
+                        <UserRoundCheck size={15} />
+                      </Button>
+                      {assignment && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Merkitse palautetuksi"
+                          onClick={() => {
+                            setReturnAssignment(assignment);
+                            setReturnNotes('');
+                            setOperationError(null);
+                          }}
+                        >
+                          <RotateCcw size={15} />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" title="Varaa" onClick={() => openReservation(item.id)}><Calendar size={14} /></Button>
+                      <Button variant="ghost" size="sm" title="Lisää huolto" onClick={() => openMaintenance(item.id)}><Wrench size={14} /></Button>
+                      <Button variant="ghost" size="sm" title="Muokkaa" onClick={() => openEquipmentEdit(item)}><Edit3 size={14} /></Button>
+                      <Button variant="ghost" size="sm" title="Poista" className="text-red-600" onClick={() => setDeleteEquipment(item)}><Trash2 size={14} /></Button>
                     </div>
                   </div>
                 );
               })}
               {!filteredEquipment.length && (
-                <div className="p-12 text-center"><Wrench size={44} className="mx-auto mb-3 text-text-muted" /><p className="font-semibold">Ei kalustoa</p></div>
+                <div className="p-12 text-center">
+                  <Wrench size={44} className="mx-auto mb-3 text-text-muted" />
+                  <p className="font-semibold">Ei hakuehtoja vastaavaa kalustoa</p>
+                </div>
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="assignments" className="space-y-4">
+          <Card><CardContent className="p-0">
+            {assignments.map((item) => {
+              const equipmentItem = equipmentById.get(item.equipmentId);
+              const employee = employeeById.get(item.employeeId);
+              return (
+                <div key={item.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_1fr_130px] lg:items-center">
+                  <div>
+                    <p className="font-semibold">{equipmentItem?.name ?? 'Poistettu kalusto'}</p>
+                    <p className="text-xs text-text-secondary">{equipmentItem?.assetNumber || equipmentItem?.serial || 'Ei tunnistetta'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{employee?.name ?? 'Poistettu työntekijä'}</p>
+                    <p className="text-xs text-text-secondary">{item.notes || 'Ei luovutushuomiota'}</p>
+                  </div>
+                  <div className="text-sm">
+                    <p>Luovutettu {dateTime(item.assignedAt)}</p>
+                    <p className="text-xs text-text-secondary">
+                      {item.returnedAt ? `Palautettu ${dateTime(item.returnedAt)}` : 'Edelleen työntekijällä'}
+                    </p>
+                  </div>
+                  <Badge variant={item.returnedAt ? 'outline' : 'default'}>
+                    {item.returnedAt ? 'Palautettu' : 'Aktiivinen'}
+                  </Badge>
+                </div>
+              );
+            })}
+            {!assignments.length && !assignmentsLoading && (
+              <div className="p-12 text-center">
+                <History size={44} className="mx-auto mb-3 text-text-muted" />
+                <p className="font-semibold">Ei kaluston luovutuksia</p>
+              </div>
+            )}
+            {assignmentsLoading && <div className="p-8 text-center text-sm text-text-secondary">Haltijatietoja ladataan…</div>}
+          </CardContent></Card>
         </TabsContent>
 
         <TabsContent value="reservations" className="space-y-4">
@@ -679,6 +893,34 @@ export default function Kalusto() {
             <div className="space-y-2"><Label>Tuntikustannus €</Label><Input inputMode="decimal" value={equipmentForm.hourlyCost} onChange={(event) => setEquipmentForm((previous) => ({ ...previous, hourlyCost: event.target.value }))} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setEquipmentDialog(false)}>Peruuta</Button><Button onClick={() => void saveEquipment()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignmentDialog} onOpenChange={setAssignmentDialog}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader><DialogTitle>Luovuta kalusto työntekijälle</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-surface-subtle p-3 text-sm">
+              <p className="font-medium">{equipmentById.get(selectedEquipmentId)?.name ?? 'Valitse kalusto'}</p>
+              <p className="text-text-secondary">Nykyinen haltija: {activeAssignmentByEquipment.get(selectedEquipmentId) ? employeeById.get(activeAssignmentByEquipment.get(selectedEquipmentId)?.employeeId ?? '')?.name ?? 'Tuntematon' : 'ei haltijaa'}</p>
+            </div>
+            <div className="space-y-2"><Label>Työntekijä / asentaja *</Label><Select value={assignmentEmployeeId} onValueChange={setAssignmentEmployeeId}><SelectTrigger><SelectValue placeholder="Valitse työntekijä" /></SelectTrigger><SelectContent>{activeEmployees.map((employee) => <SelectItem key={employee.id} value={employee.id}>{employee.name} · {employee.role || 'Työntekijä'}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Luovutushuomio</Label><Textarea value={assignmentNotes} onChange={(event) => setAssignmentNotes(event.target.value)} placeholder="Esimerkiksi mukana toimitetut akut, laturi tai kunto luovutushetkellä" /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setAssignmentDialog(false)}>Peruuta</Button><Button onClick={() => void saveAssignment()} disabled={saving || !assignmentEmployeeId}>{saving ? 'Tallennetaan…' : 'Luovuta'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(returnAssignment)} onOpenChange={(open) => { if (!open) setReturnAssignment(null); }}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader><DialogTitle>Merkitse kalusto palautetuksi</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-text-secondary">
+              {equipmentById.get(returnAssignment?.equipmentId ?? '')?.name ?? 'Kalusto'} poistetaan työntekijän {employeeById.get(returnAssignment?.employeeId ?? '')?.name ?? 'haltijan'} hallusta. Aiempi luovutus jää historiaan.
+            </p>
+            <div className="space-y-2"><Label>Palautushuomio</Label><Textarea value={returnNotes} onChange={(event) => setReturnNotes(event.target.value)} placeholder="Esimerkiksi palautuskunto, puutteet tai huoltotarve" /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setReturnAssignment(null)}>Peruuta</Button><Button onClick={() => void saveReturn()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Merkitse palautetuksi'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
