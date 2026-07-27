@@ -1,0 +1,55 @@
+name: One-time customer aftercare UI patch
+
+on:
+  push:
+    branches:
+      - agent/crm-aftercare
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/crm-aftercare
+          fetch-depth: 0
+
+      - name: Patch customer project aftercare tab
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/pages/CustomerProjectV2.tsx')
+          content = path.read_text(encoding='utf-8')
+          replacements = [
+            (
+              "import { Badge } from '@/components/ui/badge';",
+              "import { CustomerAftercarePanel } from '@/components/customer/CustomerAftercarePanel';\nimport { Badge } from '@/components/ui/badge';",
+            ),
+            (
+              "<TabsTrigger value=\"requests\">Työpyynnöt ({requests.length})</TabsTrigger></TabsList>",
+              "<TabsTrigger value=\"requests\">Työpyynnöt ({requests.length})</TabsTrigger><TabsTrigger value=\"aftercare\">Reklamaatiot ja takuu</TabsTrigger></TabsList>",
+            ),
+            (
+              "        <TabsContent value=\"requests\"><div className=\"space-y-3\">",
+              "        <TabsContent value=\"aftercare\"><CustomerAftercarePanel projectId={projectId} readOnly={isPreviewing} /></TabsContent>\n        <TabsContent value=\"requests\"><div className=\"space-y-3\">",
+            ),
+          ]
+          for old, new in replacements:
+            if old not in content:
+              raise SystemExit(f'Expected source fragment missing: {old!r}')
+            content = content.replace(old, new, 1)
+          path.write_text(content, encoding='utf-8')
+          Path('.github/workflows/agent-customer-aftercare-ui.yml').unlink()
+
+      - name: Commit patched portal and remove one-time workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/pages/CustomerProjectV2.tsx .github/workflows/agent-customer-aftercare-ui.yml
+          git commit -m "Expose aftercare workflow in customer portal"
+          git push origin HEAD:agent/crm-aftercare
