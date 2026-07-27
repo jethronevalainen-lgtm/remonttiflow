@@ -1,4 +1,12 @@
 import { supabase } from '@/lib/supabase/client';
+import {
+  customerPreviewRpcArgs,
+  normalizeCustomerPreviewScope,
+  type CustomerAccessAssignment,
+  type CustomerAccessCatalogItem,
+  type CustomerAccessProject,
+  type CustomerPreviewScope,
+} from '@/lib/customerPortalAccess';
 import type {
   OrganizationRole,
   ProfileRow,
@@ -26,6 +34,22 @@ interface InviteResponse {
   message: string;
 }
 
+type Row = Record<string, unknown>;
+
+function rows(value: unknown): Row[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Row => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    : [];
+}
+
+function text(row: Row, key: string): string {
+  return typeof row[key] === 'string' ? row[key] as string : '';
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 export async function fetchOrganizationMembers(
   organizationId: string,
 ): Promise<OrganizationMemberView[]> {
@@ -39,8 +63,8 @@ export async function fetchOrganizationMembers(
     throw new Error(`Jäsenten haku epäonnistui: ${membershipError.message}`);
   }
 
-  const rows = (memberships ?? []) as MembershipRow[];
-  const userIds = rows.map((row) => row.user_id);
+  const membershipRows = (memberships ?? []) as MembershipRow[];
+  const userIds = membershipRows.map((row) => row.user_id);
   if (userIds.length === 0) return [];
 
   const { data: profiles, error: profileError } = await supabase
@@ -56,13 +80,79 @@ export async function fetchOrganizationMembers(
     ((profiles ?? []) as ProfileRow[]).map((profile) => [profile.id, profile]),
   );
 
-  return rows.map((row) => ({
+  return membershipRows.map((row) => ({
     organizationId: row.organization_id,
     userId: row.user_id,
     role: row.role,
     createdAt: row.created_at,
     profile: profileMap.get(row.user_id) ?? null,
   }));
+}
+
+export async function fetchCustomerAccessCatalog(
+  organizationId: string,
+): Promise<CustomerAccessCatalogItem[]> {
+  const { data, error } = await supabase.rpc('admin_customer_access_catalog', {
+    p_organization_id: organizationId,
+  });
+  if (error) throw new Error(`Tilaaja-asiakkuuksien haku epäonnistui: ${error.message}`);
+  return rows(data).map((row) => ({
+    customerId: text(row, 'customer_id'),
+    customerName: text(row, 'customer_name'),
+    projects: rows(row.projects).map((project): CustomerAccessProject => ({
+      id: text(project, 'id'),
+      name: text(project, 'name'),
+      location: text(project, 'location') || null,
+      status: text(project, 'status'),
+    })).filter((project) => project.id),
+  })).filter((item) => item.customerId);
+}
+
+export async function fetchCustomerUserAccess(
+  organizationId: string,
+  userId: string,
+): Promise<CustomerAccessAssignment[]> {
+  const { data, error } = await supabase.rpc('admin_customer_user_access', {
+    p_organization_id: organizationId,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(`Tilaajan käyttöoikeuksien haku epäonnistui: ${error.message}`);
+  return rows(data).map((row) => ({
+    customerId: text(row, 'customer_id'),
+    customerName: text(row, 'customer_name'),
+    accessScope: text(row, 'access_scope') === 'selected_projects' ? 'selected_projects' : 'all_projects',
+    projectIds: stringArray(row.project_ids),
+  })).filter((item) => item.customerId);
+}
+
+export async function saveCustomerUserAccess(values: {
+  organizationId: string;
+  userId: string;
+  access: CustomerAccessAssignment[];
+}): Promise<void> {
+  const payload = values.access.map((item) => ({
+    customerId: item.customerId,
+    accessScope: item.accessScope,
+    projectIds: item.accessScope === 'selected_projects' ? item.projectIds : [],
+  }));
+  const { error } = await supabase.rpc('admin_set_customer_user_access', {
+    p_organization_id: values.organizationId,
+    p_user_id: values.userId,
+    p_access: payload,
+  });
+  if (error) throw new Error(`Tilaajan käyttöoikeuksien tallennus epäonnistui: ${error.message}`);
+}
+
+export async function logCustomerPortalPreview(
+  organizationId: string,
+  scope: CustomerPreviewScope,
+): Promise<void> {
+  const normalized = normalizeCustomerPreviewScope(scope);
+  const { error } = await supabase.rpc('admin_log_customer_preview', {
+    p_organization_id: organizationId,
+    ...customerPreviewRpcArgs(normalized),
+  });
+  if (error) throw new Error(`Tilaajaesikatselun auditointi epäonnistui: ${error.message}`);
 }
 
 export async function updateOrganizationDetails(
@@ -139,7 +229,13 @@ export async function inviteOrganizationMember(values: {
   fullName: string;
   role: OrganizationRole;
   customerId?: string;
+  customerAccess?: CustomerAccessAssignment[];
 }): Promise<InviteResponse> {
+  const customerAccess = values.customerAccess?.map((item) => ({
+    customerId: item.customerId,
+    accessScope: item.accessScope,
+    projectIds: item.accessScope === 'selected_projects' ? item.projectIds : [],
+  })) ?? [];
   const { data, error } = await supabase.functions.invoke<InviteResponse>(
     'invite-organization-member',
     {
@@ -148,7 +244,8 @@ export async function inviteOrganizationMember(values: {
         email: values.email.trim().toLowerCase(),
         fullName: values.fullName.trim(),
         role: values.role,
-        customerId: values.customerId || null,
+        customerId: values.customerId || customerAccess[0]?.customerId || null,
+        customerAccess,
       },
     },
   );
