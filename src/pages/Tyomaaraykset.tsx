@@ -3,13 +3,18 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
+  BellRing,
   BriefcaseBusiness,
+  CalendarClock,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
   Clock3,
   FolderKanban,
   HardHat,
+  Home,
+  KeyRound,
+  Link2,
   Loader2,
   MapPin,
   PauseCircle,
@@ -59,10 +64,38 @@ import {
 const ALL = 'Kaikki';
 type ScopeFilter = 'all' | 'standalone' | 'project';
 
-function formatDate(value: string) {
-  if (!value) return 'Ei määräaikaa';
-  const parsed = new Date(value);
+const WEEKDAY_LABELS: Record<number, string> = {
+  1: 'ma',
+  2: 'ti',
+  3: 'ke',
+  4: 'to',
+  5: 'pe',
+  6: 'la',
+  7: 'su',
+};
+
+function formatDate(value: string, empty = 'Ei määritetty') {
+  if (!value) return empty;
+  const parsed = new Date(`${value}T12:00:00`);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('fi-FI');
+}
+
+function formatSchedule(order: ManagedWorkOrder) {
+  if (!order.plannedStartDate) return 'Ei työjaksoa';
+  const dates = order.plannedEndDate && order.plannedEndDate !== order.plannedStartDate
+    ? `${formatDate(order.plannedStartDate)}–${formatDate(order.plannedEndDate)}`
+    : formatDate(order.plannedStartDate);
+  const weekdays = order.plannedWeekdays.map((weekday) => WEEKDAY_LABELS[weekday]).filter(Boolean).join(', ');
+  return `${dates} · ${order.plannedStartTime}–${order.plannedEndTime}${weekdays ? ` · ${weekdays}` : ''}`;
+}
+
+function occupancyLabel(order: ManagedWorkOrder) {
+  switch (order.occupancyStatus) {
+    case 'occupied': return 'Asuttu työn aikana';
+    case 'vacant': return 'Tyhjä / asumaton';
+    case 'partly_occupied': return 'Osittain käytössä';
+    default: return 'Asumistilanne ei tiedossa';
+  }
 }
 
 function statusBadge(status: WorkOrderStatus) {
@@ -137,6 +170,9 @@ export default function Tyomaaraykset() {
         order.location,
         order.description,
         order.type,
+        order.workReference,
+        order.startConstraints,
+        order.accessNotes,
         assignmentLabel(order),
       ].some((value) => value.toLocaleLowerCase('fi').includes(query));
       const matchesStatus = statusFilter === ALL || order.status === statusFilter;
@@ -188,6 +224,17 @@ export default function Tyomaaraykset() {
       projectId: order.projectId ?? '',
       location: order.location,
       dueDate: order.dueDate,
+      plannedStartDate: order.plannedStartDate,
+      plannedEndDate: order.plannedEndDate,
+      plannedStartTime: order.plannedStartTime,
+      plannedEndTime: order.plannedEndTime,
+      plannedWeekdays: order.plannedWeekdays,
+      calendarSyncEnabled: order.calendarSyncEnabled,
+      occupancyStatus: order.occupancyStatus,
+      workReference: order.workReference,
+      startConstraints: order.startConstraints,
+      accessNotes: order.accessNotes,
+      residentNotificationRequired: order.residentNotificationRequired,
       priority: order.priority,
       status: order.status,
       type: order.type,
@@ -218,6 +265,24 @@ export default function Tyomaaraykset() {
     if (form.projectId && form.assignmentScope === 'project_team' && selectedProjectMemberIds.size === 0) {
       nextErrors.push('Valitulla projektilla ei ole projektitiimiä. Lisää tiimi ensin Projektit ja tiimit -näkymässä.');
     }
+    if (form.plannedEndDate && !form.plannedStartDate) {
+      nextErrors.push('Valitse työn aloituspäivä ennen suunniteltua valmistumista.');
+    }
+    if (form.plannedStartDate && !form.plannedEndDate) {
+      nextErrors.push('Valitse suunniteltu valmistumispäivä.');
+    }
+    if (form.plannedStartDate && form.plannedEndDate < form.plannedStartDate) {
+      nextErrors.push('Suunniteltu valmistuminen ei voi olla ennen aloituspäivää.');
+    }
+    if (form.plannedStartDate && form.plannedEndTime <= form.plannedStartTime) {
+      nextErrors.push('Päivittäisen päättymisajan pitää olla alkamisajan jälkeen.');
+    }
+    if (form.plannedStartDate && form.plannedWeekdays.length === 0) {
+      nextErrors.push('Valitse vähintään yksi työpäivä.');
+    }
+    if (form.dueDate && form.plannedEndDate && form.dueDate < form.plannedEndDate) {
+      nextErrors.push('Viimeistään valmis -päivä ei voi olla ennen suunniteltua valmistumista.');
+    }
     return nextErrors;
   };
 
@@ -236,6 +301,17 @@ export default function Tyomaaraykset() {
         title: form.title.trim(),
         location: form.location.trim(),
         dueDate: form.dueDate,
+        plannedStartDate: form.plannedStartDate,
+        plannedEndDate: form.plannedEndDate,
+        plannedStartTime: form.plannedStartTime,
+        plannedEndTime: form.plannedEndTime,
+        plannedWeekdays: form.plannedWeekdays,
+        calendarSyncEnabled: form.calendarSyncEnabled,
+        occupancyStatus: form.occupancyStatus,
+        workReference: form.workReference.trim(),
+        startConstraints: form.startConstraints.trim(),
+        accessNotes: form.accessNotes.trim(),
+        residentNotificationRequired: form.residentNotificationRequired,
         priority: form.priority,
         status: form.status,
         description: form.description.trim(),
@@ -300,8 +376,8 @@ export default function Tyomaaraykset() {
 
   const pageTitle = canManage ? 'Työmääräysten ohjaus' : 'Minun työni';
   const pageDescription = canManage
-    ? 'Luo yksittäisiä tehtäviä tai liitä työmääräys osaksi projektia. Kohdista työ suoraan oikeille henkilöille.'
-    : 'Näet sinulle määrätyt yksittäiset työt sekä projektitiimillesi kuuluvat tehtävät.';
+    ? 'Määritä työn vastuut, aloitusehdot ja aikataulu. Työjaksot siirtyvät automaattisesti resurssikalenteriin.'
+    : 'Näet sinulle määrätyt työt, työjakson, kohdeohjeet ja viimeisen valmistumispäivän.';
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto max-w-[1500px] space-y-6">
@@ -382,7 +458,7 @@ export default function Tyomaaraykset() {
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Hae tehtävää, sijaintia tai projektia…"
+            placeholder="Hae tehtävää, viitettä, sijaintia tai projektia…"
             className="pl-9"
           />
         </div>
@@ -422,6 +498,11 @@ export default function Tyomaaraykset() {
                           {order.projectId ? <FolderKanban size={13} className="mr-1" /> : <BriefcaseBusiness size={13} className="mr-1" />}
                           {contextLabel(order)}
                         </Badge>
+                        {order.plannedStartDate && order.calendarSyncEnabled && (
+                          <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                            <CalendarClock size={13} className="mr-1" /> Kalenterissa
+                          </Badge>
+                        )}
                       </div>
                       <h2 className="text-lg font-semibold text-slate-950">{order.title}</h2>
                       {order.type && <p className="mt-1 text-sm text-slate-500">{order.type}</p>}
@@ -437,9 +518,16 @@ export default function Tyomaaraykset() {
                   {order.description && <p className="text-sm leading-6 text-slate-600">{order.description}</p>}
 
                   <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
+                    <div className="flex items-start gap-2 sm:col-span-2">
+                      <CalendarClock size={16} className="mt-0.5 text-slate-400" />
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Suunniteltu työjakso</p>
+                        <p className="text-sm font-medium text-slate-700">{formatSchedule(order)}</p>
+                      </div>
+                    </div>
                     <div className="flex items-start gap-2">
                       <CalendarDays size={16} className="mt-0.5 text-slate-400" />
-                      <div><p className="text-xs uppercase tracking-wide text-slate-400">Määräaika</p><p className="text-sm font-medium text-slate-700">{formatDate(order.dueDate)}</p></div>
+                      <div><p className="text-xs uppercase tracking-wide text-slate-400">Viimeistään valmis</p><p className="text-sm font-medium text-slate-700">{formatDate(order.dueDate, 'Ei takarajaa')}</p></div>
                     </div>
                     <div className="flex items-start gap-2">
                       {order.assignmentScope === 'project_team'
@@ -453,7 +541,27 @@ export default function Tyomaaraykset() {
                         <div><p className="text-xs uppercase tracking-wide text-slate-400">Kohde tai sijainti</p><p className="text-sm font-medium text-slate-700">{order.location}</p></div>
                       </div>
                     )}
+                    <div className="flex items-start gap-2">
+                      <Home size={16} className="mt-0.5 text-slate-400" />
+                      <div><p className="text-xs uppercase tracking-wide text-slate-400">Kohteen käyttö</p><p className="text-sm font-medium text-slate-700">{occupancyLabel(order)}</p></div>
+                    </div>
+                    {order.workReference && (
+                      <div className="flex items-start gap-2">
+                        <Link2 size={16} className="mt-0.5 text-slate-400" />
+                        <div><p className="text-xs uppercase tracking-wide text-slate-400">Työn viite</p><p className="text-sm font-medium text-slate-700">{order.workReference}</p></div>
+                      </div>
+                    )}
                   </div>
+
+                  {(order.residentNotificationRequired || order.startConstraints || order.accessNotes) && (
+                    <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                      {order.residentNotificationRequired && (
+                        <p className="flex items-start gap-2 font-semibold"><BellRing size={16} className="mt-0.5 shrink-0" /> Ilmoita asukkaalle tai tilan käyttäjälle ennen aloitusta.</p>
+                      )}
+                      {order.startConstraints && <p><strong>Aloitusehdot:</strong> {order.startConstraints}</p>}
+                      {order.accessNotes && <p className="flex items-start gap-2"><KeyRound size={16} className="mt-0.5 shrink-0" /><span><strong>Pääsy ja avaimet:</strong> {order.accessNotes}</span></p>}
+                    </div>
+                  )}
 
                   {order.workerNote && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -537,7 +645,7 @@ export default function Tyomaaraykset() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Poista työmääräys</AlertDialogTitle>
-            <AlertDialogDescription>Poistetaanko <strong>{deleteTarget?.title}</strong>? Toimintoa ei voi perua.</AlertDialogDescription>
+            <AlertDialogDescription>Poistetaanko <strong>{deleteTarget?.title}</strong>? Myös siihen linkitetyt kalenterivaraukset poistetaan.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={saving}>Peruuta</AlertDialogCancel>
