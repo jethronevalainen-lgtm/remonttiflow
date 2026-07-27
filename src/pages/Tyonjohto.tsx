@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -14,7 +15,9 @@ import {
   Wrench,
 } from 'lucide-react';
 
+import NotificationSettingsCard from '@/components/admin/NotificationSettingsCard';
 import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
 import { useInspectionWorkspace } from '@/hooks/useInspectionData';
 import { useOperationsData } from '@/hooks/useOperationsData';
 import { useSchedulingData } from '@/hooks/useSchedulingData';
@@ -45,6 +48,9 @@ function statusBadge(status: string) {
 
 export default function Tyonjohto() {
   const navigate = useNavigate();
+  const { currentOrg, actualRole } = useOrganization();
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [notificationSuccess, setNotificationSuccess] = useState<string | null>(null);
   const {
     projects,
     workOrders,
@@ -169,6 +175,33 @@ export default function Tyonjohto() {
           <CardContent><p className="font-mono text-3xl font-bold">{employees.filter((employee) => employee.status === 'Aktiivinen').length} / {employees.length}</p><p className="text-sm text-text-secondary">aktiivisena henkilöstörekisterissä</p><div className="mt-4 space-y-2">{['Lomalla', 'Sairas', 'Koulutuksessa'].map((status) => <div key={status} className="flex justify-between text-sm"><span>{status}</span><span className="font-mono font-semibold">{employees.filter((employee) => employee.status === status).length}</span></div>)}</div><Button variant="ghost" className="mt-3 w-full justify-between" onClick={() => navigate('/henkilosto')}>Avaa henkilöstö <ArrowRight size={15} /></Button></CardContent>
         </Card>
       </div>
+
+      {actualRole === 'supervisor' && currentOrg && (
+        <div className="space-y-3">
+          {notificationError && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <AlertTriangle size={16} /> {notificationError}
+            </div>
+          )}
+          {notificationSuccess && (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              <CheckCircle2 size={16} /> {notificationSuccess}
+            </div>
+          )}
+          <NotificationSettingsCard
+            organizationId={currentOrg.id}
+            compact
+            onError={(message) => {
+              setNotificationSuccess(null);
+              setNotificationError(message);
+            }}
+            onSuccess={(message) => {
+              setNotificationError(null);
+              setNotificationSuccess(message);
+            }}
+          />
+        </div>
+      )}
     </motion.div>
   );
 }
