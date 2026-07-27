@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BellRing, CalendarClock, Clock3, Save, TimerReset } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -140,6 +140,13 @@ export default function NotificationSettingsCard({
   const [settings, setSettings] = useState<NotificationSettings>(EMPTY_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const onSuccessRef = useRef(onSuccess);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+    onErrorRef.current = onError;
+  }, [onError, onSuccess]);
 
   useEffect(() => {
     let active = true;
@@ -149,13 +156,13 @@ export default function NotificationSettingsCard({
         if (active) setSettings(value);
       })
       .catch((caught) => {
-        if (active) onError?.(caught instanceof Error ? caught.message : 'Ilmoitusasetusten haku epäonnistui.');
+        if (active) onErrorRef.current?.(caught instanceof Error ? caught.message : 'Ilmoitusasetusten haku epäonnistui.');
       })
       .finally(() => {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [onError, organizationId]);
+  }, [organizationId]);
 
   const disabled = loading || saving || !settings.notificationCenterEnabled;
 
@@ -163,9 +170,9 @@ export default function NotificationSettingsCard({
     setSaving(true);
     try {
       await saveNotificationSettings(organizationId, settings);
-      onSuccess?.('Ilmoitusasetukset tallennettiin. Muutokset tulevat voimaan viimeistään viiden minuutin kuluessa.');
+      onSuccessRef.current?.('Ilmoitusasetukset tallennettiin. Muutokset tulevat voimaan viimeistään viiden minuutin kuluessa.');
     } catch (caught) {
-      onError?.(caught instanceof Error ? caught.message : 'Ilmoitusasetusten tallennus epäonnistui.');
+      onErrorRef.current?.(caught instanceof Error ? caught.message : 'Ilmoitusasetusten tallennus epäonnistui.');
     } finally {
       setSaving(false);
     }
