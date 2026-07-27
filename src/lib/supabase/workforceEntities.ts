@@ -2,6 +2,14 @@ import { supabase } from './client';
 import type { SafetyItem, TimeEntry } from '@/types';
 
 type Payload = Record<string, unknown>;
+type BreakSource = 'none' | 'manual' | 'automatic';
+type ClockTimeEntryFields = {
+  startTime?: string;
+  endTime?: string;
+  breakSource?: BreakSource;
+  breakStartTime?: string;
+  breakEndTime?: string;
+};
 
 function toIsoDate(value: string): string {
   const finnish = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(value.trim());
@@ -11,6 +19,7 @@ function toIsoDate(value: string): string {
 
 function timeEntryPayload(entry: Omit<TimeEntry, 'id'> | Partial<TimeEntry>): Payload {
   const payload: Payload = {};
+  const clockEntry = entry as (Omit<TimeEntry, 'id'> | Partial<TimeEntry>) & ClockTimeEntryFields;
   if (entry.date !== undefined) payload.date = toIsoDate(entry.date);
   if (entry.userId !== undefined) payload.user_id = entry.userId || null;
   if (entry.employeeId !== undefined) payload.employee_id = entry.employeeId || null;
@@ -21,6 +30,11 @@ function timeEntryPayload(entry: Omit<TimeEntry, 'id'> | Partial<TimeEntry>): Pa
   if (entry.hours !== undefined) payload.hours = entry.hours;
   if (entry.overtime !== undefined) payload.overtime = entry.overtime;
   if (entry.breakMinutes !== undefined) payload.break_minutes = entry.breakMinutes;
+  if (clockEntry.breakSource !== undefined) payload.break_source = clockEntry.breakSource;
+  if (clockEntry.startTime !== undefined) payload.start_time = clockEntry.startTime || null;
+  if (clockEntry.endTime !== undefined) payload.end_time = clockEntry.endTime || null;
+  if (clockEntry.breakStartTime !== undefined) payload.break_start_time = clockEntry.breakStartTime || null;
+  if (clockEntry.breakEndTime !== undefined) payload.break_end_time = clockEntry.breakEndTime || null;
   if (entry.source !== undefined) payload.source = entry.source;
   if (entry.description !== undefined) payload.description = entry.description || null;
   if (entry.status !== undefined) payload.status = entry.status;
