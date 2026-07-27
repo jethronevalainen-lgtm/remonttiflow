@@ -7,7 +7,7 @@ create index if not exists work_site_check_ins_active_org_idx
 create index if not exists time_entries_org_created_idx
   on public.time_entries (organization_id, created_at desc);
 
-create or replace function public.management_live_operations(p_organization_id uuid)
+create or replace function private.management_live_operations(p_organization_id uuid)
 returns jsonb
 language plpgsql
 stable
@@ -140,7 +140,7 @@ begin
         case when recent_descriptions_base.description is not null and recent_descriptions_base.duplicate_count > 1 then 'duplicate_description' end,
         case when recent_descriptions_base.work_order_id is null then 'no_work_order' end,
         case
-          when recent_descriptions_base.description ~* '\\m(valmis|valmistui|työ valmis)\\M'
+          when recent_descriptions_base.description ~* '\m(valmis|valmistui|työ valmis)\M'
            and recent_descriptions_base.work_order_id is not null
            and coalesce(recent_descriptions_base.work_order_status, '') not in ('Valmis', 'Peruttu')
           then 'completed_text_open_order'
@@ -234,7 +234,20 @@ begin
 end;
 $$;
 
+revoke all on function private.management_live_operations(uuid) from public, anon, authenticated;
+grant execute on function private.management_live_operations(uuid) to authenticated, service_role;
+
+create or replace function public.management_live_operations(p_organization_id uuid)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = pg_catalog, public, private
+as $$
+  select private.management_live_operations($1)
+$$;
+
 revoke all on function public.management_live_operations(uuid) from public, anon;
-grant execute on function public.management_live_operations(uuid) to authenticated;
+grant execute on function public.management_live_operations(uuid) to authenticated, service_role;
 
 commit;
