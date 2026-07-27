@@ -1,0 +1,28 @@
+name: One-shot guided kitchen handover
+
+on:
+  push:
+    branches:
+      - feat/guided-kitchen-handover
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/guided-kitchen-handover
+      - name: Apply guided handover patch
+        run: python scripts/patch-guided-kitchen-handover.py
+      - name: Commit generated changes
+        run: |
+          rm scripts/patch-guided-kitchen-handover.py
+          rm .github/workflows/one-shot-guided-kitchen-handover.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src supabase/migrations scripts .github/workflows/one-shot-guided-kitchen-handover.yml
+          git commit -m "feat: guide kitchen handover step by step"
+          git push origin HEAD:feat/guided-kitchen-handover
