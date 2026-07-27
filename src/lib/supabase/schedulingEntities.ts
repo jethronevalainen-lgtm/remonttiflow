@@ -4,7 +4,7 @@ import type { ProjectPhase, Shift } from '@/hooks/useSchedulingData';
 type TableName = 'project_phases' | 'shifts';
 type Payload = Record<string, unknown>;
 
-async function insert(table: TableName, payload: Payload) {
+async function insert(table: TableName, payload: Payload | Payload[]) {
   const { error } = await supabase.from(table).insert(payload);
   if (error) throw new Error(`Tallennus epäonnistui: ${error.message}`);
 }
@@ -15,20 +15,26 @@ async function update(
   id: string,
   payload: Payload,
 ) {
-  const { error } = await supabase
+  const query = supabase
     .from(table)
     .update(payload)
     .eq('id', id)
     .eq('organization_id', organizationId);
+  const { error } = table === 'shifts'
+    ? await query.eq('source_type', 'manual')
+    : await query;
   if (error) throw new Error(`Päivitys epäonnistui: ${error.message}`);
 }
 
 async function remove(table: TableName, organizationId: string, id: string) {
-  const { error } = await supabase
+  const query = supabase
     .from(table)
     .delete()
     .eq('id', id)
     .eq('organization_id', organizationId);
+  const { error } = table === 'shifts'
+    ? await query.eq('source_type', 'manual')
+    : await query;
   if (error) throw new Error(`Poistaminen epäonnistui: ${error.message}`);
 }
 
@@ -75,6 +81,7 @@ function shiftPayload(shift: Omit<Shift, 'id'> | Partial<Shift>): Payload {
   if (shift.employeeName !== undefined) payload.employee_name = shift.employeeName || null;
   if (shift.projectId !== undefined) payload.project_id = shift.projectId || null;
   if (shift.project !== undefined) payload.project = shift.project || null;
+  if (shift.title !== undefined) payload.title = shift.title || null;
   if (shift.date !== undefined) payload.date = shift.date;
   if (shift.startTime !== undefined) payload.start_time = shift.startTime || null;
   if (shift.endTime !== undefined) payload.end_time = shift.endTime || null;
@@ -83,16 +90,38 @@ function shiftPayload(shift: Omit<Shift, 'id'> | Partial<Shift>): Payload {
   return payload;
 }
 
+function manualShiftPayload(
+  organizationId: string,
+  createdBy: string | undefined,
+  shift: Omit<Shift, 'id'>,
+): Payload {
+  return {
+    organization_id: organizationId,
+    ...(createdBy ? { created_by: createdBy } : {}),
+    ...shiftPayload(shift),
+    work_order_id: null,
+    source_type: 'manual',
+  };
+}
+
 export async function createShift(
   organizationId: string,
   createdBy: string | undefined,
   shift: Omit<Shift, 'id'>,
 ) {
-  await insert('shifts', {
-    organization_id: organizationId,
-    ...(createdBy ? { created_by: createdBy } : {}),
-    ...shiftPayload(shift),
-  });
+  await insert('shifts', manualShiftPayload(organizationId, createdBy, shift));
+}
+
+export async function createShifts(
+  organizationId: string,
+  createdBy: string | undefined,
+  shifts: Array<Omit<Shift, 'id'>>,
+) {
+  if (shifts.length === 0) return;
+  await insert(
+    'shifts',
+    shifts.map((shift) => manualShiftPayload(organizationId, createdBy, shift)),
+  );
 }
 
 export async function updateShift(

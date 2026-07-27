@@ -6,6 +6,8 @@ import type {
 } from '@/types';
 import type { OrganizationRole } from '@/lib/supabase/types';
 
+export type WorkOrderOccupancyStatus = 'unknown' | 'occupied' | 'vacant' | 'partly_occupied';
+
 export interface OrganizationPerson {
   userId: string;
   name: string;
@@ -26,6 +28,17 @@ export interface ManagedWorkOrder {
   location: string;
   title: string;
   dueDate: string;
+  plannedStartDate: string;
+  plannedEndDate: string;
+  plannedStartTime: string;
+  plannedEndTime: string;
+  plannedWeekdays: number[];
+  calendarSyncEnabled: boolean;
+  occupancyStatus: WorkOrderOccupancyStatus;
+  workReference: string;
+  startConstraints: string;
+  accessNotes: string;
+  residentNotificationRequired: boolean;
   priority: WorkOrderPriority;
   status: WorkOrderStatus;
   description: string;
@@ -58,9 +71,26 @@ function text(row: Row, key: string): string {
   return typeof row[key] === 'string' ? row[key] as string : '';
 }
 
+function timeText(row: Row, key: string): string {
+  return text(row, key).slice(0, 5);
+}
+
 function optionalText(row: Row, key: string): string | undefined {
   const value = text(row, key);
   return value || undefined;
+}
+
+function booleanValue(row: Row, key: string, fallback = false): boolean {
+  return typeof row[key] === 'boolean' ? row[key] as boolean : fallback;
+}
+
+function numberArray(row: Row, key: string, fallback: number[]): number[] {
+  const value = row[key];
+  if (!Array.isArray(value)) return fallback;
+  const result = value
+    .map((item) => typeof item === 'number' ? item : Number(item))
+    .filter((item) => Number.isInteger(item) && item >= 1 && item <= 7);
+  return result.length > 0 ? [...new Set(result)].sort((a, b) => a - b) : fallback;
 }
 
 function role(value: unknown): OrganizationRole {
@@ -88,6 +118,12 @@ function scope(value: unknown): WorkAssignmentScope {
   return value === 'project_team' ? 'project_team' : 'people';
 }
 
+function occupancy(value: unknown): WorkOrderOccupancyStatus {
+  return ['occupied', 'vacant', 'partly_occupied'].includes(String(value))
+    ? value as WorkOrderOccupancyStatus
+    : 'unknown';
+}
+
 async function requireData<T>(
   promise: PromiseLike<{ data: T | null; error: { message: string } | null }>,
   label: string,
@@ -108,6 +144,7 @@ export async function loadRoleWorkspace(
         .from('work_orders')
         .select('*')
         .eq('organization_id', organizationId)
+        .order('planned_start_date', { ascending: true, nullsFirst: false })
         .order('due_date', { ascending: true, nullsFirst: false }),
       'Työmääräysten haku',
     ),
@@ -193,6 +230,17 @@ export async function loadRoleWorkspace(
       location: text(item, 'location'),
       title: text(item, 'title'),
       dueDate: text(item, 'due_date'),
+      plannedStartDate: text(item, 'planned_start_date'),
+      plannedEndDate: text(item, 'planned_end_date'),
+      plannedStartTime: timeText(item, 'planned_start_time') || '07:00',
+      plannedEndTime: timeText(item, 'planned_end_time') || '15:30',
+      plannedWeekdays: numberArray(item, 'planned_weekdays', [1, 2, 3, 4, 5]),
+      calendarSyncEnabled: booleanValue(item, 'calendar_sync_enabled', true),
+      occupancyStatus: occupancy(item.occupancy_status),
+      workReference: text(item, 'work_reference'),
+      startConstraints: text(item, 'start_constraints'),
+      accessNotes: text(item, 'access_notes'),
+      residentNotificationRequired: booleanValue(item, 'resident_notification_required'),
       priority: priority(item.priority),
       status: status(item.status),
       description: text(item, 'description'),
@@ -260,6 +308,17 @@ export async function saveManagedWorkOrder(values: {
   title: string;
   location?: string;
   dueDate?: string;
+  plannedStartDate?: string;
+  plannedEndDate?: string;
+  plannedStartTime?: string;
+  plannedEndTime?: string;
+  plannedWeekdays: number[];
+  calendarSyncEnabled: boolean;
+  occupancyStatus: WorkOrderOccupancyStatus;
+  workReference?: string;
+  startConstraints?: string;
+  accessNotes?: string;
+  residentNotificationRequired: boolean;
   priority: WorkOrderPriority;
   status: WorkOrderStatus;
   description?: string;
@@ -267,23 +326,47 @@ export async function saveManagedWorkOrder(values: {
   assignmentScope: WorkAssignmentScope;
   assigneeUserIds: string[];
 }): Promise<string> {
-  const { data, error } = await supabase.rpc('save_work_order', {
+  const { data, error } = await supabase.rpc('save_work_order_v2', {
     p_organization_id: values.organizationId,
     p_work_order_id: values.workOrderId ?? null,
     p_project_id: values.projectId || null,
     p_title: values.title,
+    p_location: values.location || null,
     p_due_date: values.dueDate || null,
+    p_planned_start_date: values.plannedStartDate || null,
+    p_planned_end_date: values.plannedEndDate || null,
+    p_planned_start_time: values.plannedStartDate ? values.plannedStartTime || '07:00' : null,
+    p_planned_end_time: values.plannedStartDate ? values.plannedEndTime || '15:30' : null,
+    p_planned_weekdays: values.plannedWeekdays,
+    p_calendar_sync_enabled: values.calendarSyncEnabled,
+    p_occupancy_status: values.occupancyStatus,
+    p_work_reference: values.workReference || null,
+    p_start_constraints: values.startConstraints || null,
+    p_access_notes: values.accessNotes || null,
+    p_resident_notification_required: values.residentNotificationRequired,
     p_priority: values.priority,
     p_status: values.status,
     p_description: values.description || null,
     p_type: values.type || null,
     p_assignment_scope: values.assignmentScope,
     p_assignee_user_ids: values.assigneeUserIds,
-    p_location: values.location || null,
   });
   if (error) throw new Error(`Työmääräyksen tallennus epäonnistui: ${error.message}`);
   if (typeof data !== 'string') throw new Error('Tietokanta ei palauttanut työmääräyksen tunnistetta.');
   return data;
+}
+
+export async function moveManagedWorkOrderSchedule(values: {
+  organizationId: string;
+  workOrderId: string;
+  targetStartDate: string;
+}): Promise<void> {
+  const { error } = await supabase.rpc('move_work_order_schedule', {
+    p_organization_id: values.organizationId,
+    p_work_order_id: values.workOrderId,
+    p_target_start_date: values.targetStartDate,
+  });
+  if (error) throw new Error(`Työmääräyksen aikataulun siirto epäonnistui: ${error.message}`);
 }
 
 export async function transitionMyWorkOrder(values: {
