@@ -11,6 +11,20 @@ describe('project work plan limits', () => {
     expect(normalizeProjectWorkTargets('\n   \n')).toEqual([]);
   });
 
+  it('removes exact duplicate target and location pairs', () => {
+    const targets = normalizeProjectWorkTargets([
+      'Rakennus A | Pohjoisjulkisivu',
+      'Rakennus A | Pohjoisjulkisivu',
+      'Rakennus A | Eteläjulkisivu',
+    ].join('\n'));
+
+    expect(targets).toHaveLength(2);
+    expect(targets.map((target) => target.location)).toEqual([
+      'Pohjoisjulkisivu',
+      'Eteläjulkisivu',
+    ]);
+  });
+
   it('limits generated target sequences to one hundred targets', () => {
     const targets = generateProjectWorkTargets({
       prefix: 'Alue ',
