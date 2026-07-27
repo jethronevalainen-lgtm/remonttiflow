@@ -13,6 +13,7 @@ import {
   Raportit, Hallinta, KayttajaEsikatselu, Tilaukset, TilaajanTyot, CustomerProject,
   CustomerCollaborationManager, ProjectDiscussions, ProjectConversation,
   ProjectRequests, SafetyPortal, QrHallinta, QrKirjautuminen, Varmuuskopiot,
+  Toiminnanohjaus,
 } from './pages';
 import HenkilokortitPreview from './pages/HenkilokortitPreview';
 import Login from './pages/Login';
@@ -130,6 +131,7 @@ function AppRoutes() {
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/" element={<RoleHome />} />
         <Route path="/dashboard" element={<RoleGuard allowedRoles={internalRoles}><Dashboard /></RoleGuard>} />
+        <Route path="/toiminnanohjaus" element={<RoleGuard allowedRoles={internalRoles}><Toiminnanohjaus /></RoleGuard>} />
         <Route path="/tyonjohto" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Tyonjohto /></RoleGuard>} />
         <Route path="/tarkastukset" element={<RoleGuard allowedRoles={internalRoles}><Tarkastukset /></RoleGuard>} />
         <Route path="/projektit" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Projektit /></RoleGuard>} />
