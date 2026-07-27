@@ -3,11 +3,15 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
+  BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
   Clock3,
+  FolderKanban,
   HardHat,
+  Loader2,
+  MapPin,
   PauseCircle,
   Pencil,
   PlayCircle,
@@ -18,11 +22,19 @@ import {
   UsersRound,
 } from 'lucide-react';
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,39 +49,15 @@ import {
   type ManagedWorkOrder,
 } from '@/lib/supabase/workManagement';
 import { cn } from '@/lib/utils';
-import type {
-  WorkAssignmentScope,
-  WorkOrderPriority,
-  WorkOrderStatus,
-} from '@/types';
+import type { WorkOrderPriority, WorkOrderStatus } from '@/types';
+import WorkOrderDialog from './workOrders/WorkOrderDialog';
+import {
+  EMPTY_WORK_ORDER_FORM,
+  type WorkOrderFormValues,
+} from './workOrders/workOrderForm';
 
-const STATUSES: WorkOrderStatus[] = ['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'];
-const PRIORITIES: WorkOrderPriority[] = ['Korkea', 'Normaali', 'Matala'];
 const ALL = 'Kaikki';
-
-interface WorkOrderForm {
-  title: string;
-  projectId: string;
-  dueDate: string;
-  priority: WorkOrderPriority;
-  status: WorkOrderStatus;
-  type: string;
-  description: string;
-  assignmentScope: WorkAssignmentScope;
-  assigneeUserIds: string[];
-}
-
-const EMPTY_FORM: WorkOrderForm = {
-  title: '',
-  projectId: '',
-  dueDate: '',
-  priority: 'Normaali',
-  status: 'Avoin',
-  type: '',
-  description: '',
-  assignmentScope: 'people',
-  assigneeUserIds: [],
-};
+type ScopeFilter = 'all' | 'standalone' | 'project';
 
 function formatDate(value: string) {
   if (!value) return 'Ei määräaikaa';
@@ -97,18 +85,14 @@ function priorityBadge(priority: WorkOrderPriority) {
   return <Badge variant="outline" className={styles[priority]}>{priority}</Badge>;
 }
 
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '?';
-  return parts.length === 1
-    ? parts[0].slice(0, 2).toUpperCase()
-    : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-}
-
 function assignmentLabel(order: ManagedWorkOrder) {
   if (order.assignmentScope === 'project_team') return 'Koko projektitiimi';
   if (order.assigneeNames.length > 0) return order.assigneeNames.join(', ');
   return 'Vastuuhenkilö puuttuu';
+}
+
+function contextLabel(order: ManagedWorkOrder) {
+  return order.projectId ? order.project : 'Yksittäinen työ';
 }
 
 export default function Tyomaaraykset() {
@@ -128,18 +112,21 @@ export default function Tyomaaraykset() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedWorkOrder | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagedWorkOrder | null>(null);
   const [transitionTarget, setTransitionTarget] = useState<ManagedWorkOrder | null>(null);
   const [transitionStatus, setTransitionStatus] = useState<'Odottaa' | 'Valmis'>('Valmis');
   const [workerNote, setWorkerNote] = useState('');
-  const [form, setForm] = useState<WorkOrderForm>(EMPTY_FORM);
+  const [form, setForm] = useState<WorkOrderFormValues>(EMPTY_WORK_ORDER_FORM);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
   const projectFilterId = new URLSearchParams(location.search).get('project') ?? '';
   const selectedProject = projects.find((project) => project.id === projectFilterId);
+  const standaloneCount = workOrders.filter((order) => !order.projectId).length;
 
   const filteredOrders = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fi');
@@ -147,25 +134,31 @@ export default function Tyomaaraykset() {
       const matchesSearch = !query || [
         order.title,
         order.project,
+        order.location,
         order.description,
+        order.type,
         assignmentLabel(order),
       ].some((value) => value.toLocaleLowerCase('fi').includes(query));
       const matchesStatus = statusFilter === ALL || order.status === statusFilter;
-      const matchesProject = !projectFilterId || order.projectId === projectFilterId;
-      return matchesSearch && matchesStatus && matchesProject;
+      const matchesProjectQuery = !projectFilterId || order.projectId === projectFilterId;
+      const matchesScope = scopeFilter === 'all'
+        || (scopeFilter === 'standalone' && !order.projectId)
+        || (scopeFilter === 'project' && Boolean(order.projectId));
+      return matchesSearch && matchesStatus && matchesProjectQuery && matchesScope;
     });
-  }, [projectFilterId, search, statusFilter, workOrders]);
+  }, [projectFilterId, scopeFilter, search, statusFilter, workOrders]);
 
   const activeOrders = workOrders.filter((order) => order.status === 'Käynnissä');
   const openOrders = workOrders.filter((order) => order.status === 'Avoin');
   const waitingOrders = workOrders.filter((order) => order.status === 'Odottaa');
   const doneOrders = workOrders.filter((order) => order.status === 'Valmis');
+
   const selectedProjectMemberIds = new Set(
     projectMemberships
       .filter((membership) => membership.projectId === form.projectId)
       .map((membership) => membership.userId),
   );
-  const selectedProjectPeople = people.filter((person) => selectedProjectMemberIds.has(person.userId));
+  const organizationUserIds = new Set(people.map((person) => person.userId));
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -173,7 +166,7 @@ export default function Tyomaaraykset() {
     if (!canManage || params.get('new') !== '1' || !projectId || !projects.some((project) => project.id === projectId)) return;
 
     setEditing(null);
-    setForm({ ...EMPTY_FORM, projectId });
+    setForm({ ...EMPTY_WORK_ORDER_FORM, projectId });
     setFormErrors([]);
     setOperationError(null);
     setDialogOpen(true);
@@ -182,7 +175,7 @@ export default function Tyomaaraykset() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ ...EMPTY_FORM, projectId: projectFilterId });
+    setForm({ ...EMPTY_WORK_ORDER_FORM, projectId: projectFilterId });
     setFormErrors([]);
     setOperationError(null);
     setDialogOpen(true);
@@ -192,13 +185,14 @@ export default function Tyomaaraykset() {
     setEditing(order);
     setForm({
       title: order.title,
-      projectId: order.projectId,
+      projectId: order.projectId ?? '',
+      location: order.location,
       dueDate: order.dueDate,
       priority: order.priority,
       status: order.status,
       type: order.type,
       description: order.description,
-      assignmentScope: order.assignmentScope,
+      assignmentScope: order.projectId ? order.assignmentScope : 'people',
       assigneeUserIds: order.assigneeUserIds,
     });
     setFormErrors([]);
@@ -206,28 +200,29 @@ export default function Tyomaaraykset() {
     setDialogOpen(true);
   };
 
-  const toggleAssignee = (userId: string, checked: boolean) => {
-    setForm((previous) => ({
-      ...previous,
-      assigneeUserIds: checked
-        ? [...new Set([...previous.assigneeUserIds, userId])]
-        : previous.assigneeUserIds.filter((id) => id !== userId),
-    }));
-  };
-
-  const save = async () => {
+  const validateForm = () => {
     const nextErrors: string[] = [];
     if (!form.title.trim()) nextErrors.push('Työmääräyksen otsikko on pakollinen.');
-    if (!form.projectId) nextErrors.push('Valitse projekti.');
     if (form.assignmentScope === 'people' && form.assigneeUserIds.length === 0) {
       nextErrors.push('Valitse vähintään yksi vastuuhenkilö.');
     }
-    if (form.assignmentScope === 'people' && form.assigneeUserIds.some((userId) => !selectedProjectMemberIds.has(userId))) {
-      nextErrors.push('Vastuuhenkilöiden täytyy kuulua valitun projektin tiimiin.');
+    if (!form.projectId && form.assignmentScope === 'project_team') {
+      nextErrors.push('Koko projektitiimi voidaan valita vain projektiin liitetylle työmääräykselle.');
     }
-    if (form.assignmentScope === 'project_team' && selectedProjectMemberIds.size === 0) {
-      nextErrors.push('Valitulla projektilla ei ole projektitiimiä. Lisää tiimi ensin Projektit-näkymässä.');
+    if (form.projectId && form.assignmentScope === 'people' && form.assigneeUserIds.some((userId) => !selectedProjectMemberIds.has(userId))) {
+      nextErrors.push('Projektiin liitetyn työmääräyksen vastuuhenkilöiden täytyy kuulua projektitiimiin.');
     }
+    if (!form.projectId && form.assigneeUserIds.some((userId) => !organizationUserIds.has(userId))) {
+      nextErrors.push('Vastuuhenkilön täytyy kuulua organisaatioon.');
+    }
+    if (form.projectId && form.assignmentScope === 'project_team' && selectedProjectMemberIds.size === 0) {
+      nextErrors.push('Valitulla projektilla ei ole projektitiimiä. Lisää tiimi ensin Projektit ja tiimit -näkymässä.');
+    }
+    return nextErrors;
+  };
+
+  const save = async () => {
+    const nextErrors = validateForm();
     setFormErrors(nextErrors);
     if (nextErrors.length > 0 || !currentOrg || !canManage) return;
 
@@ -237,14 +232,15 @@ export default function Tyomaaraykset() {
       await saveManagedWorkOrder({
         organizationId: currentOrg.id,
         workOrderId: editing?.id,
-        projectId: form.projectId,
+        projectId: form.projectId || undefined,
         title: form.title.trim(),
+        location: form.location.trim(),
         dueDate: form.dueDate,
         priority: form.priority,
         status: form.status,
         description: form.description.trim(),
         type: form.type.trim(),
-        assignmentScope: form.assignmentScope,
+        assignmentScope: form.projectId ? form.assignmentScope : 'people',
         assigneeUserIds: form.assignmentScope === 'people' ? form.assigneeUserIds : [],
       });
       await Promise.all([refresh(), refreshDomain()]);
@@ -258,9 +254,18 @@ export default function Tyomaaraykset() {
 
   const remove = async () => {
     if (!deleteTarget || !canManage) return;
-    deleteWorkOrder(deleteTarget.id);
-    setDeleteTarget(null);
-    await refresh();
+    setSaving(true);
+    setOperationError(null);
+    try {
+      const removed = await deleteWorkOrder(deleteTarget.id);
+      if (!removed) throw new Error('Työmääräyksen poistaminen epäonnistui.');
+      setDeleteTarget(null);
+      await refresh();
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const runTransition = async (
@@ -295,8 +300,8 @@ export default function Tyomaaraykset() {
 
   const pageTitle = canManage ? 'Työmääräysten ohjaus' : 'Minun työni';
   const pageDescription = canManage
-    ? 'Kohdista tehtävät projekteille, tiimeille ja vastuuhenkilöille'
-    : 'Näet vain sinulle määrätyt tai projektitiimillesi kuuluvat tehtävät';
+    ? 'Luo yksittäisiä tehtäviä tai liitä työmääräys osaksi projektia. Kohdista työ suoraan oikeille henkilöille.'
+    : 'Näet sinulle määrätyt yksittäiset työt sekä projektitiimillesi kuuluvat tehtävät.';
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto max-w-[1500px] space-y-6">
@@ -305,7 +310,7 @@ export default function Tyomaaraykset() {
           <div>
             <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300">
               {canManage ? <HardHat size={16} /> : <ClipboardList size={16} />}
-              {canManage ? 'Työnjohto' : 'Työntekijän työtila'}
+              {canManage ? 'Työn ohjaus' : 'Työntekijän työtila'}
             </div>
             <h1 className="text-3xl font-bold tracking-tight">{pageTitle}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{pageDescription}</p>
@@ -324,17 +329,21 @@ export default function Tyomaaraykset() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[
           { label: 'Avoimet', value: openOrders.length, icon: ClipboardList, tone: 'bg-blue-50 text-blue-700' },
           { label: 'Käynnissä', value: activeOrders.length, icon: PlayCircle, tone: 'bg-orange-50 text-orange-700' },
           { label: 'Odottaa', value: waitingOrders.length, icon: PauseCircle, tone: 'bg-amber-50 text-amber-700' },
           { label: 'Valmiit', value: doneOrders.length, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-700' },
+          { label: 'Ilman projektia', value: standaloneCount, icon: BriefcaseBusiness, tone: 'bg-violet-50 text-violet-700' },
         ].map((item) => (
           <Card key={item.label} className="border-slate-200 shadow-sm">
             <CardContent className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3">
-                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 font-mono text-3xl font-bold text-slate-950">{item.value}</p></div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{item.label}</p>
+                  <p className="mt-2 font-mono text-3xl font-bold text-slate-950">{item.value}</p>
+                </div>
                 <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl', item.tone)}><item.icon size={21} /></div>
               </div>
             </CardContent>
@@ -342,7 +351,7 @@ export default function Tyomaaraykset() {
         ))}
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:flex-row lg:items-center">
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:grid-cols-[1fr_auto_20rem] lg:items-center">
         <div className="flex flex-wrap gap-2">
           {[ALL, 'Avoin', 'Käynnissä', 'Odottaa', 'Valmis'].map((item) => (
             <button
@@ -360,9 +369,22 @@ export default function Tyomaaraykset() {
             </button>
           ))}
         </div>
-        <div className="relative lg:ml-auto lg:w-80">
+        <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as ScopeFilter)}>
+          <SelectTrigger className="w-full lg:w-48"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Kaikki työt</SelectItem>
+            <SelectItem value="standalone">Ilman projektia</SelectItem>
+            <SelectItem value="project">Projekteihin liitetyt</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae tehtävää tai projektia…" className="pl-9" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Hae tehtävää, sijaintia tai projektia…"
+            className="pl-9"
+          />
         </div>
       </div>
 
@@ -373,109 +395,161 @@ export default function Tyomaaraykset() {
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {filteredOrders.map((order) => (
-          <Card key={order.id} className={cn('overflow-hidden border-slate-200 shadow-sm transition-shadow hover:shadow-md', order.priority === 'Korkea' && !['Valmis', 'Peruttu'].includes(order.status) && 'border-l-4 border-l-red-500')}>
-            <CardContent className="p-0">
-              <div className="space-y-4 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="mb-2 flex flex-wrap gap-2">{statusBadge(order.status)}{priorityBadge(order.priority)}</div>
-                    <h2 className="text-lg font-semibold text-slate-950">{order.title}</h2>
-                    <p className="mt-1 text-sm text-slate-500">{order.project}</p>
+      {loading && (
+        <div className="flex min-h-48 items-center justify-center text-slate-500">
+          <Loader2 size={24} className="mr-2 animate-spin" /> Ladataan työmääräyksiä…
+        </div>
+      )}
+
+      {!loading && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {filteredOrders.map((order) => (
+            <Card
+              key={order.id}
+              className={cn(
+                'overflow-hidden border-slate-200 shadow-sm transition-shadow hover:shadow-md',
+                order.priority === 'Korkea' && !['Valmis', 'Peruttu'].includes(order.status) && 'border-l-4 border-l-red-500',
+              )}
+            >
+              <CardContent className="p-0">
+                <div className="space-y-4 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {statusBadge(order.status)}
+                        {priorityBadge(order.priority)}
+                        <Badge variant="outline" className={order.projectId ? 'border-slate-200 bg-white text-slate-600' : 'border-violet-200 bg-violet-50 text-violet-700'}>
+                          {order.projectId ? <FolderKanban size={13} className="mr-1" /> : <BriefcaseBusiness size={13} className="mr-1" />}
+                          {contextLabel(order)}
+                        </Badge>
+                      </div>
+                      <h2 className="text-lg font-semibold text-slate-950">{order.title}</h2>
+                      {order.type && <p className="mt-1 text-sm text-slate-500">{order.type}</p>}
+                    </div>
+                    {canManage && (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(order)} aria-label={`Muokkaa ${order.title}`}><Pencil size={16} /></Button>
+                        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteTarget(order)} aria-label={`Poista ${order.title}`}><Trash2 size={16} /></Button>
+                      </div>
+                    )}
                   </div>
-                  {canManage && (
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(order)} aria-label={`Muokkaa ${order.title}`}><Pencil size={16} /></Button>
-                      <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteTarget(order)} aria-label={`Poista ${order.title}`}><Trash2 size={16} /></Button>
+
+                  {order.description && <p className="text-sm leading-6 text-slate-600">{order.description}</p>}
+
+                  <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
+                    <div className="flex items-start gap-2">
+                      <CalendarDays size={16} className="mt-0.5 text-slate-400" />
+                      <div><p className="text-xs uppercase tracking-wide text-slate-400">Määräaika</p><p className="text-sm font-medium text-slate-700">{formatDate(order.dueDate)}</p></div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      {order.assignmentScope === 'project_team'
+                        ? <UsersRound size={16} className="mt-0.5 text-slate-400" />
+                        : <UserRound size={16} className="mt-0.5 text-slate-400" />}
+                      <div><p className="text-xs uppercase tracking-wide text-slate-400">Vastuu</p><p className="text-sm font-medium text-slate-700">{assignmentLabel(order)}</p></div>
+                    </div>
+                    {order.location && (
+                      <div className="flex items-start gap-2 sm:col-span-2">
+                        <MapPin size={16} className="mt-0.5 text-slate-400" />
+                        <div><p className="text-xs uppercase tracking-wide text-slate-400">Kohde tai sijainti</p><p className="text-sm font-medium text-slate-700">{order.location}</p></div>
+                      </div>
+                    )}
+                  </div>
+
+                  {order.workerNote && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      <strong>Työhuomio:</strong> {order.workerNote}
+                    </div>
+                  )}
+
+                  {!canManage && !['Valmis', 'Peruttu'].includes(order.status) && (
+                    <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                      {order.status === 'Avoin' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Aloita työ</Button>}
+                      {order.status === 'Odottaa' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Jatka työtä</Button>}
+                      {order.status === 'Käynnissä' && <Button variant="outline" onClick={() => openTransition(order, 'Odottaa')} disabled={saving} className="gap-2"><PauseCircle size={16} /> Keskeytä</Button>}
+                      {['Käynnissä', 'Odottaa'].includes(order.status) && <Button onClick={() => openTransition(order, 'Valmis')} disabled={saving} className="gap-2 bg-emerald-600 hover:bg-emerald-700"><CheckCircle2 size={16} /> Merkitse valmiiksi</Button>}
                     </div>
                   )}
                 </div>
-
-                {order.description && <p className="text-sm leading-6 text-slate-600">{order.description}</p>}
-
-                <div className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
-                  <div className="flex items-start gap-2"><CalendarDays size={16} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Määräaika</p><p className="text-sm font-medium text-slate-700">{formatDate(order.dueDate)}</p></div></div>
-                  <div className="flex items-start gap-2">{order.assignmentScope === 'project_team' ? <UsersRound size={16} className="mt-0.5 text-slate-400" /> : <UserRound size={16} className="mt-0.5 text-slate-400" />}<div><p className="text-xs uppercase tracking-wide text-slate-400">Vastuu</p><p className="text-sm font-medium text-slate-700">{assignmentLabel(order)}</p></div></div>
-                </div>
-
-                {order.workerNote && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    <strong>Työhuomio:</strong> {order.workerNote}
-                  </div>
-                )}
-
-                {!canManage && !['Valmis', 'Peruttu'].includes(order.status) && (
-                  <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-                    {order.status === 'Avoin' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Aloita työ</Button>}
-                    {order.status === 'Odottaa' && <Button onClick={() => void runTransition(order, 'Käynnissä')} disabled={saving} className="gap-2"><PlayCircle size={16} /> Jatka työtä</Button>}
-                    {order.status === 'Käynnissä' && <Button variant="outline" onClick={() => openTransition(order, 'Odottaa')} disabled={saving} className="gap-2"><PauseCircle size={16} /> Keskeytä</Button>}
-                    {['Käynnissä', 'Odottaa'].includes(order.status) && <Button onClick={() => openTransition(order, 'Valmis')} disabled={saving} className="gap-2 bg-emerald-600 hover:bg-emerald-700"><CheckCircle2 size={16} /> Merkitse valmiiksi</Button>}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {!loading && filteredOrders.length === 0 && (
-        <Card className="border-dashed border-slate-300"><CardContent className="p-12 text-center"><ClipboardList size={46} className="mx-auto mb-3 text-slate-300" /><h2 className="font-semibold text-slate-800">{canManage ? 'Työmääräyksiä ei löytynyt' : 'Sinulle ei ole määrätty töitä'}</h2><p className="mt-1 text-sm text-slate-500">{canManage ? 'Muuta hakua tai luo uusi työmääräys.' : 'Uudet tehtävät näkyvät tässä, kun työnjohto kohdistaa ne sinulle tai projektitiimillesi.'}</p></CardContent></Card>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader><DialogTitle>{editing ? 'Muokkaa työmääräystä' : 'Uusi työmääräys'}</DialogTitle></DialogHeader>
-          {formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="work-title">Tehtävä *</Label><Input id="work-title" value={form.title} onChange={(event) => setForm((previous) => ({ ...previous, title: event.target.value }))} /></div>
-            <div className="space-y-2 sm:col-span-2"><Label>Projekti *</Label><Select value={form.projectId} onValueChange={(projectId) => setForm((previous) => ({ ...previous, projectId, assigneeUserIds: previous.assigneeUserIds.filter((userId) => projectMemberships.some((membership) => membership.projectId === projectId && membership.userId === userId)) }))}><SelectTrigger><SelectValue placeholder="Valitse projekti" /></SelectTrigger><SelectContent>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="work-due">Määräaika</Label><Input id="work-due" type="date" value={form.dueDate} onChange={(event) => setForm((previous) => ({ ...previous, dueDate: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="work-type">Työlaji</Label><Input id="work-type" value={form.type} onChange={(event) => setForm((previous) => ({ ...previous, type: event.target.value }))} placeholder="Esim. kirvesmiestyö" /></div>
-            <div className="space-y-2"><Label>Prioriteetti</Label><Select value={form.priority} onValueChange={(priority: WorkOrderPriority) => setForm((previous) => ({ ...previous, priority }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PRIORITIES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label>Tila</Label><Select value={form.status} onValueChange={(status: WorkOrderStatus) => setForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2 sm:col-span-2"><Label>Kohdistus</Label><Select value={form.assignmentScope} onValueChange={(assignmentScope: WorkAssignmentScope) => setForm((previous) => ({ ...previous, assignmentScope }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="people">Nimetyt henkilöt</SelectItem><SelectItem value="project_team">Koko projektitiimi</SelectItem></SelectContent></Select></div>
-            {form.assignmentScope === 'people' && (
-              <div className="space-y-2 sm:col-span-2">
-                <Label>Vastuuhenkilöt projektitiimistä *</Label>
-                <div className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-2">
-                  {selectedProjectPeople.map((person) => (
-                    <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-slate-50">
-                      <Checkbox checked={form.assigneeUserIds.includes(person.userId)} onCheckedChange={(checked) => toggleAssignee(person.userId, checked === true)} />
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</span>
-                      <span className="min-w-0"><span className="block truncate text-sm font-medium">{person.name}</span><span className="block truncate text-xs text-slate-500">{person.email || person.role}</span></span>
-                    </label>
-                  ))}
-                  {!form.projectId && <p className="text-sm text-slate-500 sm:col-span-2">Valitse ensin projekti.</p>}
-                  {form.projectId && selectedProjectPeople.length === 0 && <p className="text-sm text-slate-500 sm:col-span-2">Projektilla ei ole vielä asentajia. Lisää heidät ensin projektin Tiimi-toiminnolla.</p>}
-                </div>
-              </div>
-            )}
-            {form.assignmentScope === 'project_team' && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 sm:col-span-2">
-                Tehtävä näkyy kaikille valitun projektin tiimijäsenille. Projektissa on nyt <strong>{selectedProjectMemberIds.size}</strong> jäsentä.
-              </div>
-            )}
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="work-description">Työohje</Label><Textarea id="work-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} rows={5} placeholder="Kerro tehtävän rajaus, laatuvaatimukset ja tarvittavat tarkistukset." /></div>
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void save()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna työmääräys'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {!loading && filteredOrders.length === 0 && (
+        <Card className="border-dashed border-slate-300">
+          <CardContent className="p-12 text-center">
+            <ClipboardList size={46} className="mx-auto mb-3 text-slate-300" />
+            <h2 className="font-semibold text-slate-800">{canManage ? 'Työmääräyksiä ei löytynyt' : 'Sinulle ei ole määrätty töitä'}</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {canManage
+                ? 'Muuta suodatusta tai luo uusi työmääräys. Projektia ei tarvitse valita.'
+                : 'Uudet tehtävät näkyvät tässä, kun työnjohto kohdistaa ne sinulle tai projektitiimillesi.'}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      <WorkOrderDialog
+        open={dialogOpen}
+        editing={Boolean(editing)}
+        saving={saving}
+        errors={formErrors}
+        form={form}
+        projects={projects}
+        people={people}
+        projectMemberships={projectMemberships}
+        onChange={setForm}
+        onClose={() => setDialogOpen(false)}
+        onSave={() => void save()}
+      />
 
       <Dialog open={Boolean(transitionTarget)} onOpenChange={(open) => !open && setTransitionTarget(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>{transitionStatus === 'Valmis' ? 'Merkitse työ valmiiksi' : 'Keskeytä työ'}</DialogTitle></DialogHeader>
-          <div className="space-y-3"><p className="text-sm text-slate-600">{transitionTarget?.title}</p><div className="space-y-2"><Label htmlFor="worker-note">Työhuomio</Label><Textarea id="worker-note" value={workerNote} onChange={(event) => setWorkerNote(event.target.value)} placeholder={transitionStatus === 'Valmis' ? 'Mitä tehtiin ja mitä työnjohdon pitää tietää?' : 'Miksi työ odottaa ja mitä tarvitaan jatkamiseen?'} rows={4} /></div></div>
-          <DialogFooter><Button variant="outline" onClick={() => setTransitionTarget(null)} disabled={saving}>Peruuta</Button><Button onClick={() => transitionTarget && void runTransition(transitionTarget, transitionStatus, workerNote)} disabled={saving} className={transitionStatus === 'Valmis' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}>{saving ? 'Tallennetaan…' : transitionStatus === 'Valmis' ? 'Merkitse valmiiksi' : 'Keskeytä työ'}</Button></DialogFooter>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">{transitionTarget?.title}</p>
+            <div className="space-y-2">
+              <Label htmlFor="worker-note">Työhuomio</Label>
+              <Textarea
+                id="worker-note"
+                value={workerNote}
+                onChange={(event) => setWorkerNote(event.target.value)}
+                placeholder={transitionStatus === 'Valmis' ? 'Mitä tehtiin ja mitä työnjohdon pitää tietää?' : 'Miksi työ odottaa ja mitä tarvitaan jatkamiseen?'}
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTransitionTarget(null)} disabled={saving}>Peruuta</Button>
+            <Button
+              onClick={() => transitionTarget && void runTransition(transitionTarget, transitionStatus, workerNote)}
+              disabled={saving}
+              className={transitionStatus === 'Valmis' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+            >
+              {saving ? 'Tallennetaan…' : transitionStatus === 'Valmis' ? 'Merkitse valmiiksi' : 'Keskeytä työ'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Poista työmääräys</AlertDialogTitle><AlertDialogDescription>Poistetaanko <strong>{deleteTarget?.title}</strong>? Toimintoa ei voi perua.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Peruuta</AlertDialogCancel><AlertDialogAction onClick={() => void remove()} className="bg-red-600 hover:bg-red-700">Poista</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Poista työmääräys</AlertDialogTitle>
+            <AlertDialogDescription>Poistetaanko <strong>{deleteTarget?.title}</strong>? Toimintoa ei voi perua.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Peruuta</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void remove()} disabled={saving} className="bg-red-600 hover:bg-red-700">Poista</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
       </AlertDialog>
 
       {!canManage && currentRole === 'worker' && (
-        <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><Clock3 size={16} /> Työnjohto näkee tilapäivityksesi ja työhuomiosi välittömästi.</div>
+        <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          <Clock3 size={16} /> Työnjohto näkee tilapäivityksesi ja työhuomiosi välittömästi.
+        </div>
       )}
     </motion.div>
   );

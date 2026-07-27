@@ -23,8 +23,10 @@ import {
   MessageCircle,
   MessageSquare,
   QrCode,
+  Recycle,
   Settings,
   ShieldCheck,
+  ShoppingCart,
   Sparkles,
   UserCircle,
   Users,
@@ -50,8 +52,8 @@ const workerGroups: NavGroup[] = [
       { label: 'Minun työni', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
       { label: 'Kaikki kirjaukset', icon: ClipboardList, path: '/kirjaukset' },
-      { label: 'Omat henkilöstö- ja palkkatiedot', icon: UserCircle, path: '/henkilokortit' },
       { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
+      { label: 'Omat henkilöstö- ja palkkatiedot', icon: UserCircle, path: '/henkilokortit' },
     ],
   },
   {
@@ -59,8 +61,8 @@ const workerGroups: NavGroup[] = [
     title: 'Työmaan työkalut',
     items: [
       { label: 'Turvallisuushavainnot', icon: ShieldCheck, path: '/tyoturvallisuus' },
-      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
       { label: 'Korjattavat puutteet', icon: ClipboardList, path: '/tarkastukset' },
+      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
       { label: 'Kuittaukset', icon: ClipboardSignature, path: '/kuittaukset' },
       { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
       { label: 'Viestit', icon: MessageSquare, path: '/viestinta' },
@@ -91,21 +93,27 @@ const managementGroups: NavGroup[] = [
     ],
   },
   {
-    key: 'production',
-    title: 'Tuotanto',
+    key: 'work-control',
+    title: 'Työn ohjaus',
     items: [
-      { label: 'Projektit ja tiimit', icon: FolderKanban, path: '/projektit' },
-      { label: 'QR-kirjautumisen hallinta', icon: QrCode, path: '/qr-hallinta' },
-      { label: 'Projektipyynnöt', icon: FileQuestion, path: '/projektipyynnot' },
-      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
-      { label: 'Tarkastukset ja luovutukset', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
-      { label: 'Tilaukset', icon: ClipboardList, path: '/tilaukset' },
       { label: 'Aikataulutus', icon: CalendarClock, path: '/aikataulutus' },
       { label: 'Työvuorot', icon: CalendarClock, path: '/tyovuorokalenteri' },
+      { label: 'Tarkastukset ja luovutukset', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Päiväkirjat', icon: FileText, path: '/paivakirjat' },
       { label: 'Työturvallisuus', icon: ShieldCheck, path: '/tyoturvallisuus' },
-      { label: 'Jätehuolto', icon: ShieldCheck, path: '/jatehuolto' },
+      { label: 'Tilaukset', icon: ShoppingCart, path: '/tilaukset' },
+      { label: 'Jätehuolto', icon: Recycle, path: '/jatehuolto' },
+    ],
+  },
+  {
+    key: 'projects',
+    title: 'Projektit ja yhteistyö',
+    items: [
+      { label: 'Projektit ja tiimit', icon: FolderKanban, path: '/projektit' },
+      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
+      { label: 'Projektipyynnöt', icon: FileQuestion, path: '/projektipyynnot' },
+      { label: 'QR-kirjautumisen hallinta', icon: QrCode, path: '/qr-hallinta' },
     ],
   },
   {
@@ -160,14 +168,15 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   const { effectiveRole, effectiveDisplayName, isPreviewing } = useViewAs();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     overview: true,
-    production: true,
+    'work-control': true,
+    projects: false,
     people: false,
     commercial: false,
     tools: false,
     'own-work': true,
     'site-tools': true,
     'customer-portal': true,
-    admin: true,
+    admin: false,
   });
 
   if (!user || !effectiveRole) return null;
@@ -211,7 +220,11 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
       >
         <item.icon size={19} className="flex-shrink-0" />
         {!collapsed && <span className="truncate">{item.label}</span>}
-        {collapsed && <span className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">{item.label}</span>}
+        {collapsed && (
+          <span className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+            {item.label}
+          </span>
+        )}
       </button>
     );
   };
@@ -230,7 +243,9 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
         {isMobile ? (
           <button type="button" onClick={onToggle} aria-label="Sulje valikko" className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800"><X size={18} /></button>
         ) : (
-          <button type="button" onClick={onToggle} aria-label={collapsed ? 'Laajenna valikko' : 'Pienennä valikko'} className="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 md:flex"><motion.span animate={{ rotate: collapsed ? 180 : 0 }}><ChevronLeft size={17} /></motion.span></button>
+          <button type="button" onClick={onToggle} aria-label={collapsed ? 'Laajenna valikko' : 'Pienennä valikko'} className="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 md:flex">
+            <motion.span animate={{ rotate: collapsed ? 180 : 0 }}><ChevronLeft size={17} /></motion.span>
+          </button>
         )}
       </div>
 
@@ -240,14 +255,23 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
           return (
             <div key={group.key}>
               {!collapsed && (
-                <button type="button" onClick={() => setOpenGroups((previous) => ({ ...previous, [group.key]: !open }))} className="flex min-h-9 w-full items-center px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300">
+                <button
+                  type="button"
+                  onClick={() => setOpenGroups((previous) => ({ ...previous, [group.key]: !open }))}
+                  className="flex min-h-9 w-full items-center px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 hover:text-slate-300"
+                >
                   <span className="flex-1 text-left">{group.title}</span>
                   <motion.span animate={{ rotate: open ? 0 : -90 }}><ChevronDown size={12} /></motion.span>
                 </button>
               )}
               <AnimatePresence initial={false}>
                 {(open || collapsed) && (
-                  <motion.div initial={collapsed ? false : { height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="space-y-0.5 overflow-hidden">
+                  <motion.div
+                    initial={collapsed ? false : { height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-0.5 overflow-hidden"
+                  >
                     {group.items.map((item) => <NavButton key={item.path} item={item} />)}
                   </motion.div>
                 )}
@@ -261,9 +285,9 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-bold text-white">{initialsOf(displayName)}</div>
           {!collapsed && (
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white">{displayName}</p>
-              <p className="flex items-center gap-1 text-[11px] text-slate-400">{isPreviewing && <Eye size={11} />}{ROLE_LABELS[role]}</p>
+              <p className="truncate text-[11px] text-slate-400">{isPreviewing ? `Esikatselu: ${ROLE_LABELS[role]}` : ROLE_LABELS[role]}</p>
             </div>
           )}
         </div>
