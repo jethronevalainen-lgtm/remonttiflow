@@ -151,8 +151,8 @@ function AppRoutes() {
         <Route path="/paivakirjat" element={<RoleGuard allowedRoles={rolesForRoute('/paivakirjat')}><Paivakirjat /></RoleGuard>} />
         <Route path="/kuittaukset" element={<RoleGuard allowedRoles={rolesForRoute('/kuittaukset')}><Kuittaukset /></RoleGuard>} />
         <Route path="/tarjoukset" element={<RoleGuard allowedRoles={rolesForRoute('/tarjoukset')}><Tarjoukset /></RoleGuard>} />
-        <Route path="/laskenta" element={<Navigate to="/tarjoukset" replace />} />
-        <Route path="/maaralaskenta" element={<Navigate to="/tarjoukset" replace />} />
+        <Route path="/laskenta" element={<RoleGuard allowedRoles={rolesForRoute('/laskenta')}><Tarjoukset /></RoleGuard>} />
+        <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={rolesForRoute('/maaralaskenta')}><Tarjoukset /></RoleGuard>} />
         <Route path="/jatehuolto" element={<RoleGuard allowedRoles={rolesForRoute('/jatehuolto')}><Jatehuolto /></RoleGuard>} />
         <Route path="/tyomaaraykset" element={<RoleGuard allowedRoles={rolesForRoute('/tyomaaraykset')}><Tyomaaraykset /></RoleGuard>} />
         <Route path="/tilaukset" element={<RoleGuard allowedRoles={rolesForRoute('/tilaukset')}><Tilaukset /></RoleGuard>} />
