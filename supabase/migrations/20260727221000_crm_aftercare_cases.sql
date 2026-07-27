@@ -184,6 +184,53 @@ create trigger create_case_from_reclamation_request
 after insert on public.customer_work_requests
 for each row execute function private.create_case_from_reclamation_request();
 
+insert into public.customer_cases (
+  organization_id,
+  customer_id,
+  site_id,
+  project_id,
+  work_request_id,
+  case_type,
+  title,
+  description,
+  reported_by_name,
+  reported_by_phone,
+  reported_at,
+  priority,
+  due_at,
+  customer_visible,
+  created_by
+)
+select
+  r.organization_id,
+  r.customer_id,
+  p.customer_site_id,
+  r.project_id,
+  r.id,
+  'Reklamaatio',
+  r.title,
+  r.description,
+  r.contact_name,
+  r.contact_phone,
+  r.created_at,
+  case r.urgency
+    when 'Kiireellinen' then 'Kriittinen'
+    when 'Ei kiireellinen' then 'Matala'
+    else 'Normaali'
+  end,
+  case
+    when r.requested_date is not null then r.requested_date::timestamptz + interval '16 hours'
+    else r.created_at + interval '3 days'
+  end,
+  true,
+  r.created_by
+from public.customer_work_requests r
+join public.projects p
+  on p.id = r.project_id
+ and p.organization_id = r.organization_id
+where r.category = 'Reklamaatio'
+on conflict (work_request_id) do nothing;
+
 create or replace function public.customer_project_cases_v2(p_project_id uuid)
 returns table (
   id uuid,
@@ -248,6 +295,10 @@ declare
 begin
   if p_decision not in ('Hyväksytty', 'Hylätty') then
     raise exception 'invalid decision' using errcode = '22023';
+  end if;
+
+  if p_decision = 'Hylätty' and nullif(btrim(p_note), '') is null then
+    raise exception 'rejection note is required' using errcode = '22023';
   end if;
 
   select *
