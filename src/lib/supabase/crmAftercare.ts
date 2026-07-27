@@ -99,13 +99,13 @@ type CustomerCaseInput = {
   status: CustomerCaseStatus;
   dueAt?: string;
   assignedUserId?: string;
-  warrantyCovered?: boolean;
+  warrantyCovered?: boolean | null;
   rootCause?: string;
   resolution?: string;
   estimatedCostCents?: number;
   actualCostCents?: number;
   customerVisible?: boolean;
-  customerDecision?: CustomerCaseDecision;
+  customerDecision?: CustomerCaseDecision | null;
   closedAt?: string;
 };
 
