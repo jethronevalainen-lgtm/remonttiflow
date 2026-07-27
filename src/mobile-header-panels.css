@@ -1,0 +1,36 @@
+/*
+ * Headerin valikot ankkuroidaan pienillä näytöillä näkymään, ei oikean reunan
+ * kuvakkeeseen. Näin oikealle sijoitettu ilmoitus- tai organisaatiopainike ei
+ * voi työntää valikkoa näkymän vasemman reunan ulkopuolelle.
+ */
+@media (max-width: 639px) {
+  header button[aria-label='Sulje ilmoitukset'] + div,
+  header button[aria-label='Sulje organisaatiovalikko'] + div {
+    position: fixed;
+    top: 3.75rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    z-index: 50;
+    box-sizing: border-box;
+    width: auto;
+    max-width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 4.25rem);
+    margin-top: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  header button[aria-label='Sulje ilmoitukset'] + div > :first-child {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  header button[aria-label='Sulje ilmoitukset'] + div > :first-child > button {
+    align-self: flex-start;
+  }
+
+  header button[aria-label='Sulje ilmoitukset'] + div * {
+    overflow-wrap: anywhere;
+  }
+}

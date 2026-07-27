@@ -9,6 +9,7 @@ import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import { AppProviders } from './providers/AppProviders';
 import AuthCallback from '@/pages/AuthCallback';
 import './index.css';
+import './mobile-header-panels.css';
 
 const isAuthCallback = window.location.pathname === '/auth/callback';
 
