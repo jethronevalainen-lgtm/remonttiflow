@@ -85,6 +85,15 @@ function RoleGuard({
   return <>{children}</>;
 }
 
+function CustomerPreviewBoundary({ children }: { children: React.ReactNode }) {
+  const { effectiveRole, isPreviewing, customerPreview } = useViewAs();
+  if (isPreviewing && effectiveRole === 'customer') {
+    if (!customerPreview) return <Navigate to="/kayttajaesikatselu" replace />;
+    return <Navigate to="/tilaajan-tyot" replace />;
+  }
+  return <>{children}</>;
+}
+
 function RoleHome() {
   const { loading, error, refreshOrganizations } = useOrganization();
   const { effectiveRole } = useViewAs();
@@ -127,8 +136,8 @@ function AppRoutes() {
         <Route path="/projektit/:projectId" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><ProjectWorkspace /></RoleGuard>} />
         <Route path="/projektit/:projectId/tilaajayhteistyo" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><CustomerCollaborationManager /></RoleGuard>} />
         <Route path="/projektipyynnot" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><ProjectRequests /></RoleGuard>} />
-        <Route path="/projektikeskustelut" element={<RoleGuard allowedRoles={allRoles}><ProjectDiscussions /></RoleGuard>} />
-        <Route path="/projektikeskustelut/:projectId" element={<RoleGuard allowedRoles={allRoles}><ProjectConversation /></RoleGuard>} />
+        <Route path="/projektikeskustelut" element={<RoleGuard allowedRoles={allRoles}><CustomerPreviewBoundary><ProjectDiscussions /></CustomerPreviewBoundary></RoleGuard>} />
+        <Route path="/projektikeskustelut/:projectId" element={<RoleGuard allowedRoles={allRoles}><CustomerPreviewBoundary><ProjectConversation /></CustomerPreviewBoundary></RoleGuard>} />
         <Route path="/aikataulutus" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Aikataulutus /></RoleGuard>} />
         <Route path="/paivakirjat" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Paivakirjat /></RoleGuard>} />
         <Route path="/kuittaukset" element={<RoleGuard allowedRoles={internalRoles}><Kuittaukset /></RoleGuard>} />
@@ -145,7 +154,7 @@ function AppRoutes() {
         <Route path="/qr-kirjautuminen" element={<RoleGuard allowedRoles={internalRoles}><QrKirjautuminen /></RoleGuard>} />
         <Route path="/qr-hallinta" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><QrHallinta /></RoleGuard>} />
         <Route path="/matkakulut" element={<RoleGuard allowedRoles={internalRoles}><Matkakulut /></RoleGuard>} />
-        <Route path="/tyoturvallisuus" element={<RoleGuard allowedRoles={allRoles}><SafetyPortal /></RoleGuard>} />
+        <Route path="/tyoturvallisuus" element={<RoleGuard allowedRoles={allRoles}><CustomerPreviewBoundary><SafetyPortal /></CustomerPreviewBoundary></RoleGuard>} />
         <Route path="/crm" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><CRM /></RoleGuard>} />
         <Route path="/asiakkaat" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><Asiakkaat /></RoleGuard>} />
         <Route path="/ai" element={<RoleGuard allowedRoles={['admin', 'supervisor']}><AIPage /></RoleGuard>} />
