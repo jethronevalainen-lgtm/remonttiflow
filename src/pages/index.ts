@@ -14,6 +14,7 @@ export { default as Tyomaaraykset } from './Tyomaaraykset';
 export { default as Tilaukset } from './Tilaukset';
 export { default as TilaajanTyot } from './TilaajanTyotV2';
 export { default as Tuntikirjaukset } from './TuntikirjauksetV2';
+export { default as Kirjaukset } from './Kirjaukset';
 export { default as QrHallinta } from './QrHallinta';
 export { default as QrKirjautuminen } from './QrKirjautuminen';
 export { default as Varmuuskopiot } from './Varmuuskopiot';
