@@ -21,8 +21,9 @@ export interface ProjectMembership {
 
 export interface ManagedWorkOrder {
   id: string;
-  projectId: string;
+  projectId?: string;
   project: string;
+  location: string;
   title: string;
   dueDate: string;
   priority: WorkOrderPriority;
@@ -180,10 +181,12 @@ export async function loadRoleWorkspace(
   const allWorkOrders = asRows(workOrderData).map((item): ManagedWorkOrder => {
     const id = text(item, 'id');
     const assigneeUserIds = assigneesByOrder.get(id) ?? [];
+    const projectId = optionalText(item, 'project_id');
     return {
       id,
-      projectId: text(item, 'project_id'),
-      project: text(item, 'project'),
+      projectId,
+      project: text(item, 'project') || (projectId ? 'Nimetön projekti' : 'Yksittäinen työ'),
+      location: text(item, 'location'),
       title: text(item, 'title'),
       dueDate: text(item, 'due_date'),
       priority: priority(item.priority),
@@ -222,7 +225,7 @@ export async function loadRoleWorkspace(
   );
   const workOrders = allWorkOrders.filter((order) => (
     order.assignmentScope === 'project_team'
-      ? ownProjectIds.has(order.projectId)
+      ? Boolean(order.projectId && ownProjectIds.has(order.projectId))
       : order.assigneeUserIds.includes(currentUserId)
   ));
 
@@ -249,8 +252,9 @@ export async function replaceProjectMembers(values: {
 export async function saveManagedWorkOrder(values: {
   organizationId: string;
   workOrderId?: string;
-  projectId: string;
+  projectId?: string;
   title: string;
+  location?: string;
   dueDate?: string;
   priority: WorkOrderPriority;
   status: WorkOrderStatus;
@@ -262,7 +266,7 @@ export async function saveManagedWorkOrder(values: {
   const { data, error } = await supabase.rpc('save_work_order', {
     p_organization_id: values.organizationId,
     p_work_order_id: values.workOrderId ?? null,
-    p_project_id: values.projectId,
+    p_project_id: values.projectId || null,
     p_title: values.title,
     p_due_date: values.dueDate || null,
     p_priority: values.priority,
@@ -271,6 +275,7 @@ export async function saveManagedWorkOrder(values: {
     p_type: values.type || null,
     p_assignment_scope: values.assignmentScope,
     p_assignee_user_ids: values.assigneeUserIds,
+    p_location: values.location || null,
   });
   if (error) throw new Error(`Työmääräyksen tallennus epäonnistui: ${error.message}`);
   if (typeof data !== 'string') throw new Error('Tietokanta ei palauttanut työmääräyksen tunnistetta.');
