@@ -97,9 +97,10 @@ interface SignatureDraft {
   signatureData: string;
 }
 
-export function SignatureDialog({ open, busy, defaultName = '', onClose, onSubmit }: {
+export function SignatureDialog({ open, busy, error, defaultName = '', onClose, onSubmit }: {
   open: boolean;
   busy: boolean;
+  error?: string | null;
   defaultName?: string;
   onClose: () => void;
   onSubmit: (draft: SignatureDraft) => Promise<void>;
@@ -196,6 +197,7 @@ export function SignatureDialog({ open, busy, defaultName = '', onClose, onSubmi
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
           Allekirjoitus vahvistaa, että tarkastustiedot on kirjattu ja kohde on tarkastettu. Hyväksyminen tehdään erikseen tarkastuksen valmistuttua.
         </div>
+        {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
         <div className="grid gap-4 sm:grid-cols-2">
           <div><Label>Nimi *</Label><Input value={draft.name} onChange={(event) => setDraft((previous) => ({ ...previous, name: event.target.value }))} /></div>
           <div><Label>Rooli *</Label><Input value={draft.role} onChange={(event) => setDraft((previous) => ({ ...previous, role: event.target.value }))} /></div>

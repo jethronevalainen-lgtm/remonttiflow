@@ -261,6 +261,15 @@ export async function createAttachmentUrl(objectPath: string): Promise<string> {
   return data.signedUrl;
 }
 
+export async function downloadInspectionAttachment(objectPath: string): Promise<Blob> {
+  const { data, error } = await supabase.storage
+    .from('inspection-files')
+    .download(objectPath);
+  if (error) throw failure('Liitteen esikatselu epäonnistui', error.message);
+  if (!data) throw new Error('Liitteen esikatselutiedosto puuttuu.');
+  return data;
+}
+
 export async function publishInspectionTemplate(input: {
   organizationId: string;
   templateId?: string;
