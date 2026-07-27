@@ -41,6 +41,25 @@ export interface ReportCenterFilters {
   userIds?: string[] | null;
 }
 
+export interface ReportFilterProject {
+  id: string;
+  name: string;
+  projectNumber: string | null;
+  status: string;
+}
+
+export interface ReportFilterUser {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string;
+}
+
+export interface ReportFilterCatalog {
+  projects: ReportFilterProject[];
+  users: ReportFilterUser[];
+}
+
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -97,4 +116,26 @@ export async function loadReportCenterData(filters: ReportCenterFilters): Promis
   });
   if (error) throw new Error(`Raportin muodostaminen epäonnistui: ${error.message}`);
   return mapDataset(data, filters.reportType);
+}
+
+export async function loadReportFilterCatalog(organizationId: string): Promise<ReportFilterCatalog> {
+  const { data, error } = await supabase.rpc('report_center_filter_catalog', {
+    p_organization_id: organizationId,
+  });
+  if (error) throw new Error(`Raporttisuodattimien lataus epäonnistui: ${error.message}`);
+  const root = object(data);
+  return {
+    projects: rows(root.projects).map((row): ReportFilterProject => ({
+      id: text(row.id),
+      name: text(row.name),
+      projectNumber: nullableText(row.projectNumber),
+      status: text(row.status),
+    })).filter((item) => item.id),
+    users: rows(root.users).map((row): ReportFilterUser => ({
+      id: text(row.id),
+      name: text(row.name),
+      email: nullableText(row.email),
+      role: text(row.role),
+    })).filter((item) => item.id),
+  };
 }
