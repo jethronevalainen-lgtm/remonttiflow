@@ -14,9 +14,11 @@ interface OrganizationAdminData {
 }
 
 export function useOrganizationAdmin(): OrganizationAdminData {
-  const { currentOrg, currentRole } = useOrganization();
+  const { currentOrg, actualRole } = useOrganization();
   const organizationId = currentOrg?.id ?? null;
-  const enabled = Boolean(organizationId && currentRole === 'admin');
+  const enabled = Boolean(
+    organizationId && (actualRole === 'admin' || actualRole === 'supervisor'),
+  );
 
   const query = useQuery({
     queryKey: ['organization-admin', organizationId],
