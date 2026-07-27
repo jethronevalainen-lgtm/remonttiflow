@@ -14,7 +14,7 @@ import { ROLE_ROUTES, type UserRole } from '../src/auth/permissions';
 const E2E_EMAIL = process.env.E2E_USER_EMAIL?.trim() ?? '';
 const E2E_SECRET = process.env.E2E_USER_PASSWORD ?? '';
 const E2E_PASSWORD = E2E_SECRET
-  ? `vakantti-e2e-${createHash('sha256').update(E2E_SECRET).digest('hex')}`
+  ? `vakantti-e2e-${createHash('sha256').update(E2E_SECRET).digest('base64url')}`
   : '';
 const E2E_PROVISION_TOKEN = process.env.E2E_PROVISION_TOKEN?.trim() ?? '';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL?.trim() ?? '';
