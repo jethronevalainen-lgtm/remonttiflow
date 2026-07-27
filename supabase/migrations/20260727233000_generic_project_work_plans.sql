@@ -99,6 +99,9 @@ alter table public.work_orders
 create index if not exists work_orders_work_plan_package_idx
   on public.work_orders (work_plan_id, work_package_key, phase_order)
   where work_plan_id is not null;
+create unique index if not exists work_orders_plan_package_phase_unique_idx
+  on public.work_orders (work_plan_id, work_package_key, project_phase_id)
+  where work_plan_id is not null;
 create index if not exists work_orders_project_phase_idx
   on public.work_orders (project_phase_id, status)
   where project_phase_id is not null;
@@ -284,7 +287,7 @@ set search_path = ''
 as $$
 declare
   project_row public.projects%rowtype;
-  work_plan_id uuid;
+  v_work_plan_id uuid;
   target_value jsonb;
   phase_value jsonb;
   phase_ids uuid[] := array[]::uuid[];
@@ -368,7 +371,7 @@ begin
   ) values (
     p_organization_id, p_project_id, auth.uid(), btrim(p_name),
     nullif(btrim(coalesce(p_description, '')), '')
-  ) returning id into work_plan_id;
+  ) returning id into v_work_plan_id;
 
   phase_index := 0;
   for phase_value in select value from jsonb_array_elements(p_phases)
@@ -415,7 +418,7 @@ begin
       'Suunniteltu',
       0,
       nullif(btrim(coalesce(phase_value->>'description', '')), ''),
-      work_plan_id,
+      v_work_plan_id,
       phase_index,
       nullif(btrim(coalesce(phase_value->>'type', '')), ''),
       coalesce(nullif(phase_value->>'priority', ''), 'Normaali')
@@ -504,7 +507,7 @@ begin
       );
 
       update public.work_orders
-      set work_plan_id = work_plan_id,
+      set work_plan_id = v_work_plan_id,
           work_package_key = target_key,
           work_package_title = target_title,
           project_phase_id = phase_id,
@@ -520,7 +523,7 @@ begin
     end loop;
   end loop;
 
-  perform private.refresh_project_work_plan(work_plan_id);
+  perform private.refresh_project_work_plan(v_work_plan_id);
 
   insert into public.audit_logs (
     organization_id, user_id, action, table_name, record_id, metadata
@@ -529,7 +532,7 @@ begin
     auth.uid(),
     'project_work_plan_created',
     'project_work_plans',
-    work_plan_id,
+    v_work_plan_id,
     jsonb_build_object(
       'project_id', p_project_id,
       'target_count', target_count,
@@ -539,7 +542,7 @@ begin
   );
 
   return jsonb_build_object(
-    'plan_id', work_plan_id,
+    'plan_id', v_work_plan_id,
     'target_count', target_count,
     'phase_count', phase_count,
     'work_order_count', created_count
