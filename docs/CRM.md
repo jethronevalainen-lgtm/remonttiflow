@@ -59,6 +59,17 @@ Tietokantatriggerit:
 - muodostavat reklamaatiotyöpyynnöstä asiakasasian,
 - säilyttävät CRM:n ja jälkihoidon muutokset audit-lokissa.
 
+## Tuotantovarmennus
+
+Jälkihoitoketju varmennetaan tuotantotietokannassa palautettavilla transaktiotesteillä:
+
+- reklamaatiotyöpyynnöstä muodostuu oikeaan asiakkaaseen ja projektiin linkitetty CRM-asia,
+- kiireellinen reklamaatio saa kriittisen prioriteetin ja määräajan,
+- asiakas näkee vain julkaistun asian omassa projektissaan,
+- asiakkaan hyväksyntä sulkee asian ja tallentaa päätöksen,
+- asiakkaan hylkäys vaatii palvelimella perustelun,
+- testitietueet palautetaan transaktion lopuksi eikä niitä jää tuotantodataan.
+
 ## Migraatiot
 
 - `20260727213000_crm_operating_system.sql`
