@@ -106,7 +106,7 @@ export interface TimeEntry {
   rejectionReason?: string;
   lockedAt?: string;
   payrollPeriodId?: string;
-  /** View fields retained for older schedule components. */
+  /** View fields used by the Tuntikirjaukset page (not part of the core record). */
   dayName?: string;
   projectColor?: string;
   workType?: string;
@@ -184,26 +184,50 @@ export interface CrmLead {
   company: string;
   customerId?: string;
   value: number;
-  probability: number;
   stage: CrmLeadStage;
-  nextAction: string;
+  assignee: string;
+  assigneeUserId?: string;
+  probability?: number;
+  source?: string;
+  lostReason?: string;
+  convertedProjectId?: string;
+  lastActivityAt?: string;
   date: string;
+}
+
+export interface DiaryEntry {
+  id: string;
+  date: string;
+  projectId?: string;
+  project: string;
+  author: string;
+  weather: string;
+  temperature: string;
+  workers: number;
+  workDescription: string;
+  deliveries?: string;
+  issues?: string;
+  delays?: string;
+  status?: DiaryStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  lockedBy?: string;
 }
 
 export interface SafetyItem {
   id: string;
   type: SafetyItemType;
   title: string;
-  description?: string;
   date: string;
   projectId?: string;
   project?: string;
+  description?: string;
+  location?: string;
   severity?: SafetyItemSeverity;
   status: string;
   assignee?: string;
   assigneeUserId?: string;
   dueDate?: string;
-  location?: string;
   rootCause?: string;
   correctiveAction?: string;
   preventiveAction?: string;
@@ -212,4 +236,109 @@ export interface SafetyItem {
   verifiedBy?: string;
   latitude?: number;
   longitude?: number;
+}
+
+export interface WasteEntry {
+  id: string;
+  date: string;
+  projectId?: string;
+  project: string;
+  wasteType: string;
+  amount: number;
+  method: string;
+  cost: number;
+  unit?: string;
+  notes?: string;
+  destination?: string;
+  receiptNumber?: string;
+  hazardous?: boolean;
+}
+
+export interface DrivingLogEntry {
+  id: string;
+  date: string;
+  userId?: string;
+  driver: string;
+  equipmentId?: string;
+  vehicle: string;
+  startAddress: string;
+  endAddress: string;
+  distance: number;
+  purpose: string;
+  projectId?: string;
+  project?: string;
+  startOdometerKm?: number;
+  endOdometerKm?: number;
+}
+
+export interface TravelExpense {
+  id: string;
+  date: string;
+  userId?: string;
+  employee: string;
+  projectId?: string;
+  type: string;
+  description: string;
+  amount: number;
+  status: TravelExpenseStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  attachmentPath?: string;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  author: string;
+  date: string;
+  priority: AnnouncementPriority;
+}
+
+export interface Message {
+  id: string;
+  sender: string;
+  recipient: string;
+  senderUserId?: string;
+  recipientUserId?: string;
+  subject?: string;
+  content: string;
+  timestamp: string;
+  read: boolean;
+}
+
+export interface SiteReceiptAttachment {
+  id: string;
+  receiptId: string;
+  kind: SiteReceiptAttachmentKind;
+  fileName: string;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface SiteReceipt {
+  id: string;
+  organizationId: string;
+  projectId?: string;
+  workOrderId?: string;
+  project: string;
+  title: string;
+  type: SiteReceiptType;
+  referenceNumber?: string;
+  occurredAt: string;
+  signerName: string;
+  signerRole?: string;
+  signerCompany?: string;
+  notes?: string;
+  status: SiteReceiptStatus;
+  signedAt?: string;
+  voidedAt?: string;
+  voidReason?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  attachments: SiteReceiptAttachment[];
 }
