@@ -9,32 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import type { OrganizationPerson, ProjectMembership } from '@/lib/supabase/workManagement';
 import type { Project, WorkAssignmentScope, WorkOrderPriority, WorkOrderStatus } from '@/types';
-
-export interface WorkOrderFormValues {
-  title: string;
-  projectId: string;
-  location: string;
-  dueDate: string;
-  priority: WorkOrderPriority;
-  status: WorkOrderStatus;
-  type: string;
-  description: string;
-  assignmentScope: WorkAssignmentScope;
-  assigneeUserIds: string[];
-}
-
-export const EMPTY_WORK_ORDER_FORM: WorkOrderFormValues = {
-  title: '',
-  projectId: '',
-  location: '',
-  dueDate: '',
-  priority: 'Normaali',
-  status: 'Avoin',
-  type: '',
-  description: '',
-  assignmentScope: 'people',
-  assigneeUserIds: [],
-};
+import type { WorkOrderFormValues } from './workOrderForm';
 
 const NO_PROJECT = '__standalone__';
 const STATUSES: WorkOrderStatus[] = ['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'];
