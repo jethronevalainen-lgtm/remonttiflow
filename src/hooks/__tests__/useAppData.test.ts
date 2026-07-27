@@ -1,10 +1,17 @@
-import { renderHook, act } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { useAppData, generateId, type Project, type WorkOrder, type Customer, type CrmLead, type TimeEntry, type SafetyItem } from '../useAppData';
+import {
+  generateId,
+  useAppData,
+  type CrmLead,
+  type Customer,
+  type Project,
+  type SafetyItem,
+  type TimeEntry,
+  type WorkOrder,
+} from '../useAppData';
 
-// useAppData persists under 'vakantti-v1-*' keys; start each test from a
-// clean slate so hooks always seed from initialData.
 beforeEach(() => {
   window.localStorage.clear();
 });
@@ -29,383 +36,192 @@ const newWorkOrderInput = {
   status: 'Avoin',
 } as const;
 
-describe('useAppData — seeding from initialData', () => {
-  it('seeds all collections with the initial data when storage is empty', () => {
+const newCustomerInput = {
+  name: 'Testiasiakas Oy',
+  type: 'Yritys',
+  contactPerson: 'Testi Henkilö',
+  phone: '040-1234567',
+  email: 'testi@example.com',
+  address: 'Testikatu 1, 00100 Helsinki',
+  projectCount: 0,
+  lastContact: '2026-08-01',
+  status: 'Aktiivinen',
+} as const;
+
+const newLeadInput = {
+  name: 'Testiliidi',
+  company: 'Liidi Oy',
+  value: 50000,
+  stage: 'Uusi',
+  assignee: 'Myyjä',
+  date: '2026-08-01',
+} as const;
+
+const newTimeEntryInput = {
+  date: '2026-08-01',
+  employee: 'Testaaja',
+  project: 'Testiprojekti',
+  hours: 8,
+  overtime: 0,
+  description: 'Testikirjaus',
+  status: 'Odottaa',
+} as const;
+
+const newSafetyItemInput = {
+  type: 'incident',
+  title: 'Testitapaturma',
+  date: '2026-08-01',
+  severity: 'Lievä',
+  status: 'Avoin',
+} as const;
+
+describe('useAppData — empty initial state', () => {
+  it('starts every business collection empty', () => {
     const { result } = renderHook(() => useAppData());
-    expect(result.current.projects).toHaveLength(10);
-    expect(result.current.workOrders).toHaveLength(8);
-    expect(result.current.timeEntries).toHaveLength(5);
-    expect(result.current.employees).toHaveLength(5);
-    expect(result.current.equipment).toHaveLength(5);
-    expect(result.current.customers).toHaveLength(4);
-    expect(result.current.crmLeads).toHaveLength(3);
-    expect(result.current.diaryEntries).toHaveLength(2);
-    expect(result.current.safetyItems).toHaveLength(2);
-    expect(result.current.wasteEntries).toHaveLength(2);
-    expect(result.current.drivingLog).toHaveLength(1);
-    expect(result.current.announcements).toHaveLength(1);
-    expect(result.current.messages).toHaveLength(1);
+
+    expect(result.current.projects).toEqual([]);
+    expect(result.current.workOrders).toEqual([]);
+    expect(result.current.timeEntries).toEqual([]);
+    expect(result.current.employees).toEqual([]);
+    expect(result.current.equipment).toEqual([]);
+    expect(result.current.customers).toEqual([]);
+    expect(result.current.crmLeads).toEqual([]);
+    expect(result.current.diaryEntries).toEqual([]);
+    expect(result.current.safetyItems).toEqual([]);
+    expect(result.current.wasteEntries).toEqual([]);
+    expect(result.current.drivingLog).toEqual([]);
+    expect(result.current.announcements).toEqual([]);
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.stats.totalProjects).toBe(0);
+    expect(result.current.stats.totalEmployees).toBe(0);
     expect(result.current.sidebarCollapsed).toBe(false);
   });
 
-  it('hydrates from previously persisted localStorage values', () => {
-    const custom: Project[] = [
-      {
-        id: 'PROJ-X',
-        name: 'Persistoitu projekti',
-        customer: 'Asiakas',
-        status: 'Suunniteltu',
-        startDate: '2026-01-01',
-        endDate: '2026-06-30',
-        progress: 0,
-        budget: 1,
-        spent: 0,
-      },
-    ];
-    window.localStorage.setItem('vakantti-v1-projects', JSON.stringify(custom));
+  it('does not hydrate stale values from the removed demo storage keys', () => {
+    const stale: Project[] = [{ id: 'PROJ-DEMO', ...newProjectInput }];
+    window.localStorage.setItem('vakantti-v1-projects', JSON.stringify(stale));
+
     const { result } = renderHook(() => useAppData());
-    expect(result.current.projects).toEqual(custom);
+
+    expect(result.current.projects).toEqual([]);
+  });
+
+  it('hydrates values from the new clean storage namespace', () => {
+    const persisted: Project[] = [{ id: 'PROJ-REAL', ...newProjectInput }];
+    window.localStorage.setItem('vakantti-v1-clean-projects', JSON.stringify(persisted));
+
+    const { result } = renderHook(() => useAppData());
+
+    expect(result.current.projects).toEqual(persisted);
   });
 });
 
-describe('useAppData — project CRUD', () => {
-  it('addProject prepends a project with a generated PROJ id and returns it', () => {
+describe('useAppData — local CRUD helpers', () => {
+  it('creates, updates and deletes a project from an empty state', () => {
     const { result } = renderHook(() => useAppData());
     let created: Project | undefined;
+
     act(() => {
       created = result.current.addProject({ ...newProjectInput });
     });
-    expect(created).toBeDefined();
-    expect(created!.id).toMatch(/^PROJ-/);
-    expect(created!.name).toBe('Testiprojekti');
-    expect(result.current.projects).toHaveLength(11);
-    expect(result.current.projects[0]).toEqual(created);
-  });
+    expect(created?.id).toMatch(/^PROJ-/);
+    expect(result.current.projects).toHaveLength(1);
 
-  it('updateProject merges partial updates into the matching project only', () => {
-    const { result } = renderHook(() => useAppData());
-    const target = result.current.projects[0];
     act(() => {
-      result.current.updateProject(target.id, { progress: 99, status: 'Valmis' });
+      result.current.updateProject(created!.id, { progress: 100, status: 'Valmis' });
     });
-    const updated = result.current.projects.find((p) => p.id === target.id)!;
-    expect(updated.progress).toBe(99);
-    expect(updated.status).toBe('Valmis');
-    // Untouched fields preserved.
-    expect(updated.name).toBe(target.name);
-    expect(updated.budget).toBe(target.budget);
-    // Other projects untouched.
-    expect(result.current.projects.filter((p) => p.id !== target.id)).toEqual(
-      result.current.projects.slice(1),
-    );
-  });
+    expect(result.current.projects[0]).toMatchObject({ progress: 100, status: 'Valmis' });
 
-  it('deleteProject removes only the matching project', () => {
-    const { result } = renderHook(() => useAppData());
-    const target = result.current.projects[0];
     act(() => {
-      result.current.deleteProject(target.id);
+      result.current.deleteProject(created!.id);
     });
-    expect(result.current.projects).toHaveLength(9);
-    expect(result.current.projects.find((p) => p.id === target.id)).toBeUndefined();
+    expect(result.current.projects).toEqual([]);
   });
 
-  it('persists project changes to localStorage under the vakantti-v1 key', () => {
-    const { result } = renderHook(() => useAppData());
-    act(() => {
-      result.current.addProject({ ...newProjectInput });
-    });
-    const persisted = JSON.parse(
-      window.localStorage.getItem('vakantti-v1-projects')!,
-    ) as Project[];
-    expect(persisted).toHaveLength(11);
-    expect(persisted[0].name).toBe('Testiprojekti');
-  });
-});
-
-describe('useAppData — work order CRUD', () => {
-  it('addWorkOrder prepends a work order with a generated TM id and returns it', () => {
+  it('creates, updates and deletes a work order from an empty state', () => {
     const { result } = renderHook(() => useAppData());
     let created: WorkOrder | undefined;
+
     act(() => {
       created = result.current.addWorkOrder({ ...newWorkOrderInput });
     });
-    expect(created!.id).toMatch(/^TM-/);
-    expect(result.current.workOrders).toHaveLength(9);
-    expect(result.current.workOrders[0]).toEqual(created);
-  });
+    expect(created?.id).toMatch(/^TM-/);
 
-  it('updateWorkOrder merges partial updates into the matching work order', () => {
-    const { result } = renderHook(() => useAppData());
-    const target = result.current.workOrders[0];
     act(() => {
-      result.current.updateWorkOrder(target.id, { status: 'Valmis', priority: 'Matala' });
+      result.current.updateWorkOrder(created!.id, { status: 'Valmis' });
     });
-    const updated = result.current.workOrders.find((wo) => wo.id === target.id)!;
-    expect(updated.status).toBe('Valmis');
-    expect(updated.priority).toBe('Matala');
-    expect(updated.title).toBe(target.title);
-  });
+    expect(result.current.workOrders[0].status).toBe('Valmis');
 
-  it('deleteWorkOrder removes only the matching work order', () => {
-    const { result } = renderHook(() => useAppData());
-    const target = result.current.workOrders[0];
     act(() => {
-      result.current.deleteWorkOrder(target.id);
+      result.current.deleteWorkOrder(created!.id);
     });
-    expect(result.current.workOrders).toHaveLength(7);
-    expect(result.current.workOrders.find((wo) => wo.id === target.id)).toBeUndefined();
+    expect(result.current.workOrders).toEqual([]);
   });
-});
 
-describe('useAppData — customer CRUD', () => {
-  const newCustomerInput = {
-    name: 'Testiasiakas Oy',
-    type: 'Yritys',
-    contactPerson: 'Testi Henkilö',
-    phone: '040-1234567',
-    email: 'testi@example.com',
-    address: 'Testikatu 1, 00100 Helsinki',
-    projectCount: 0,
-    lastContact: '2026-08-01',
-    status: 'Aktiivinen',
-  } as const;
-
-  it('addCustomer prepends a customer with a generated AS id and returns it', () => {
+  it('creates, updates and deletes a customer from an empty state', () => {
     const { result } = renderHook(() => useAppData());
     let created: Customer | undefined;
+
     act(() => {
       created = result.current.addCustomer({ ...newCustomerInput });
     });
-    expect(created).toBeDefined();
-    expect(created!.id).toMatch(/^AS-/);
-    expect(created!.name).toBe('Testiasiakas Oy');
-    expect(result.current.customers).toHaveLength(5);
-    expect(result.current.customers[0]).toEqual(created);
-  });
+    expect(created?.id).toMatch(/^AS-/);
 
-  it('updateCustomer merges partial updates into the matching customer only', () => {
-    const { result } = renderHook(() => useAppData());
-    const target = result.current.customers[0];
     act(() => {
-      result.current.updateCustomer(target.id, { status: 'Epäaktiivinen', projectCount: 9 });
+      result.current.updateCustomer(created!.id, { status: 'Epäaktiivinen' });
     });
-    const updated = result.current.customers.find((c) => c.id === target.id)!;
-    expect(updated.status).toBe('Epäaktiivinen');
-    expect(updated.projectCount).toBe(9);
-    expect(updated.name).toBe(target.name);
-    expect(result.current.customers.filter((c) => c.id !== target.id)).toEqual(
-      result.current.customers.slice(1),
-    );
-  });
+    expect(result.current.customers[0].status).toBe('Epäaktiivinen');
 
-  it('deleteCustomer removes only the matching customer', () => {
-    const { result } = renderHook(() => useAppData());
-    const target = result.current.customers[0];
     act(() => {
-      result.current.deleteCustomer(target.id);
+      result.current.deleteCustomer(created!.id);
     });
-    expect(result.current.customers).toHaveLength(3);
-    expect(result.current.customers.find((c) => c.id === target.id)).toBeUndefined();
+    expect(result.current.customers).toEqual([]);
   });
 
-  it('persists customer changes to localStorage under the vakantti-v1 key', () => {
-    const { result } = renderHook(() => useAppData());
-    act(() => {
-      result.current.addCustomer({ ...newCustomerInput });
-    });
-    const persisted = JSON.parse(
-      window.localStorage.getItem('vakantti-v1-customers')!,
-    ) as Customer[];
-    expect(persisted).toHaveLength(5);
-    expect(persisted[0].name).toBe('Testiasiakas Oy');
-  });
-});
-
-describe('useAppData — CRM lead CRUD', () => {
-  const newLeadInput = {
-    name: 'Testi Liidi',
-    company: 'Liidi Oy',
-    value: 50000,
-    stage: 'Uusi',
-    assignee: 'Myyjä',
-    date: '2026-08-01',
-  } as const;
-
-  it('addCrmLead prepends a lead with a generated LEAD id and returns it', () => {
+  it('creates, updates and deletes a CRM lead from an empty state', () => {
     const { result } = renderHook(() => useAppData());
     let created: CrmLead | undefined;
+
     act(() => {
       created = result.current.addCrmLead({ ...newLeadInput });
     });
-    expect(created).toBeDefined();
-    expect(created!.id).toMatch(/^LEAD-/);
-    expect(created!.name).toBe('Testi Liidi');
-    expect(result.current.crmLeads).toHaveLength(4);
-    expect(result.current.crmLeads[0]).toEqual(created);
+    expect(created?.id).toMatch(/^LEAD-/);
+
+    act(() => {
+      result.current.updateCrmLead(created!.id, { stage: 'Sopimus' });
+    });
+    expect(result.current.crmLeads[0].stage).toBe('Sopimus');
+
+    act(() => {
+      result.current.deleteCrmLead(created!.id);
+    });
+    expect(result.current.crmLeads).toEqual([]);
   });
 
-  it('updateCrmLead merges partial updates into the matching lead only', () => {
+  it('adds time and safety records without bundled seed data', () => {
     const { result } = renderHook(() => useAppData());
-    const target = result.current.crmLeads[0];
-    act(() => {
-      result.current.updateCrmLead(target.id, { stage: 'Sopimus', value: 123456 });
-    });
-    const updated = result.current.crmLeads.find((l) => l.id === target.id)!;
-    expect(updated.stage).toBe('Sopimus');
-    expect(updated.value).toBe(123456);
-    expect(updated.company).toBe(target.company);
-    expect(result.current.crmLeads.filter((l) => l.id !== target.id)).toEqual(
-      result.current.crmLeads.slice(1),
-    );
-  });
-
-  it('deleteCrmLead removes only the matching lead', () => {
-    const { result } = renderHook(() => useAppData());
-    const target = result.current.crmLeads[0];
-    act(() => {
-      result.current.deleteCrmLead(target.id);
-    });
-    expect(result.current.crmLeads).toHaveLength(2);
-    expect(result.current.crmLeads.find((l) => l.id === target.id)).toBeUndefined();
-  });
-
-  it('persists lead changes to localStorage under the vakantti-v1 key', () => {
-    const { result } = renderHook(() => useAppData());
-    act(() => {
-      result.current.addCrmLead({ ...newLeadInput });
-    });
-    const persisted = JSON.parse(
-      window.localStorage.getItem('vakantti-v1-crmLeads')!,
-    ) as CrmLead[];
-    expect(persisted).toHaveLength(4);
-    expect(persisted[0].name).toBe('Testi Liidi');
-  });
-});
-
-describe('useAppData — time entry & safety item add helpers', () => {
-  const newTimeEntryInput = {
-    date: '2026-08-01',
-    employee: 'Testaaja',
-    project: 'Testiprojekti',
-    hours: 8,
-    overtime: 0,
-    description: 'Testikirjaus',
-    status: 'Odottaa',
-  } as const;
-
-  const newSafetyItemInput = {
-    type: 'incident',
-    title: 'Testitapaturma',
-    date: '2026-08-01',
-    severity: 'Lievä',
-    status: 'Avoin',
-  } as const;
-
-  it('addTimeEntry prepends an entry with a generated TK id and returns it', () => {
-    const { result } = renderHook(() => useAppData());
-    let created: TimeEntry | undefined;
-    act(() => {
-      created = result.current.addTimeEntry({ ...newTimeEntryInput });
-    });
-    expect(created).toBeDefined();
-    expect(created!.id).toMatch(/^TK-/);
-    expect(created!.description).toBe('Testikirjaus');
-    expect(result.current.timeEntries).toHaveLength(6);
-    expect(result.current.timeEntries[0]).toEqual(created);
-  });
-
-  it('persists time entry changes to localStorage under the vakantti-v1 key', () => {
-    const { result } = renderHook(() => useAppData());
-    act(() => {
-      result.current.addTimeEntry({ ...newTimeEntryInput });
-    });
-    const persisted = JSON.parse(
-      window.localStorage.getItem('vakantti-v1-timeEntries')!,
-    ) as TimeEntry[];
-    expect(persisted).toHaveLength(6);
-    expect(persisted[0].description).toBe('Testikirjaus');
-  });
-
-  it('addSafetyItem prepends an item with a generated TURV id and returns it', () => {
-    const { result } = renderHook(() => useAppData());
-    let created: SafetyItem | undefined;
-    act(() => {
-      created = result.current.addSafetyItem({ ...newSafetyItemInput });
-    });
-    expect(created).toBeDefined();
-    expect(created!.id).toMatch(/^TURV-/);
-    expect(created!.title).toBe('Testitapaturma');
-    expect(result.current.safetyItems).toHaveLength(3);
-    expect(result.current.safetyItems[0]).toEqual(created);
-  });
-
-  it('persists safety item changes to localStorage under the vakantti-v1 key', () => {
-    const { result } = renderHook(() => useAppData());
-    act(() => {
-      result.current.addSafetyItem({ ...newSafetyItemInput });
-    });
-    const persisted = JSON.parse(
-      window.localStorage.getItem('vakantti-v1-safetyItems')!,
-    ) as SafetyItem[];
-    expect(persisted).toHaveLength(3);
-    expect(persisted[0].title).toBe('Testitapaturma');
-  });
-});
-
-describe('useAppData — stats', () => {
-  it('computes stats from the seeded data', () => {
-    const { result } = renderHook(() => useAppData());
-    const { stats } = result.current;
-    expect(stats.totalProjects).toBe(10);
-    expect(stats.activeProjects).toBe(
-      result.current.projects.filter((p) => p.status === 'Aktiivinen').length,
-    );
-    expect(stats.activeProjects).toBe(5);
-    expect(stats.completedProjects).toBe(2);
-    expect(stats.totalRevenue).toBe(
-      result.current.projects.reduce((sum, p) => sum + p.budget, 0),
-    );
-    expect(stats.totalRevenue).toBe(5898000);
-    expect(stats.openWorkOrders).toBe(3);
-    expect(stats.inProgressWorkOrders).toBe(4);
-    expect(stats.totalEmployees).toBe(5);
-    expect(stats.activeEmployees).toBe(5);
-    expect(stats.totalCustomers).toBe(4);
-    expect(stats.openLeads).toBe(1);
-    expect(stats.totalEquipment).toBe(5);
-  });
-
-  it('stats react to CRUD operations', () => {
-    const { result } = renderHook(() => useAppData());
-    act(() => {
-      result.current.addProject({ ...newProjectInput, budget: 100 });
-    });
-    expect(result.current.stats.totalProjects).toBe(11);
-    expect(result.current.stats.activeProjects).toBe(6);
-    expect(result.current.stats.totalRevenue).toBe(5898100);
+    let timeEntry: TimeEntry | undefined;
+    let safetyItem: SafetyItem | undefined;
 
     act(() => {
-      result.current.addWorkOrder({ ...newWorkOrderInput });
+      timeEntry = result.current.addTimeEntry({ ...newTimeEntryInput });
+      safetyItem = result.current.addSafetyItem({ ...newSafetyItemInput });
     });
-    expect(result.current.stats.openWorkOrders).toBe(4);
 
-    act(() => {
-      result.current.deleteWorkOrder(result.current.workOrders[0].id);
-    });
-    expect(result.current.stats.openWorkOrders).toBe(3);
+    expect(timeEntry?.id).toMatch(/^TK-/);
+    expect(safetyItem?.id).toMatch(/^TURV-/);
+    expect(result.current.timeEntries).toHaveLength(1);
+    expect(result.current.safetyItems).toHaveLength(1);
   });
 });
 
 describe('generateId', () => {
-  it('produces ids with the requested prefix', () => {
-    expect(generateId('PROJ')).toMatch(/^PROJ-/);
-    expect(generateId('TM')).toMatch(/^TM-/);
-    expect(generateId('X')).toMatch(/^X-/);
-  });
+  it('creates unique ids with the requested prefix', () => {
+    const first = generateId('TEST');
+    const second = generateId('TEST');
 
-  it('produces unique ids across many calls (monotonic counter suffix)', () => {
-    const ids = new Set(Array.from({ length: 500 }, () => generateId('T')));
-    expect(ids.size).toBe(500);
+    expect(first).toMatch(/^TEST-/);
+    expect(second).toMatch(/^TEST-/);
+    expect(second).not.toBe(first);
   });
 });

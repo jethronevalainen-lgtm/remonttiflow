@@ -32,7 +32,10 @@ export type {
   CrmLeadStage, SafetyItemType, SafetyItemSeverity, AnnouncementPriority,
 } from '../types';
 
-const STORAGE_VERSION = BRAND.storagePrefix;
+// The suffix intentionally invalidates the old browser keys that contained
+// bundled demo records. Production data is loaded from Supabase, but this
+// prevents a legacy route or test harness from reviving stale sample data.
+const STORAGE_VERSION = `${BRAND.storagePrefix}-clean`;
 const KEYS = {
   projects: `${STORAGE_VERSION}-projects`,
   workOrders: `${STORAGE_VERSION}-workOrders`,
