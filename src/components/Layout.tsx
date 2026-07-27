@@ -34,6 +34,10 @@ const customerBottomItems = [
   { path: '/tyoturvallisuus', label: 'Turvallisuus', icon: ShieldCheck },
 ];
 
+const customerPreviewBottomItems = [
+  { path: '/tilaajan-tyot', label: 'Projektit', icon: FolderKanban },
+];
+
 const managementBottomItems = [
   { path: '/dashboard', label: 'Etusivu', icon: Home },
   { path: '/projektit', label: 'Projektit', icon: FolderKanban },
@@ -52,7 +56,7 @@ export default function Layout() {
   const { loading, refreshing, error, operationError, refresh } = useAppDataContext();
   const visibleError = operationError ?? error;
   const bottomItems = effectiveRole === 'customer'
-    ? customerBottomItems
+    ? isPreviewing ? customerPreviewBottomItems : customerBottomItems
     : effectiveRole === 'worker'
       ? workerBottomItems
       : managementBottomItems;
