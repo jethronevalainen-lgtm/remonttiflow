@@ -6,6 +6,7 @@ import {
   loadInspectionWorkspace,
   type InspectionWorkspace,
 } from '@/lib/supabase/inspectionEntities';
+import { loadInspectionSignatureData } from '@/lib/supabase/inspectionSignatures';
 
 const EMPTY_WORKSPACE: InspectionWorkspace = {
   templates: [],
@@ -46,7 +47,20 @@ export function useInspectionDetail(inspectionId?: string) {
   const queryKey = ['inspection-detail', inspectionId ?? 'none'] as const;
   const query = useQuery({
     queryKey,
-    queryFn: () => loadInspectionDetail(inspectionId as string),
+    queryFn: async () => {
+      const id = inspectionId as string;
+      const [detail, signatureData] = await Promise.all([
+        loadInspectionDetail(id),
+        loadInspectionSignatureData(id),
+      ]);
+      return {
+        ...detail,
+        signatures: detail.signatures.map((signature) => ({
+          ...signature,
+          signatureData: signatureData[signature.id] ?? '',
+        })),
+      };
+    },
     enabled: Boolean(inspectionId),
     staleTime: 5_000,
     retry: 1,

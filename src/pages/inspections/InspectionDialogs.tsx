@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import {
+  useCallback, useEffect, useRef, useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+import { Eraser, Loader2, PenLine } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -86,22 +89,139 @@ export function FindingDialog({
   );
 }
 
-export function SignatureDialog({ open, busy, onClose, onSubmit }: {
-  open: boolean; busy: boolean; onClose: () => void;
-  onSubmit: (draft: { name: string; role: string; company: string; note: string }) => Promise<void>;
+interface SignatureDraft {
+  name: string;
+  role: string;
+  company: string;
+  note: string;
+  signatureData: string;
+}
+
+export function SignatureDialog({ open, busy, defaultName = '', onClose, onSubmit }: {
+  open: boolean;
+  busy: boolean;
+  defaultName?: string;
+  onClose: () => void;
+  onSubmit: (draft: SignatureDraft) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState({ name: '', role: 'Työnjohtaja', company: '', note: '' });
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const [draft, setDraft] = useState({ name: defaultName, role: 'Työnjohtaja', company: '', note: '' });
+  const [hasSignature, setHasSignature] = useState(false);
+
+  const prepareCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const width = Math.max(canvas.getBoundingClientRect().width, 320);
+    const height = 176;
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.strokeStyle = '#0f172a';
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.lineWidth = 2.25;
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    setDraft({ name: defaultName, role: 'Työnjohtaja', company: '', note: '' });
+    setHasSignature(false);
+    drawingRef.current = false;
+    const frame = window.requestAnimationFrame(prepareCanvas);
+    return () => window.cancelAnimationFrame(frame);
+  }, [defaultName, open, prepareCanvas]);
+
+  const pointOf = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+
+  const startDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (busy) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const context = event.currentTarget.getContext('2d');
+    if (!context) return;
+    const point = pointOf(event);
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+    context.lineTo(point.x + 0.1, point.y + 0.1);
+    context.stroke();
+    drawingRef.current = true;
+    setHasSignature(true);
+  };
+
+  const draw = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current || busy) return;
+    event.preventDefault();
+    const context = event.currentTarget.getContext('2d');
+    if (!context) return;
+    const point = pointOf(event);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+  };
+
+  const stopDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    const context = event.currentTarget.getContext('2d');
+    context?.closePath();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const clearSignature = () => {
+    prepareCanvas();
+    drawingRef.current = false;
+    setHasSignature(false);
+  };
+
+  const submit = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !hasSignature || !draft.name.trim() || !draft.role.trim()) return;
+    await onSubmit({ ...draft, signatureData: canvas.toDataURL('image/png') });
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader><DialogTitle>Lisää hyväksyntämerkintä</DialogTitle></DialogHeader>
-        <div className="space-y-4">
+    <Dialog open={open} onOpenChange={(next) => !next && !busy && onClose()}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader><DialogTitle>Allekirjoita itselleluovutus</DialogTitle></DialogHeader>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          Allekirjoitus vahvistaa, että tarkastustiedot on kirjattu ja kohde on tarkastettu. Hyväksyminen tehdään erikseen tarkastuksen valmistuttua.
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
           <div><Label>Nimi *</Label><Input value={draft.name} onChange={(event) => setDraft((previous) => ({ ...previous, name: event.target.value }))} /></div>
           <div><Label>Rooli *</Label><Input value={draft.role} onChange={(event) => setDraft((previous) => ({ ...previous, role: event.target.value }))} /></div>
-          <div><Label>Organisaatio</Label><Input value={draft.company} onChange={(event) => setDraft((previous) => ({ ...previous, company: event.target.value }))} /></div>
-          <div><Label>Huomautus</Label><Textarea value={draft.note} onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))} /></div>
+          <div className="sm:col-span-2"><Label>Organisaatio</Label><Input value={draft.company} onChange={(event) => setDraft((previous) => ({ ...previous, company: event.target.value }))} /></div>
+          <div className="sm:col-span-2"><Label>Huomautus</Label><Textarea value={draft.note} onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))} /></div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={onClose}>Peruuta</Button><Button disabled={!draft.name.trim() || !draft.role.trim() || busy} onClick={() => void onSubmit(draft)}>Vahvista</Button></DialogFooter>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="flex items-center gap-2"><PenLine size={16} />Allekirjoitus *</Label>
+            <Button type="button" variant="ghost" size="sm" disabled={!hasSignature || busy} onClick={clearSignature}><Eraser size={15} className="mr-1" />Tyhjennä</Button>
+          </div>
+          <canvas
+            ref={canvasRef}
+            aria-label="Piirrä allekirjoitus tähän"
+            className="h-44 w-full touch-none rounded-xl border-2 border-dashed border-slate-300 bg-white shadow-inner"
+            onPointerDown={startDrawing}
+            onPointerMove={draw}
+            onPointerUp={stopDrawing}
+            onPointerCancel={stopDrawing}
+          />
+          <p className="text-xs text-text-secondary">Piirrä allekirjoitus sormella, hiirellä tai kosketuskynällä.</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" disabled={busy} onClick={onClose}>Peruuta</Button>
+          <Button disabled={!draft.name.trim() || !draft.role.trim() || !hasSignature || busy} onClick={() => void submit()}>{busy && <Loader2 size={16} className="mr-2 animate-spin" />}Tallenna allekirjoitus</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

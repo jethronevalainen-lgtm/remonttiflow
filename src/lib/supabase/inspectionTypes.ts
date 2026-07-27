@@ -158,6 +158,7 @@ export interface InspectionSignature {
   signerRole: string;
   signerCompany: string;
   signatureType: string;
+  signatureData?: string;
   note: string;
   signedAt: string;
 }
