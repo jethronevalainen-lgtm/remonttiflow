@@ -17,13 +17,40 @@ export const RESULT_OPTIONS: Array<{
   label: string;
   shortLabel: string;
   className: string;
+  secondary?: boolean;
 }> = [
   { value: 'Kunnossa', label: 'Kunnossa', shortLabel: 'Kunnossa', className: 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' },
-  { value: 'Puute', label: 'Kirjaa puute', shortLabel: 'Puute', className: 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100' },
-  { value: 'Ei koske kohdetta', label: 'Ei koske kohdetta', shortLabel: 'Ei koske', className: 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100' },
-  { value: 'Ei voitu tarkastaa', label: 'Ei voitu tarkastaa', shortLabel: 'Ei voitu', className: 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100' },
-  { value: 'Tarkastettava myöhemmin', label: 'Tarkastettava myöhemmin', shortLabel: 'Myöhemmin', className: 'border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100' },
+  { value: 'Puute', label: 'Puutteita', shortLabel: 'Puutteita', className: 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100' },
+  { value: 'Ei voitu tarkastaa', label: 'Ei tehty', shortLabel: 'Ei tehty', className: 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100' },
+  { value: 'Tarkastettava myöhemmin', label: 'Jälkitoimituksena', shortLabel: 'Jälkitoimituksena', className: 'border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100' },
+  { value: 'Ei koske kohdetta', label: 'Ei tarkisteta', shortLabel: 'Ei tarkisteta', className: 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100', secondary: true },
 ];
+
+const RESULT_STATUS_LABELS: Record<InspectionResultStatus, string> = {
+  Tarkastamatta: 'Ei valintaa',
+  Kunnossa: 'Kunnossa',
+  Puute: 'Puutteita',
+  'Ei koske kohdetta': 'Ei tarkisteta',
+  'Ei voitu tarkastaa': 'Ei tehty',
+  'Tarkastettava myöhemmin': 'Jälkitoimituksena',
+};
+
+const RESULT_STATUS_BADGE_CLASSES: Record<InspectionResultStatus, string> = {
+  Tarkastamatta: 'bg-slate-100 text-slate-600',
+  Kunnossa: 'bg-emerald-50 text-emerald-700',
+  Puute: 'bg-red-50 text-red-700',
+  'Ei koske kohdetta': 'bg-slate-100 text-slate-700',
+  'Ei voitu tarkastaa': 'bg-amber-50 text-amber-800',
+  'Tarkastettava myöhemmin': 'bg-blue-50 text-blue-700',
+};
+
+export function resultStatusLabel(status: InspectionResultStatus): string {
+  return RESULT_STATUS_LABELS[status];
+}
+
+export function resultStatusBadgeClasses(status: InspectionResultStatus): string {
+  return RESULT_STATUS_BADGE_CLASSES[status];
+}
 
 export const BLOCKING_SEVERITIES: FindingSeverity[] = [
   'Korjattava ennen luovutusta',
