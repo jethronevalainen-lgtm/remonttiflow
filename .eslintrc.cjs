@@ -37,8 +37,14 @@ module.exports = {
     {
       // shadcn/ui primitives export variants/helpers alongside components, and
       // context modules export hooks + providers by design; fast-refresh
-      // component-only-export does not apply to these file kinds.
-      files: ['src/components/ui/**', 'src/contexts/**'],
+      // component-only-export does not apply to these file kinds. The customer
+      // order dialog intentionally exports immutable draft templates alongside
+      // its component so every creation entry point uses the same defaults.
+      files: [
+        'src/components/ui/**',
+        'src/contexts/**',
+        'src/components/customer/CustomerOrderCreateDialog.tsx',
+      ],
       rules: {
         'react-refresh/only-export-components': 'off',
       },
