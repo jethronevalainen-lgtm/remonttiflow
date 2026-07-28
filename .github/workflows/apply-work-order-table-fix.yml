@@ -1,0 +1,44 @@
+name: Apply Work Order Table Fix
+
+on:
+  push:
+    branches:
+      - fix/work-order-table-selection-delete-20260728
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    name: Apply deterministic work order UI changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/work-order-table-selection-delete-20260728
+          fetch-depth: 0
+
+      - name: Apply changes
+        run: python scripts/apply_work_order_table_fix.py
+
+      - name: Verify generated source
+        run: |
+          git diff --check
+          test ! -e src/pages/workOrders/WorkOrderBulkDelete.tsx
+          ! grep -R "WorkOrderBulkDelete" src/pages/workOrders src/pages/TyomaarayksetV2.tsx
+          ! grep -n "lg:contents" src/pages/workOrders/WorkOrderControlPanel.tsx
+          grep -n "Poista valitut" src/pages/workOrders/WorkOrderControlPanel.tsx
+          grep -n "deleteManagedWorkOrders" src/pages/workOrders/WorkOrderControlPanel.tsx src/pages/TyomaarayksetV2.tsx
+
+      - name: Commit generated changes
+        run: |
+          rm scripts/apply_work_order_table_fix.py
+          rm .github/workflows/apply-work-order-table-fix.yml
+          git config user.name "VaKantti Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Korjaa työmääräystaulukko ja yhdistä massapoisto"
+          git push origin HEAD:fix/work-order-table-selection-delete-20260728
