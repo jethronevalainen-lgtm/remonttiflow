@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   AlertTriangle, ArrowRight, Building2, ClipboardCheck, ClipboardList, Clock3,
   FileCheck2, FileText, ListChecks, Loader2, Plus, Printer, RefreshCw, Search,
-  Settings2, UserRound,
+  Settings2,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
