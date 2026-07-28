@@ -146,6 +146,40 @@ export async function loadCustomerRelations(organizationId: string) {
   };
 }
 
+export async function listCustomerContactsForCustomer(
+  organizationId: string,
+  customerId: string,
+): Promise<CustomerContact[]> {
+  const { data, error } = await supabase
+    .from('customer_contacts')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('customer_id', customerId)
+    .order('is_primary', { ascending: false })
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(`Yhteyshenkilöiden haku epäonnistui: ${error.message}`);
+  return (Array.isArray(data) ? data : []).map((item): CustomerContact => {
+    const rowItem = row(item);
+    return {
+      id: text(rowItem, 'id'),
+      customerId: text(rowItem, 'customer_id'),
+      name: text(rowItem, 'name'),
+      title: optionalText(rowItem, 'title'),
+      role: optionalText(rowItem, 'role'),
+      email: optionalText(rowItem, 'email'),
+      phone: optionalText(rowItem, 'phone'),
+      preferredChannel: optionalText(rowItem, 'preferred_channel'),
+      receivesQuotes: booleanValue(rowItem, 'receives_quotes'),
+      receivesReports: booleanValue(rowItem, 'receives_reports'),
+      receivesInvoices: booleanValue(rowItem, 'receives_invoices'),
+      availabilityNotes: optionalText(rowItem, 'availability_notes'),
+      isPrimary: booleanValue(rowItem, 'is_primary'),
+      notes: optionalText(rowItem, 'notes'),
+      createdAt: text(rowItem, 'created_at'),
+    };
+  });
+}
+
 export async function createCustomerContact(input: {
   organizationId: string;
   customerId: string;

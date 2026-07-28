@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -40,6 +40,11 @@ import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useProjectWorkspace } from '@/hooks/useProjectWorkspace';
 import {
+  formatProjectFileSize,
+  inferProjectDocumentType,
+  PROJECT_DOCUMENT_TYPES,
+} from '@/lib/projectDocumentMeta';
+import {
   archiveProjectDocument,
   createChangeOrder,
   createProjectDocumentUrl,
@@ -59,16 +64,7 @@ const CHANGE_ORDER_STATUSES: ChangeOrderStatus[] = [
   'Valmis',
 ];
 
-const DOCUMENT_TYPES = [
-  'Sopimus',
-  'Suunnitelma',
-  'Pöytäkirja',
-  'Valokuva',
-  'Tarjous',
-  'Laskelma',
-  'Käyttöohje',
-  'Muu',
-];
+const WORKSPACE_TABS = new Set(['overview', 'activity', 'documents', 'changes']);
 
 function euro(value: number) {
   return new Intl.NumberFormat('fi-FI', {
@@ -83,12 +79,6 @@ function dateTime(value: string) {
   return Number.isNaN(parsed.getTime())
     ? value
     : parsed.toLocaleString('fi-FI', { dateStyle: 'short', timeStyle: 'short' });
-}
-
-function fileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} t`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} kt`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} Mt`;
 }
 
 function activityIcon(type: ProjectActivityEvent['eventType']) {
@@ -113,6 +103,7 @@ function statusClass(status: string) {
 export default function ProjectWorkspace() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { currentOrg, currentRole } = useOrganization();
   const { projects, workOrders, timeEntries, safetyItems } = useAppDataContext();
@@ -121,6 +112,8 @@ export default function ProjectWorkspace() {
 
   const project = projects.find((item) => item.id === projectId);
   const canManage = currentRole === 'admin' || currentRole === 'supervisor';
+  const requestedTab = searchParams.get('tab') ?? 'overview';
+  const activeTab = WORKSPACE_TABS.has(requestedTab) ? requestedTab : 'overview';
   const [documentDialog, setDocumentDialog] = useState(false);
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [documentTitle, setDocumentTitle] = useState('');
@@ -350,7 +343,16 @@ export default function ProjectWorkspace() {
         ))}
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          const next = new URLSearchParams(searchParams);
+          if (value === 'overview') next.delete('tab');
+          else next.set('tab', value);
+          setSearchParams(next, { replace: true });
+        }}
+        className="space-y-4"
+      >
         <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
           <TabsTrigger value="overview">Tilannekuva</TabsTrigger>
           <TabsTrigger value="activity">Tapahtumat</TabsTrigger>
@@ -403,7 +405,7 @@ export default function ProjectWorkspace() {
         <TabsContent value="documents" className="space-y-4">
           <div className="flex justify-end"><Button onClick={openDocument}><Upload size={16} className="mr-2" /> Lisää dokumentti</Button></div>
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-            {workspace.documents.map((document) => <Card key={document.id}><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Paperclip size={18} /></div><Badge variant="outline">{document.documentType}</Badge></div><h3 className="mt-4 font-semibold">{document.title}</h3><p className="mt-1 truncate text-sm text-text-secondary">{document.fileName}</p>{document.description && <p className="mt-2 line-clamp-2 text-xs text-text-secondary">{document.description}</p>}<div className="mt-4 flex items-center justify-between text-xs text-text-muted"><span>Versio {document.version}</span><span>{fileSize(document.sizeBytes)}</span></div><div className="mt-4 flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => void showDocument(document.storagePath)}><FileText size={14} className="mr-1" /> Avaa</Button>{canManage && <Button variant="ghost" size="sm" className="text-red-600" onClick={() => void removeDocument(document.id)}><Trash2 size={15} /></Button>}</div></CardContent></Card>)}
+            {workspace.documents.map((document) => <Card key={document.id}><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Paperclip size={18} /></div><Badge variant="outline">{document.documentType}</Badge></div><h3 className="mt-4 break-words font-semibold">{document.title}</h3><p className="mt-1 break-words text-sm text-text-secondary">{document.fileName}</p>{document.description && <p className="mt-2 break-words text-xs text-text-secondary">{document.description}</p>}<div className="mt-4 flex items-center justify-between text-xs text-text-muted"><span>Versio {document.version}</span><span>{formatProjectFileSize(document.sizeBytes)}</span></div><div className="mt-4 flex gap-2"><Button variant="outline" size="sm" className="flex-1" onClick={() => void showDocument(document.storagePath)}><FileText size={14} className="mr-1" /> Avaa</Button>{canManage && <Button variant="ghost" size="sm" className="text-red-600" onClick={() => void removeDocument(document.id)}><Trash2 size={15} /></Button>}</div></CardContent></Card>)}
             {!workspace.loading && workspace.documents.length === 0 && <Card className="lg:col-span-2 xl:col-span-3"><CardContent className="p-12 text-center"><FileText size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei dokumentteja</p><p className="mt-1 text-sm text-text-secondary">Lisää ensimmäinen projektidokumentti.</p></CardContent></Card>}
           </div>
         </TabsContent>
@@ -417,11 +419,11 @@ export default function ProjectWorkspace() {
       <Dialog open={documentDialog} onOpenChange={setDocumentDialog}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader><DialogTitle>Lisää projektidokumentti</DialogTitle></DialogHeader>
-          <input ref={fileInputRef} type="file" className="hidden" onChange={(event) => { const file = event.target.files?.[0] ?? null; setDocumentFile(file); if (file && !documentTitle) setDocumentTitle(file.name.replace(/\.[^.]+$/, '')); }} />
+          <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ods,.txt,.zip" className="hidden" onChange={(event) => { const file = event.target.files?.[0] ?? null; setDocumentFile(file); if (file) { if (!documentTitle) setDocumentTitle(file.name.replace(/\.[^.]+$/, '')); setDocumentType(inferProjectDocumentType(file.name, file.type)); } }} />
           <div className="space-y-4">
-            <Button type="button" variant="outline" className="h-auto min-h-20 w-full border-dashed" onClick={() => fileInputRef.current?.click()}><Upload size={20} className="mr-2" />{documentFile ? `${documentFile.name} · ${fileSize(documentFile.size)}` : 'Valitse enintään 25 Mt tiedosto'}</Button>
+            <Button type="button" variant="outline" className="h-auto min-h-20 w-full whitespace-normal border-dashed" onClick={() => fileInputRef.current?.click()}><Upload size={20} className="mr-2 shrink-0" /><span className="break-words text-left">{documentFile ? `${documentFile.name} · ${formatProjectFileSize(documentFile.size)}` : 'Valitse enintään 25 Mt tiedosto'}</span></Button>
             <div className="space-y-2"><Label htmlFor="document-title">Otsikko *</Label><Input id="document-title" value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} /></div>
-            <div className="space-y-2"><Label>Tyyppi</Label><Select value={documentType} onValueChange={setDocumentType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DOCUMENT_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Tyyppi</Label><Select value={documentType} onValueChange={setDocumentType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PROJECT_DOCUMENT_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label htmlFor="document-description">Kuvaus</Label><Textarea id="document-description" value={documentDescription} onChange={(event) => setDocumentDescription(event.target.value)} rows={3} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setDocumentDialog(false)}>Peruuta</Button><Button onClick={() => void saveDocument()} disabled={saving || !documentFile}>{saving ? 'Tallennetaan…' : 'Tallenna dokumentti'}</Button></DialogFooter>
