@@ -1,10 +1,13 @@
+import { hasPermission } from '@/auth/permissions';
 import { useViewAs } from '@/contexts/ViewAsContext';
-import SafetyObservationPortal from '@/pages/SafetyObservationPortal';
-import Tyoturvallisuus from '@/pages/Tyoturvallisuus';
+import SafetyWorkspace from '@/pages/SafetyWorkspace';
 
 export default function SafetyPortal() {
   const { effectiveRole } = useViewAs();
-  return effectiveRole === 'admin' || effectiveRole === 'supervisor'
-    ? <Tyoturvallisuus />
-    : <SafetyObservationPortal />;
+  const canReadSafety = hasPermission(effectiveRole, 'safety.read.all')
+    || hasPermission(effectiveRole, 'safety.read.project')
+    || hasPermission(effectiveRole, 'safety.read.own')
+    || hasPermission(effectiveRole, 'safety.create');
+
+  return canReadSafety ? <SafetyWorkspace /> : null;
 }
