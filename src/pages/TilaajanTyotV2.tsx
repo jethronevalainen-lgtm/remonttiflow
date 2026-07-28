@@ -48,6 +48,17 @@ function requestStatusClass(status: string) {
   return 'border-blue-200 bg-blue-50 text-blue-700';
 }
 
+function requestProgress(status: string) {
+  if (status === 'Luonnos') return 5;
+  if (status === 'Lähetetty') return 15;
+  if (status === 'Lisätietoja pyydetty') return 25;
+  if (status === 'Käsittelyssä') return 35;
+  if (status === 'Hyväksytty') return 45;
+  if (status === 'Muutettu projektiksi') return 50;
+  if (status === 'Hylätty') return 100;
+  return 0;
+}
+
 export default function TilaajanTyotV2() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -76,7 +87,7 @@ export default function TilaajanTyotV2() {
       setSelectedCustomerId((current) => current === ALL_CUSTOMERS || nextAccounts.some((item) => item.customerId === current) ? current : ALL_CUSTOMERS);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Tilaajan työtilan lataus epäonnistui.');
+      setError(caught instanceof Error ? caught.message : 'Tilaajaportaalin lataus epäonnistui.');
     } finally {
       setLoading(false);
     }
@@ -85,7 +96,7 @@ export default function TilaajanTyotV2() {
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
     if ((location.state as { workRequestSent?: boolean } | null)?.workRequestSent) {
-      setSuccess('Työpyyntö lähetettiin työnjohdolle käsiteltäväksi.');
+      setSuccess('Tilaus lähetettiin työnjohdolle käsiteltäväksi.');
       window.history.replaceState(null, '', location.pathname);
     }
   }, [location.pathname, location.state]);
@@ -99,14 +110,12 @@ export default function TilaajanTyotV2() {
     [requests, selectedCustomerId],
   );
   const activeProjects = visibleProjects.filter((project) => project.status !== 'Valmis').length;
-  const waitingDecisions = visibleRequests.filter((request) => ['Lähetetty', 'Käsittelyssä', 'Lisätietoja pyydetty'].includes(request.status)).length;
-  const drafts = visibleRequests.filter((request) => request.status === 'Luonnos').length;
+  const activeOrders = visibleRequests.filter((request) => !['Luonnos', 'Hylätty'].includes(request.status)).length;
+  const needsAction = visibleRequests.filter((request) => ['Luonnos', 'Lisätietoja pyydetty'].includes(request.status)).length;
 
   const openRequest = () => {
     if (isPreviewing) return;
-    const defaultCustomerId = selectedCustomerId !== ALL_CUSTOMERS
-      ? selectedCustomerId
-      : accounts[0]?.customerId ?? '';
+    const defaultCustomerId = selectedCustomerId !== ALL_CUSTOMERS ? selectedCustomerId : accounts[0]?.customerId ?? '';
     navigate(`/tilaajan-tyot/uusi${defaultCustomerId ? `?customer=${defaultCustomerId}` : ''}`);
   };
 
@@ -116,12 +125,12 @@ export default function TilaajanTyotV2() {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">
-              <span>Tilaajan työtila</span>
+              <span>Tilaajaportaali</span>
               {isPreviewing && <Badge className="border-white/20 bg-white/10 text-white"><Eye size={12} className="mr-1" /> Esikatselu</Badge>}
             </div>
-            <h1 className="text-3xl font-bold">Projektit ja työpyynnöt</h1>
+            <h1 className="text-3xl font-bold">Tilaukset ja projektit</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-              Seuraa projekteja, jatka luonnoksia ja lähetä työnjohdolle uuden työn lähtötiedot liitteineen.
+              Tilaa töitä, määritä kohde ja aikataulu, seuraa käsittelyä sekä keskustele tilauksen osapuolten kanssa samassa paikassa.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -131,15 +140,14 @@ export default function TilaajanTyotV2() {
                 <SelectContent><SelectItem value={ALL_CUSTOMERS}>Kaikki asiakkuudet</SelectItem>{accounts.map((account) => <SelectItem key={account.customerId} value={account.customerId}>{account.customerName}</SelectItem>)}</SelectContent>
               </Select>
             )}
-            {!isPreviewing && <Button onClick={openRequest} disabled={accounts.length === 0} className="gap-2 bg-teal-500 text-white hover:bg-teal-600"><Plus size={17} /> Uusi työpyyntö</Button>}
+            {!isPreviewing && <Button onClick={openRequest} disabled={accounts.length === 0} className="gap-2 bg-teal-500 text-white hover:bg-teal-600"><Plus size={17} /> Tilaa uusi työ</Button>}
           </div>
         </div>
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-slate-300">Asiakkuudet</p><p className="mt-1 text-2xl font-bold">{selectedCustomerId === ALL_CUSTOMERS ? accounts.length : 1}</p></div>
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-slate-300">Tilaukset</p><p className="mt-1 text-2xl font-bold">{visibleRequests.length}</p></div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-slate-300">Aktiiviset tilaukset</p><p className="mt-1 text-2xl font-bold">{activeOrders}</p></div>
           <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-slate-300">Projektit</p><p className="mt-1 text-2xl font-bold">{visibleProjects.length}</p></div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-slate-300">Aktiiviset</p><p className="mt-1 text-2xl font-bold">{activeProjects}</p></div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-slate-300">Avoimet pyynnöt</p><p className="mt-1 text-2xl font-bold">{waitingDecisions}</p></div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-slate-300">Luonnokset</p><p className="mt-1 text-2xl font-bold">{drafts}</p></div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs text-slate-300">Vaatii toimia</p><p className="mt-1 text-2xl font-bold">{needsAction}</p></div>
         </div>
       </section>
 
@@ -153,55 +161,33 @@ export default function TilaajanTyotV2() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {visibleProjects.map((project) => (
-          <Card key={project.id} className="border-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><FolderKanban size={21} /></div><Badge variant="outline">{project.status}</Badge></div>
-              <h2 className="mt-4 text-xl font-semibold text-slate-950">{project.name}</h2>
-              <p className="mt-1 flex items-center gap-1 text-sm text-slate-500"><MapPin size={14} />{project.location || 'Sijaintia ei ole määritetty'}</p>
-              <div className="mt-5"><div className="mb-2 flex justify-between text-xs text-slate-500"><span>Projektin eteneminen</span><strong>{project.progress}%</strong></div><Progress value={project.progress} className="h-2" /></div>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Aloitus</p><p className="mt-1 font-medium">{dateLabel(project.startDate)}</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Tavoite</p><p className="mt-1 font-medium">{dateLabel(project.endDate)}</p></div></div>
-              {project.supervisorName && <p className="mt-4 text-sm text-slate-600"><strong>Työnjohto:</strong> {project.supervisorName}{project.supervisorEmail ? ` · ${project.supervisorEmail}` : ''}</p>}
-              <Button className="mt-5 w-full gap-2" onClick={() => navigate(`/tilaajan-projektit/${project.id}`)}><ClipboardList size={16} /> Avaa projekti</Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {!loading && visibleProjects.length === 0 && <Card className="border-amber-200 bg-amber-50"><CardContent className="p-6"><div className="flex items-start gap-3"><FolderKanban size={22} className="mt-0.5 text-amber-700" /><div><p className="font-semibold text-amber-950">Tunnuksellesi ei ole tässä rajauksessa projekteja</p><p className="mt-1 text-sm leading-6 text-amber-900">Voit silti lähettää uuden työpyynnön työnjohdolle.</p></div></div></CardContent></Card>}
-
-      {visibleRequests.length > 0 && (
-        <section className="space-y-3">
-          <div className="flex items-center gap-2"><ClipboardList size={19} className="text-teal-700" /><h2 className="text-xl font-semibold text-slate-950">Työpyynnöt</h2></div>
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><ClipboardList size={20} className="text-teal-700" /><h2 className="text-xl font-semibold text-slate-950">Tilaukset</h2></div>{!isPreviewing && <Button variant="outline" size="sm" onClick={openRequest}><Plus size={15} className="mr-1" /> Uusi</Button>}</div>
+        <div className="grid gap-4 lg:grid-cols-2">
           {visibleRequests.map((request) => (
-            <Card key={request.id} className={request.status === 'Lisätietoja pyydetty' ? 'border-amber-300' : undefined}>
+            <Card key={request.id} className={request.status === 'Lisätietoja pyydetty' ? 'border-amber-300' : 'border-slate-200'}>
               <CardContent className="p-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={requestStatusClass(request.status)}>{request.status}</Badge><Badge variant="outline">{request.requestType}</Badge><span className="text-xs text-slate-400">{dateLabel(request.createdAt)}</span></div>
-                    <h3 className="mt-3 text-lg font-semibold text-slate-950">{request.projectName}</h3>
-                    <p className="mt-1 flex items-center gap-1 text-sm text-slate-500"><MapPin size={14} />{request.location || 'Ei sijaintia'}</p>
-                    <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{request.description}</p>
-                    <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-600">
-                      <span className="flex items-center gap-1"><CalendarDays size={14} /> Valmis {dateLabel(request.desiredEndDate)}</span>
-                      <span>{request.occupancyStatus}</span>
-                      <span className="flex items-center gap-1"><Paperclip size={14} /> {request.attachments.length} liitettä</span>
-                    </div>
-                    {request.managementNote && <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"><strong>Työnjohdon viesti:</strong> {request.managementNote}</div>}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    {!isPreviewing && ['Luonnos', 'Lisätietoja pyydetty'].includes(request.status) && <Button onClick={() => navigate(`/tilaajan-tyot/uusi?draft=${request.id}`)} className="gap-2"><FilePenLine size={16} /> {request.status === 'Luonnos' ? 'Jatka luonnosta' : 'Täydennä tietoja'}</Button>}
-                    {request.status === 'Muutettu projektiksi' && request.convertedProjectId && <Button variant="outline" onClick={() => navigate(`/tilaajan-projektit/${request.convertedProjectId}`)}>Avaa projekti</Button>}
-                  </div>
-                </div>
+                <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={requestStatusClass(request.status)}>{request.status}</Badge><Badge variant="outline">{request.requestType}</Badge></div><span className="text-xs text-slate-400">{dateLabel(request.createdAt)}</span></div>
+                <h3 className="mt-3 text-lg font-semibold text-slate-950">{request.projectName}</h3>
+                <p className="mt-1 flex items-center gap-1 text-sm text-slate-500"><MapPin size={14} />{request.location || 'Ei sijaintia'}</p>
+                <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{request.description}</p>
+                <div className="mt-4"><div className="mb-2 flex justify-between text-xs text-slate-500"><span>Tilauksen vaihe</span><strong>{requestProgress(request.status)} %</strong></div><Progress value={requestProgress(request.status)} className="h-2" /></div>
+                <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-600"><span className="flex items-center gap-1"><CalendarDays size={14} /> Valmis {dateLabel(request.desiredEndDate)}</span><span>{request.occupancyStatus}</span><span className="flex items-center gap-1"><Paperclip size={14} /> {request.attachments.length} liitettä</span></div>
+                {request.managementNote && <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"><strong>Työnjohdon viesti:</strong> {request.managementNote}</div>}
+                <div className="mt-5 flex flex-wrap gap-2"><Button className="gap-2" onClick={() => navigate(`/tilaajan-tyot/${request.id}`)}><MessageCircle size={16} /> Avaa tilaus</Button>{!isPreviewing && ['Luonnos', 'Lisätietoja pyydetty'].includes(request.status) && <Button variant="outline" onClick={() => navigate(`/tilaajan-tyot/uusi?draft=${request.id}`)} className="gap-2"><FilePenLine size={16} /> {request.status === 'Luonnos' ? 'Jatka luonnosta' : 'Täydennä tietoja'}</Button>}{request.status === 'Muutettu projektiksi' && request.convertedProjectId && <Button variant="outline" onClick={() => navigate(`/tilaajan-projektit/${request.convertedProjectId}`)}>Avaa projekti</Button>}</div>
               </CardContent>
             </Card>
           ))}
-        </section>
-      )}
+          {!loading && visibleRequests.length === 0 && <Card className="lg:col-span-2"><CardContent className="p-10 text-center"><ClipboardList size={42} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold text-slate-950">Tilauksia ei ole vielä</p><p className="mt-1 text-sm text-slate-500">Aloita tekemällä ensimmäinen työtilaus.</p>{!isPreviewing && <Button className="mt-4" onClick={openRequest}>Tilaa työ</Button>}</CardContent></Card>}
+        </div>
+      </section>
 
-      {!isPreviewing && <div className="grid gap-3 sm:grid-cols-2"><Button variant="outline" className="h-auto min-h-16 justify-start gap-3 p-4" onClick={() => navigate('/projektikeskustelut')}><MessageCircle size={20} className="text-teal-700" /><span className="text-left"><span className="block font-semibold">Projektikeskustelut</span><span className="block text-xs font-normal text-slate-500">Keskustele projektin jäsenien kanssa</span></span></Button><Button variant="outline" className="h-auto min-h-16 justify-start gap-3 p-4" onClick={() => navigate('/tyoturvallisuus')}><ShieldCheck size={20} className="text-teal-700" /><span className="text-left"><span className="block font-semibold">Turvallisuushavainto</span><span className="block text-xs font-normal text-slate-500">Ilmoita projektiin liittyvästä vaarasta</span></span></Button></div>}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2"><FolderKanban size={20} className="text-teal-700" /><h2 className="text-xl font-semibold text-slate-950">Projektit</h2><Badge variant="outline">{activeProjects} aktiivista</Badge></div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {visibleProjects.map((project) => <Card key={project.id} className="border-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><FolderKanban size={21} /></div><Badge variant="outline">{project.status}</Badge></div><h3 className="mt-4 text-xl font-semibold text-slate-950">{project.name}</h3><p className="mt-1 flex items-center gap-1 text-sm text-slate-500"><MapPin size={14} />{project.location || 'Sijaintia ei ole määritetty'}</p><div className="mt-5"><div className="mb-2 flex justify-between text-xs text-slate-500"><span>Projektin eteneminen</span><strong>{project.progress}%</strong></div><Progress value={project.progress} className="h-2" /></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Aloitus</p><p className="mt-1 font-medium">{dateLabel(project.startDate)}</p></div><div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Tavoite</p><p className="mt-1 font-medium">{dateLabel(project.endDate)}</p></div></div>{project.supervisorName && <p className="mt-4 text-sm text-slate-600"><strong>Työnjohto:</strong> {project.supervisorName}{project.supervisorEmail ? ` · ${project.supervisorEmail}` : ''}</p>}<Button className="mt-5 w-full gap-2" onClick={() => navigate(`/tilaajan-projektit/${project.id}`)}><ClipboardList size={16} /> Avaa projekti</Button></CardContent></Card>)}
+        </div>
+      </section>
     </div>
   );
 }
