@@ -39,3 +39,12 @@ paths go through `saveManagedWorkOrder` / `save_work_order_v2` so
 in `src/lib/calendarWorkOrderBooking.ts`. Clicking a work-order card opens
 `/tyomaaraykset?edit=<id>`. Project-linked assignment still requires the person to
 be on `project_members`.
+
+### Project works: contacts + files
+
+`/projektit/:id` (`ProjectWorks`) shows **Päähenkilöt ja yhteystiedot** plus
+**Projektin tiedostot** above the work-plan list
+(`ProjectContactsFilesPanel`). Files reuse `project_documents` /
+`project-documents` storage via `uploadProjectDocument`. Customer contacts come
+from `customer_contacts` when the project has `customerId`. Deep-link
+`/projektit/:id/tyotila?tab=documents` opens the full documents tab.

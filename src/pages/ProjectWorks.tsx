@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { useAuth } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
@@ -33,6 +34,7 @@ import {
 } from '@/lib/supabase/projectWorkPlans';
 import type { ManagedWorkOrder } from '@/lib/supabase/workManagement';
 import type { WorkOrderStatus } from '@/types';
+import ProjectContactsFilesPanel from './projectWorks/ProjectContactsFilesPanel';
 import ProjectWorkPlanDialog from './projectWorks/ProjectWorkPlanDialog';
 
 const ALL = 'Kaikki';
@@ -99,6 +101,7 @@ function packageProgress(orders: ManagedWorkOrder[]): number {
 export default function ProjectWorks() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { currentOrg } = useOrganization();
   const { projects } = useAppDataContext();
   const {
@@ -232,11 +235,15 @@ export default function ProjectWorks() {
               </div>
               <h1 className="break-words text-2xl font-bold sm:text-4xl">{project?.name ?? 'Projektin työt'}</h1>
               <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">
-                Rakenna isosta urakasta selkeitä työkokonaisuuksia. Jaa työ kohteisiin ja järjestettyihin vaiheisiin, nimeä jokaiselle vaiheelle tekijät ja seuraa etenemistä kohdekohtaisesti.
+                Rakenna isosta urakasta selkeitä työkokonaisuuksia. Pidä päähenkilöt, tilaajan yhteystiedot ja projektitiedostot samassa näkymässä, ja seuraa työvaiheiden etenemistä kohdekohtaisesti.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10" onClick={() => navigate(`/projektit/${projectId}/tyotila`)}>
+              <Button
+                variant="outline"
+                className="border-slate-600 bg-white/5 text-white hover:bg-white/10"
+                onClick={() => navigate(`/projektit/${projectId}/tyotila?tab=documents`)}
+              >
                 <FileText size={16} className="mr-2" /> Tilannekuva ja dokumentit
               </Button>
               <Button variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10" onClick={() => navigate(`/tyomaaraykset?project=${encodeURIComponent(projectId)}&new=1`)}>
@@ -279,6 +286,20 @@ export default function ProjectWorks() {
           </Card>
         ))}
       </div>
+
+      {project && currentOrg && (
+        <ProjectContactsFilesPanel
+          organizationId={currentOrg.id}
+          project={project}
+          people={people}
+          projectPeople={projectPeople}
+          currentUserId={user?.id}
+          canManage={canManage}
+          onError={setOperationError}
+          onSuccess={setSuccessMessage}
+          onNavigateWorkspaceDocuments={() => navigate(`/projektit/${projectId}/tyotila?tab=documents`)}
+        />
+      )}
 
       <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="relative">
