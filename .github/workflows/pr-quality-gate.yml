@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: pr-quality-${{ github.event.pull_request.number || github.ref }}
@@ -60,56 +59,5 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  authenticated-application-smoke:
-    name: Authenticated multi-role application smoke
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      E2E_USER_EMAIL: admin@roles.vakantti.invalid
-      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD || secrets.E2E_PASSWORD || secrets.TEST_USER_PASSWORD || secrets.TEST_PASSWORD || secrets.TEST_ADMIN_PASSWORD }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Validate authenticated smoke secret
-        shell: bash
-        run: |
-          test -n "$E2E_USER_PASSWORD" || { echo "Missing test secret. Supported GitHub secret names: E2E_USER_PASSWORD, E2E_PASSWORD, TEST_USER_PASSWORD, TEST_PASSWORD, TEST_ADMIN_PASSWORD"; exit 1; }
-
-      - name: Request GitHub OIDC token
-        id: oidc
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const token = await core.getIDToken('vakantti-e2e-provisioner');
-            core.setSecret(token);
-            core.setOutput('token', token);
-
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Test every role and dynamic application route
-        env:
-          E2E_PROVISION_TOKEN: ${{ steps.oidc.outputs.token }}
-        run: npx playwright test e2e/smoke.spec.ts --project=chromium --retries=0
-
-      - name: Upload authenticated smoke diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: authenticated-application-smoke-diagnostics
-          path: |
-            playwright-report
-            test-results
-          if-no-files-found: ignore
-          retention-days: 7
+# Authenticated role E2E fixtures are prohibited in production.
+# Run them only against an isolated Supabase project outside this workflow.
