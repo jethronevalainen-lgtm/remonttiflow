@@ -279,7 +279,7 @@ export async function loadSafetyWorkspace(
   const briefings = rows(briefingsResult.data)
     .map((row) => mapBriefing(row, acknowledgements, acknowledgementCounts))
     .filter((briefing) => briefing.status === 'published' || ['admin', 'supervisor', 'project_coordinator'].includes(role))
-    .filter((briefing) => !briefing.audienceRoles.length || briefing.audienceRoles.includes(role))
+    .filter((briefing) => canManage || !briefing.audienceRoles.length || briefing.audienceRoles.includes(role))
     .filter((briefing) => !briefing.projectId || projectIds.has(briefing.projectId));
 
   return {
@@ -313,7 +313,7 @@ export async function acknowledgeSafetyBriefing(
 export async function saveSafetyBriefing(
   organizationId: string,
   userId: string,
-  briefing: Omit<SafetyBriefing, 'id' | 'organizationId' | 'createdBy' | 'createdAt' | 'updatedAt' | 'acknowledgedAt' | 'publishedBy' | 'publishedAt'> & { id?: string },
+  briefing: Omit<SafetyBriefing, 'id' | 'organizationId' | 'createdBy' | 'createdAt' | 'updatedAt' | 'acknowledgedAt' | 'publishedBy' | 'publishedAt' | 'acknowledgementCount'> & { id?: string },
 ): Promise<string> {
   const payload = {
     organization_id: organizationId,
