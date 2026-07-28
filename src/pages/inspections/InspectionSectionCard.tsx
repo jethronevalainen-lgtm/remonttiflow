@@ -12,7 +12,12 @@ import type {
   InspectionAttachment, InspectionResultDetail, InspectionResultStatus,
 } from '@/lib/supabase/inspectionEntities';
 import { cn } from '@/lib/utils';
-import { RESULT_OPTIONS } from './inspectionUi';
+import {
+  RESULT_OPTIONS, resultStatusBadgeClasses, resultStatusLabel,
+} from './inspectionUi';
+
+const PRIMARY_RESULT_OPTIONS = RESULT_OPTIONS.filter((option) => !option.secondary);
+const SECONDARY_RESULT_OPTION = RESULT_OPTIONS.find((option) => option.secondary);
 
 export default function InspectionSectionCard({
   results,
@@ -84,26 +89,42 @@ export default function InspectionSectionCard({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="max-w-4xl"><h3 className="font-semibold leading-snug text-text-primary">{result.itemTitle}</h3>{result.guidance && <p className="mt-1 text-xs leading-relaxed text-text-secondary">{result.guidance}</p>}</div>
-                    <Badge className={cn('border-0', result.status === 'Kunnossa' ? 'bg-emerald-50 text-emerald-700' : result.status === 'Puute' ? 'bg-red-50 text-red-700' : result.status === 'Tarkastamatta' ? 'bg-slate-100 text-slate-600' : 'bg-blue-50 text-blue-700')}>{result.status}</Badge>
+                    <Badge className={cn('border-0', resultStatusBadgeClasses(result.status))}>{resultStatusLabel(result.status)}</Badge>
                   </div>
 
                   {canManage && !locked && (
-                    <div className="mt-3 grid grid-cols-2 gap-2 print:hidden sm:grid-cols-3 xl:grid-cols-5">
-                      {RESULT_OPTIONS.map((option) => (
+                    <div className="mt-3 print:hidden">
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        {PRIMARY_RESULT_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            disabled={Boolean(savingKey)}
+                            onClick={() => void onStatus(result, option.value)}
+                            className={cn(
+                              'min-h-11 rounded-lg border px-2 py-2 text-xs font-semibold leading-tight transition-all disabled:opacity-50',
+                              option.className,
+                              result.status === option.value && 'ring-2 ring-slate-900/25 ring-offset-1 shadow-sm',
+                            )}
+                          >
+                            {option.shortLabel}
+                          </button>
+                        ))}
+                      </div>
+                      {SECONDARY_RESULT_OPTION && (
                         <button
-                          key={option.value}
                           type="button"
                           disabled={Boolean(savingKey)}
-                          onClick={() => void onStatus(result, option.value)}
+                          onClick={() => void onStatus(result, SECONDARY_RESULT_OPTION.value)}
                           className={cn(
-                            'min-h-11 rounded-lg border px-2 py-2 text-xs font-semibold transition-all disabled:opacity-50',
-                            option.className,
-                            result.status === option.value && 'ring-2 ring-slate-900/25 ring-offset-1 shadow-sm',
+                            'mt-2 min-h-9 rounded-lg border px-3 py-2 text-xs font-semibold transition-all disabled:opacity-50',
+                            SECONDARY_RESULT_OPTION.className,
+                            result.status === SECONDARY_RESULT_OPTION.value && 'ring-2 ring-slate-900/25 ring-offset-1 shadow-sm',
                           )}
                         >
-                          {option.shortLabel}
+                          {SECONDARY_RESULT_OPTION.shortLabel}
                         </button>
-                      ))}
+                      )}
                     </div>
                   )}
 
