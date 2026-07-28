@@ -111,7 +111,7 @@ export default function Layout() {
               onClick={() => void returnToAdministrator()}
               className="flex min-h-10 flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-400 bg-white px-3 py-2 font-semibold text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
             >
-              <X size={16} /> {switching ? 'Palautetaan…' : 'Palaa admin-istuntoon'}
+              <X size={16} /> {switching ? 'Palautetaan…' : 'Lopeta käyttäjänä toimiminen'}
             </button>
           </div>
         )}
