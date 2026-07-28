@@ -15,8 +15,13 @@ export interface ProjectPhase {
   startDate: string;
   endDate: string;
   status: PhaseStatus;
+  /** Stored DB value; UI should prefer derivePhaseProgress(). */
   progress: number;
   notes: string;
+  workPlanId?: string;
+  workOrderCount: number;
+  completedWorkOrderCount: number;
+  activeWorkOrderCount: number;
 }
 
 export interface Shift {
@@ -68,8 +73,42 @@ function sourceType(value: unknown): ShiftSourceType {
   return value === 'work_order' ? 'work_order' : 'manual';
 }
 
+interface WorkOrderPhaseStats {
+  total: number;
+  completed: number;
+  active: number;
+}
+
+async function loadWorkOrderPhaseStats(
+  organizationId: string,
+): Promise<Map<string, WorkOrderPhaseStats>> {
+  const { data, error } = await supabase
+    .from('work_orders')
+    .select('project_phase_id, status')
+    .eq('organization_id', organizationId)
+    .not('project_phase_id', 'is', null);
+
+  if (error) {
+    throw new Error(`Työmääräysten vaihetilastojen haku epäonnistui: ${error.message}`);
+  }
+
+  const stats = new Map<string, WorkOrderPhaseStats>();
+  for (const item of Array.isArray(data) ? data : []) {
+    const record = row(item);
+    const phaseId = text(record, 'project_phase_id');
+    if (!phaseId) continue;
+    const current = stats.get(phaseId) ?? { total: 0, completed: 0, active: 0 };
+    current.total += 1;
+    const status = text(record, 'status');
+    if (status === 'Valmis' || status === 'Peruttu') current.completed += 1;
+    if (status === 'Käynnissä') current.active += 1;
+    stats.set(phaseId, current);
+  }
+  return stats;
+}
+
 async function loadScheduling(organizationId: string) {
-  const [phasesResponse, shiftsResponse] = await Promise.all([
+  const [phasesResponse, shiftsResponse, phaseStats] = await Promise.all([
     supabase
       .from('project_phases')
       .select('*')
@@ -80,6 +119,7 @@ async function loadScheduling(organizationId: string) {
       .select('*')
       .eq('organization_id', organizationId)
       .order('date', { ascending: true }),
+    loadWorkOrderPhaseStats(organizationId),
   ]);
 
   if (phasesResponse.error) {
@@ -96,8 +136,10 @@ async function loadScheduling(organizationId: string) {
       const status: PhaseStatus = ['Käynnissä', 'Valmis', 'Myöhässä'].includes(rawStatus)
         ? rawStatus as PhaseStatus
         : 'Suunniteltu';
+      const phaseId = text(item, 'id');
+      const counts = phaseStats.get(phaseId) ?? { total: 0, completed: 0, active: 0 };
       return {
-        id: text(item, 'id'),
+        id: phaseId,
         projectId: optionalText(item, 'project_id'),
         projectName: text(item, 'project_name'),
         name: text(item, 'name'),
@@ -106,6 +148,10 @@ async function loadScheduling(organizationId: string) {
         status,
         progress: numberValue(item, 'progress'),
         notes: text(item, 'notes'),
+        workPlanId: optionalText(item, 'work_plan_id'),
+        workOrderCount: counts.total,
+        completedWorkOrderCount: counts.completed,
+        activeWorkOrderCount: counts.active,
       };
     });
 
