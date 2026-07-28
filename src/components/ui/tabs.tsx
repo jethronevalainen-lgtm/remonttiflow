@@ -10,16 +10,25 @@ const Tabs = TabsPrimitive.Root
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.List
-    ref={ref}
-    className={cn(
-      "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
-      className
-    )}
-    {...props}
-  />
-))
+>(({ className, ...props }, ref) => {
+  const useResponsiveGrid = className?.split(/\s+/).includes("overflow-x-auto") ?? false
+
+  return (
+    <TabsPrimitive.List
+      ref={ref}
+      className={cn(
+        "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
+        className,
+        useResponsiveGrid && [
+          "max-lg:grid max-lg:grid-cols-2 sm:max-lg:grid-cols-3 max-lg:items-stretch max-lg:overflow-visible",
+          "max-lg:[&>[role=tab]]:min-w-0 max-lg:[&>[role=tab]]:whitespace-normal",
+          "max-lg:[&>[role=tab]]:px-2 max-lg:[&>[role=tab]]:py-2 max-lg:[&>[role=tab]]:text-center max-lg:[&>[role=tab]]:leading-tight",
+        ]
+      )}
+      {...props}
+    />
+  )
+})
 TabsList.displayName = TabsPrimitive.List.displayName
 
 const TabsTrigger = React.forwardRef<
