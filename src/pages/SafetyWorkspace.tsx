@@ -72,7 +72,7 @@ export default function SafetyWorkspace() {
     try {
       const next = await loadSafetyWorkspace(currentOrg.id, effectiveUserId, effectiveRole);
       setData(next);
-      setProjectId((previous) => previous || next.activeProjectId || next.projects[0]?.id || '');
+      setProjectId((previous) => previous && next.projects.some((project) => project.id === previous) ? previous : '');
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Turvallisuustietojen lataus epäonnistui.');
@@ -88,30 +88,33 @@ export default function SafetyWorkspace() {
   const selectedProject = data.projects.find((project) => project.id === projectId);
   const profile = data.profiles.find((item) => item.projectId === projectId);
   const briefing = selectPrimaryBriefing(data.briefings, projectId || undefined);
-  const metrics = safetyMetrics(data.items, today);
-  const actionItems = useMemo(() => data.items
+  const scopedItems = useMemo(
+    () => projectId ? data.items.filter((item) => item.projectId === projectId) : data.items,
+    [data.items, projectId],
+  );
+  const metrics = safetyMetrics(scopedItems, today);
+  const actionItems = useMemo(() => scopedItems
     .map((item) => ({ item, reasons: safetyActionReasons(item, today) }))
     .filter((entry) => entry.reasons.length)
-    .sort((a, b) => Number(b.item.severity === 'Vakava') - Number(a.item.severity === 'Vakava')), [data.items, today]);
+    .sort((a, b) => Number(b.item.severity === 'Vakava') - Number(a.item.severity === 'Vakava')), [scopedItems, today]);
   const filteredItems = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fi');
-    return data.items.filter((item) => {
+    return scopedItems.filter((item) => {
       const reasons = safetyActionReasons(item, today);
       const closed = ['Suljettu', 'Vahvistettu'].includes(item.status);
       const viewMatch = view === 'all' || (view === 'action' && reasons.length > 0)
         || (view === 'open' && !closed) || (view === 'verification' && item.status === 'Ilmoitettu korjatuksi')
         || (view === 'closed' && closed);
-      const projectMatch = !projectId || item.projectId === projectId;
       const textMatch = !query || [item.title, item.description, item.project, item.location, item.assignee]
         .some((value) => value?.toLocaleLowerCase('fi').includes(query));
-      return viewMatch && projectMatch && textMatch && (typeFilter === 'all' || item.type === typeFilter)
+      return viewMatch && textMatch && (typeFilter === 'all' || item.type === typeFilter)
         && (statusFilter === 'all' || item.status === statusFilter);
     });
-  }, [data.items, projectId, search, statusFilter, today, typeFilter, view]);
+  }, [scopedItems, search, statusFilter, today, typeFilter, view]);
 
   const openCreate = (type: SafetyItemType = 'risk') => {
     setEditing(null);
-    setItemForm(emptySafetyItemForm(today, projectId, type));
+    setItemForm(emptySafetyItemForm(today, '', type));
     setItemErrors([]);
     setObservationFiles([]);
     setCorrectionFiles([]);
@@ -144,7 +147,6 @@ export default function SafetyWorkspace() {
     const errors = [
       !itemForm.title.trim() && 'Otsikko on pakollinen.',
       itemForm.description.trim().length < 5 && 'Kuvaa havainto riittävän tarkasti.',
-      !itemForm.projectId && 'Valitse projekti.',
     ].filter(Boolean) as string[];
     if (itemForm.status === 'Ilmoitettu korjatuksi' && !itemForm.correctiveAction.trim()) errors.push('Kirjaa tehty korjaava toimenpide.');
     setItemErrors(errors);
@@ -156,7 +158,7 @@ export default function SafetyWorkspace() {
       const person = people.find((entry) => entry.userId === itemForm.assigneeUserId);
       const payload = {
         type: itemForm.type, title: itemForm.title.trim(), description: itemForm.description.trim(), date: itemForm.date,
-        projectId: itemForm.projectId, project: project?.name, location: itemForm.location.trim() || undefined,
+        projectId: itemForm.projectId, project: project?.name ?? '', location: itemForm.location.trim() || undefined,
         severity: itemForm.severity, status: editing && canManage ? itemForm.status : 'Avoin',
         assigneeUserId: itemForm.assigneeUserId || undefined, assignee: person?.name,
         dueDate: itemForm.dueDate || undefined, rootCause: itemForm.rootCause.trim() || undefined,
