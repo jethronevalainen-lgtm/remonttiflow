@@ -30,8 +30,12 @@ Non-obvious gotchas:
 - **Do not mutate production data as a test side effect.** The default Supabase
   target is the shared/production project. Do not create accounts or write data
   just to test; use the dedicated E2E test user instead.
-- Playwright E2E (`npm run test:e2e`) auto-starts `npm run dev` and needs browsers
-  installed first: `npx playwright install --with-deps chromium`. Authenticated
-  specs are skipped unless `E2E_USER_EMAIL`/`E2E_USER_PASSWORD` are set.
+- Playwright E2E (`npm run test:e2e`) auto-starts `npm run dev`. Install browsers
+  with `npx playwright install chromium` (prefer without `--with-deps` here —
+  apt can hang indefinitely in this VM). Unauthenticated mobile smoke works
+  without secrets. Authenticated `e2e/smoke.spec.ts` also needs
+  `E2E_PROVISION_TOKEN` from GitHub Actions OIDC (only issued inside
+  `pr-quality-gate.yml`), so full multi-role smoke cannot run in the cloud
+  agent VM even if the password secret is present — use CI for that path.
 - `npm run check:migrations` prints many `warning:` lines about `private.` grants;
   these are expected and non-fatal — only a final `errors` count matters.
