@@ -13,7 +13,20 @@ export type Permission =
   | 'work_orders.read.assigned'
   | 'work_orders.manage'
   | 'work_orders.transition'
+  | 'time_entries.read.own'
+  | 'time_entries.read.projects'
   | 'time_entries.read.all'
+  | 'time_entries.create.own'
+  | 'time_entries.create.others'
+  | 'time_entries.request_correction'
+  | 'time_entries.resolve_corrections'
+  | 'time_entries.approve.all'
+  | 'time_entries.manage.rules'
+  | 'time_entries.lock.period'
+  | 'time_entries.export.payroll'
+  | 'work_sessions.read.own'
+  | 'work_sessions.read.projects'
+  | 'work_sessions.read.all'
   | 'safety.create'
   | 'safety.read.all'
   | 'safety.read.project'
@@ -105,7 +118,12 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
   admin: new Set<Permission>([
     'organization.manage', 'members.manage', 'projects.read.all', 'projects.manage',
     'projects.request', 'project_requests.manage', 'work_orders.read.all',
-    'work_orders.manage', 'work_orders.transition', 'time_entries.read.all',
+    'work_orders.manage', 'work_orders.transition',
+    'time_entries.read.own', 'time_entries.read.projects', 'time_entries.read.all',
+    'time_entries.create.own', 'time_entries.create.others', 'time_entries.request_correction',
+    'time_entries.resolve_corrections', 'time_entries.approve.all', 'time_entries.manage.rules',
+    'time_entries.lock.period', 'time_entries.export.payroll',
+    'work_sessions.read.own', 'work_sessions.read.projects', 'work_sessions.read.all',
     'safety.create', 'safety.read.all', 'safety.manage', 'project_chat.shared',
     'project_chat.internal', 'project_chat.attach', 'project_chat.edit_own',
     'project_documents.customer.read', 'project_documents.customer.share',
@@ -114,8 +132,13 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
   supervisor: new Set<Permission>([
     'projects.read.all', 'projects.manage', 'projects.request',
     'project_requests.manage', 'work_orders.read.all', 'work_orders.manage',
-    'work_orders.transition', 'time_entries.read.all', 'safety.create',
-    'safety.read.all', 'safety.manage', 'project_chat.shared',
+    'work_orders.transition',
+    'time_entries.read.own', 'time_entries.read.projects', 'time_entries.read.all',
+    'time_entries.create.own', 'time_entries.create.others', 'time_entries.request_correction',
+    'time_entries.resolve_corrections', 'time_entries.approve.all',
+    'time_entries.lock.period', 'time_entries.export.payroll',
+    'work_sessions.read.own', 'work_sessions.read.projects', 'work_sessions.read.all',
+    'safety.create', 'safety.read.all', 'safety.manage', 'project_chat.shared',
     'project_chat.internal', 'project_chat.attach', 'project_chat.edit_own',
     'project_documents.customer.read', 'project_documents.customer.share',
     'change_orders.customer.read', 'change_orders.customer.submit',
@@ -123,15 +146,16 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
   project_coordinator: new Set<Permission>([
     'projects.read.all', 'projects.manage', 'projects.request',
     'project_requests.manage', 'work_orders.read.all', 'work_orders.manage',
-    'work_orders.transition', 'time_entries.read.all', 'safety.create',
-    'safety.read.all', 'safety.manage', 'project_chat.shared',
+    'work_orders.transition', 'time_entries.read.projects', 'work_sessions.read.projects',
+    'safety.create', 'safety.read.all', 'safety.manage', 'project_chat.shared',
     'project_chat.internal', 'project_chat.attach', 'project_chat.edit_own',
     'project_documents.customer.read', 'project_documents.customer.share',
     'change_orders.customer.read', 'change_orders.customer.submit',
   ]),
   worker: new Set<Permission>([
     'projects.read.assigned', 'work_orders.read.assigned', 'work_orders.transition',
-    'safety.create', 'safety.read.project', 'safety.read.own',
+    'time_entries.read.own', 'time_entries.create.own', 'time_entries.request_correction',
+    'work_sessions.read.own', 'safety.create', 'safety.read.project', 'safety.read.own',
     'project_chat.shared', 'project_chat.internal', 'project_chat.attach',
     'project_chat.edit_own',
   ]),
