@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fi">
+  <body style="margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:32px 16px;background:#f8fafc">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
+            <tr>
+              <td style="padding:28px;background:#020617;color:#ffffff">
+                <div style="font-size:24px;font-weight:700">VaKantti</div>
+                <div style="margin-top:8px;color:#cbd5e1">Työmaan ja henkilöstön hallinta</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px">
+                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3">Sinut on kutsuttu käyttämään VaKanttia</h1>
+                <p style="margin:0 0 12px;line-height:1.6">
+                  {{ if .Data.full_name }}Hei {{ .Data.full_name }},{{ else }}Hei,{{ end }}
+                </p>
+                <p style="margin:0 0 20px;line-height:1.6">
+                  Sinulle on luotu käyttöoikeus organisaatioon
+                  <strong>{{ if .Data.organization_name }}{{ .Data.organization_name }}{{ else }}VaKantti{{ end }}</strong>.
+                  Avaa kutsu, vahvista tilisi ja määritä henkilökohtainen salasana.
+                </p>
+                <p style="margin:0 0 24px">
+                  <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:13px 20px;border-radius:8px;background:#ea580c;color:#ffffff;text-decoration:none;font-weight:700">Hyväksy kutsu ja ota VaKantti käyttöön</a>
+                </p>
+                <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6">
+                  Kutsu on henkilökohtainen. Älä välitä kutsulinkkiä muille. Jos et odottanut kutsua, voit jättää tämän viestin huomiotta.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
