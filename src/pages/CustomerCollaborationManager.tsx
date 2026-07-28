@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -11,13 +11,16 @@ import {
   MessageCircle,
   Send,
   ShieldCheck,
+  UserPlus,
   XCircle,
 } from 'lucide-react';
 
+import CustomerPortalInviteDialog from '@/components/admin/CustomerPortalInviteDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import {
   createCustomerDocumentUrl,
@@ -40,7 +43,9 @@ function euro(cents: number) {
 function dateTime(value: string | null) {
   if (!value) return '—';
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('fi-FI', { dateStyle: 'short', timeStyle: 'short' });
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleString('fi-FI', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 function decisionBadge(decision: string | null) {
@@ -54,12 +59,31 @@ export default function CustomerCollaborationManager() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { currentOrg } = useOrganization();
+  const { projects, customers } = useAppDataContext();
   const [context, setContext] = useState<ProjectConversationContext | null>(null);
   const [documents, setDocuments] = useState<CustomerProjectDocument[]>([]);
   const [changeOrders, setChangeOrders] = useState<CustomerProjectChangeOrder[]>([]);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const project = useMemo(
+    () => projects.find((item) => item.id === projectId) ?? null,
+    [projectId, projects],
+  );
+  const customer = useMemo(() => {
+    if (!project) return null;
+    if (project.customerId) return customers.find((item) => item.id === project.customerId) ?? null;
+    return customers.find((item) => item.name === project.customer) ?? null;
+  }, [customers, project]);
+  const inviteProject = project ? {
+    id: project.id,
+    name: project.name,
+    location: project.location,
+    status: project.status,
+  } : null;
 
   const refresh = useCallback(async () => {
     if (!projectId || !currentOrg) return;
@@ -121,18 +145,45 @@ export default function CustomerCollaborationManager() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <section className="rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-teal-950 p-5 text-white shadow-lg sm:p-8">
-        <Button variant="ghost" className="mb-4 gap-2 text-slate-200 hover:bg-white/10 hover:text-white" onClick={() => navigate(`/projektit/${projectId}`)}><ArrowLeft size={16} /> Projektityötila</Button>
+        <Button variant="ghost" className="mb-4 gap-2 text-slate-200 hover:bg-white/10 hover:text-white" onClick={() => navigate(`/projektit/${projectId}`)}>
+          <ArrowLeft size={16} /> Projektityötila
+        </Button>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <Badge className="mb-3 border-slate-600 bg-slate-800 text-slate-100">Tilaajayhteistyö</Badge>
             <h1 className="text-3xl font-bold">{context?.projectName || 'Projekti'}</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Hallitse tilaajalle näkyviä dokumentteja, kuvia sekä hyväksyttäviä lisä- ja muutostöitä.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+              Hallitse projektin tilaajakäyttäjiä, tilaajalle näkyviä dokumentteja, kuvia sekä hyväksyttäviä lisä- ja muutostöitä.
+            </p>
           </div>
-          <Button variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10" onClick={() => navigate(`/projektikeskustelut/${projectId}`)}><MessageCircle size={16} className="mr-2" /> Projektikeskustelu</Button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              className="gap-2 bg-teal-500 text-white hover:bg-teal-600"
+              disabled={!customer || !inviteProject || !currentOrg}
+              title={!customer ? 'Liitä projekti ensin asiakasrekisterin asiakkaaseen.' : undefined}
+              onClick={() => {
+                setError(null);
+                setSuccessMessage(null);
+                setInviteOpen(true);
+              }}
+            >
+              <UserPlus size={16} /> Kutsu tilaaja projektiin
+            </Button>
+            <Button variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10" onClick={() => navigate(`/projektikeskustelut/${projectId}`)}>
+              <MessageCircle size={16} className="mr-2" /> Projektikeskustelu
+            </Button>
+          </div>
         </div>
       </section>
 
+      {!customer && !loading && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          Projekti ei ole kytketty asiakasrekisterin asiakkaaseen. Tilaajakutsua ei voi lähettää ennen asiakaskytkentää.
+        </div>
+      )}
       {error && <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={17} className="mt-0.5" />{error}</div>}
+      {successMessage && <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"><CheckCircle2 size={17} className="mt-0.5" />{successMessage}</div>}
       {loading && <div className="flex items-center gap-2 rounded-xl border bg-white p-4 text-sm text-slate-500"><Loader2 size={17} className="animate-spin" />Ladataan tilaajayhteistyötä…</div>}
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -148,20 +199,31 @@ export default function CustomerCollaborationManager() {
         </TabsList>
 
         <TabsContent value="documents" className="space-y-4">
-          <Card className="border-blue-200 bg-blue-50"><CardContent className="flex items-start gap-3 p-4 text-sm text-blue-900"><ShieldCheck size={19} className="mt-0.5 shrink-0" /><p>Vain erikseen tilaajalle jaetut tiedostot näkyvät tilaajaportaalissa. Lisää uusia tiedostoja projektityötilan Dokumentit-välilehdellä ja julkaise ne tästä.</p></CardContent></Card>
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="flex items-start gap-3 p-4 text-sm text-blue-900">
+              <ShieldCheck size={19} className="mt-0.5 shrink-0" />
+              <p>Vain erikseen tilaajalle jaetut tiedostot näkyvät tilaajaportaalissa. Lisää uusia tiedostoja projektityötilan Dokumentit-välilehdellä ja julkaise ne tästä.</p>
+            </CardContent>
+          </Card>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {documents.map((document) => {
               const ImageOrFile = document.mimeType.startsWith('image/') ? FileImage : FileText;
               return (
                 <Card key={document.id} className={document.visibleToCustomer ? 'border-emerald-200' : ''}>
                   <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700"><ImageOrFile size={19} /></div><Badge variant="outline" className={document.visibleToCustomer ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ''}>{document.visibleToCustomer ? 'Näkyy tilaajalle' : 'Sisäinen'}</Badge></div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700"><ImageOrFile size={19} /></div>
+                      <Badge variant="outline" className={document.visibleToCustomer ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ''}>{document.visibleToCustomer ? 'Näkyy tilaajalle' : 'Sisäinen'}</Badge>
+                    </div>
                     <h3 className="mt-4 font-semibold text-slate-950">{document.title}</h3>
                     <p className="mt-1 truncate text-sm text-slate-500">{document.fileName}</p>
                     {document.description && <p className="mt-2 line-clamp-2 text-sm text-slate-700">{document.description}</p>}
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <Button variant="outline" size="sm" onClick={() => void openDocument(document)}><ExternalLink size={14} className="mr-1" /> Avaa</Button>
-                      <Button size="sm" variant={document.visibleToCustomer ? 'outline' : 'default'} disabled={savingId === document.id} onClick={() => void toggleDocument(document)}>{document.visibleToCustomer ? <XCircle size={14} className="mr-1" /> : <CheckCircle2 size={14} className="mr-1" />}{document.visibleToCustomer ? 'Poista jako' : 'Jaa tilaajalle'}</Button>
+                      <Button size="sm" variant={document.visibleToCustomer ? 'outline' : 'default'} disabled={savingId === document.id} onClick={() => void toggleDocument(document)}>
+                        {document.visibleToCustomer ? <XCircle size={14} className="mr-1" /> : <CheckCircle2 size={14} className="mr-1" />}
+                        {document.visibleToCustomer ? 'Poista jako' : 'Jaa tilaajalle'}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -191,6 +253,20 @@ export default function CustomerCollaborationManager() {
           {!loading && changeOrders.length === 0 && <Card><CardContent className="p-12 text-center"><Send size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei lisä- tai muutostöitä</p><p className="mt-1 text-sm text-slate-500">Luo muutostyö projektityötilassa.</p></CardContent></Card>}
         </TabsContent>
       </Tabs>
+
+      <CustomerPortalInviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        organizationId={currentOrg?.id ?? null}
+        customer={customer ? { id: customer.id, name: customer.name } : null}
+        projects={inviteProject ? [inviteProject] : []}
+        fixedProject={inviteProject}
+        allowPersistent={false}
+        onInvited={(message) => {
+          setSuccessMessage(message);
+          setInviteOpen(false);
+        }}
+      />
     </div>
   );
 }

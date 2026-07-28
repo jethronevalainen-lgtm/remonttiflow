@@ -1,4 +1,4 @@
-import { Building2, FolderKanban } from 'lucide-react';
+import { Building2, FolderKanban, ShieldCheck } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -79,7 +79,7 @@ export default function CustomerAccessPicker({
       <div>
         <Label>Tilaaja-asiakkuudet *</Label>
         <p className="mt-1 text-xs leading-5 text-slate-500">
-          Käyttäjä voi kuulua useaan asiakkuuteen. Rajaa tarvittaessa näkyvyys vain valittuihin projekteihin.
+          Käyttäjä voi kuulua useaan asiakkuuteen. Valitse jokaiselle asiakkuudelle pysyvä tai projektikohtainen tilaajaoikeus.
         </p>
       </div>
       <div className="max-h-[52vh] space-y-3 overflow-y-auto pr-1">
@@ -103,7 +103,7 @@ export default function CustomerAccessPicker({
                   {selected && assignment && (
                     <div className="mt-4 space-y-4">
                       <div className="space-y-2">
-                        <Label>Näkyvyyden laajuus</Label>
+                        <Label>Tilaajatyypin laajuus</Label>
                         <Select
                           value={assignment.accessScope}
                           disabled={disabled}
@@ -111,11 +111,19 @@ export default function CustomerAccessPicker({
                         >
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all_projects">Kaikki nykyiset ja tulevat projektit</SelectItem>
-                            <SelectItem value="selected_projects">Vain valitut projektit</SelectItem>
+                            <SelectItem value="all_projects">Pysyvä tilaaja — kaikki nykyiset ja tulevat projektit</SelectItem>
+                            <SelectItem value="selected_projects">Projektikohtainen tilaaja — vain valitut projektit</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {assignment.accessScope === 'all_projects' && (
+                        <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900">
+                          <ShieldCheck size={16} className="mt-0.5 shrink-0 text-emerald-700" />
+                          Käyttäjä näkee tämän asiakkuuden nykyiset ja myöhemmin luotavat projektit sekä voi tehdä uusia projektipyyntöjä.
+                        </div>
+                      )}
+
                       {assignment.accessScope === 'selected_projects' && (
                         <div className="space-y-2">
                           <Label className="flex items-center gap-2"><FolderKanban size={15} /> Sallitut projektit</Label>
