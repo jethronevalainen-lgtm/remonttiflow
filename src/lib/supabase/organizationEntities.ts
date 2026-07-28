@@ -88,12 +88,18 @@ export async function createEmployeeRecord(
   organizationId: string,
   createdBy: string | undefined,
   employee: Omit<Employee, 'id'>,
-): Promise<void> {
-  await insert('employees', {
-    organization_id: organizationId,
-    ...(createdBy ? { created_by: createdBy } : {}),
-    ...employeePayload(employee),
-  });
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('employees')
+    .insert({
+      organization_id: organizationId,
+      ...(createdBy ? { created_by: createdBy } : {}),
+      ...employeePayload(employee),
+    })
+    .select('id')
+    .single();
+  if (error || !data?.id) throw new Error(`Tallennus epäonnistui: ${error?.message ?? 'Henkilön tunniste puuttuu.'}`);
+  return String(data.id);
 }
 
 export async function updateEmployeeRecord(
