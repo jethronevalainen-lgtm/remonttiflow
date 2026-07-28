@@ -46,7 +46,11 @@ function phasePayload(phase: Omit<ProjectPhase, 'id'> | Partial<ProjectPhase>): 
   if (phase.startDate !== undefined) payload.start_date = phase.startDate;
   if (phase.endDate !== undefined) payload.end_date = phase.endDate;
   if (phase.status !== undefined) payload.status = phase.status;
-  if (phase.progress !== undefined) payload.progress = phase.progress;
+  // Progress is owned by the DB when work orders are linked. Callers must not
+  // invent percentages; omit undefined and never write client-side guesses.
+  if (typeof phase.progress === 'number' && Number.isFinite(phase.progress)) {
+    payload.progress = phase.progress;
+  }
   if (phase.notes !== undefined) payload.notes = phase.notes || null;
   return payload;
 }
