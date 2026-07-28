@@ -1,34 +1,38 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
-  Archive,
   Calculator,
   CheckCircle2,
-  Copy,
   Download,
   Edit3,
-  Euro,
+  ExternalLink,
   FilePlus2,
   FileText,
   FolderKanban,
   History,
-  Loader2,
-  PackagePlus,
   Plus,
   RefreshCw,
   Ruler,
-  Search,
-  Send,
   Settings2,
   Trash2,
-  XCircle,
 } from 'lucide-react';
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -63,15 +67,31 @@ import {
   updateCatalogItem,
   updateOffer,
   updateOfferLine,
+  updateOfferSection,
   updateOfferVersion,
   type OfferLine,
   type OfferSection,
   type OfferStatus,
   type PriceCatalogItem,
 } from '@/lib/supabase/offers';
-
-const CATEGORIES = ['Työ', 'Materiaali', 'Aliurakka', 'Kalusto', 'Kuljetus', 'Jäte', 'Muu'];
-const UNSECTIONED = '__none__';
+import { cn } from '@/lib/utils';
+import { CatalogTab } from './offers/CatalogTab';
+import { OfferKpiStrip } from './offers/OfferKpiStrip';
+import { OfferLineCard } from './offers/OfferLineCard';
+import { OfferListPanel } from './offers/OfferListPanel';
+import { OfferWorkflowCard } from './offers/OfferWorkflowCard';
+import {
+  centsInput,
+  date,
+  dateTime,
+  daysUntil,
+  euro,
+  expiryLabel,
+  marginTone,
+  moneyInput,
+  OFFER_CATEGORIES,
+  UNSECTIONED,
+} from './offers/offerUi';
 
 interface OfferForm {
   name: string;
@@ -82,6 +102,8 @@ interface OfferForm {
   validUntil: string;
   notes: string;
   assignedUserId: string;
+  paymentTerms: string;
+  deliveryTime: string;
 }
 
 interface OfferMetaForm {
@@ -123,6 +145,14 @@ interface CatalogForm {
   active: boolean;
 }
 
+type ConfirmAction =
+  | { kind: 'transition'; status: OfferStatus; title: string; description: string }
+  | { kind: 'delete-offer'; title: string; description: string }
+  | { kind: 'delete-line'; line: OfferLine; title: string; description: string }
+  | { kind: 'delete-section'; section: OfferSection; title: string; description: string }
+  | { kind: 'delete-catalog'; item: PriceCatalogItem; title: string; description: string }
+  | { kind: 'convert'; title: string; description: string };
+
 const emptyOffer = (): OfferForm => ({
   name: '',
   customerId: '',
@@ -132,6 +162,8 @@ const emptyOffer = (): OfferForm => ({
   validUntil: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
   notes: '',
   assignedUserId: '',
+  paymentTerms: '14 päivää netto',
+  deliveryTime: '',
 });
 
 const emptyLine = (): LineForm => ({
@@ -163,52 +195,6 @@ const emptyCatalog = (): CatalogForm => ({
   active: true,
 });
 
-function euro(cents: number): string {
-  return new Intl.NumberFormat('fi-FI', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(cents / 100);
-}
-
-function date(value?: string): string {
-  if (!value) return '—';
-  const parsed = new Date(`${value.slice(0, 10)}T12:00:00`);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('fi-FI');
-}
-
-function dateTime(value?: string): string {
-  if (!value) return '—';
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime())
-    ? value
-    : parsed.toLocaleString('fi-FI', { dateStyle: 'short', timeStyle: 'short' });
-}
-
-function moneyInput(value: string): number {
-  return Number(value.replace(/\s/g, '').replace(',', '.'));
-}
-
-function centsInput(value: string): number {
-  const euros = moneyInput(value);
-  return Number.isFinite(euros) ? Math.round(euros * 100) : Number.NaN;
-}
-
-function statusTone(status: OfferStatus | string): string {
-  if (status === 'Hyväksytty') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-  if (status === 'Lähetetty') return 'border-blue-200 bg-blue-50 text-blue-700';
-  if (status === 'Hylätty') return 'border-red-200 bg-red-50 text-red-700';
-  if (status === 'Vanhentunut') return 'border-amber-200 bg-amber-50 text-amber-700';
-  if (status === 'Korvattu' || status === 'Arkistoitu') return 'border-slate-200 bg-slate-100 text-slate-600';
-  return 'border-orange-200 bg-orange-50 text-orange-700';
-}
-
-function marginTone(percent: number): string {
-  if (percent >= 25) return 'text-emerald-700';
-  if (percent >= 15) return 'text-amber-700';
-  return 'text-red-700';
-}
-
 export default function Tarjoukset() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -220,16 +206,24 @@ export default function Tarjoukset() {
   const data = useOffersData();
 
   const [tab, setTab] = useState(searchParams.get('tab') === 'hinnasto' ? 'catalog' : 'offers');
+  const [detailTab, setDetailTab] = useState('lines');
   const [selectedOfferId, setSelectedOfferId] = useState(searchParams.get('offer') ?? '');
   const [selectedVersionId, setSelectedVersionId] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [scopeFilter, setScopeFilter] = useState('all');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogCategory, setCatalogCategory] = useState('all');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   const [offerDialog, setOfferDialog] = useState(false);
   const [offerMetaDialog, setOfferMetaDialog] = useState(false);
   const [lineDialog, setLineDialog] = useState(false);
   const [sectionDialog, setSectionDialog] = useState(false);
   const [catalogDialog, setCatalogDialog] = useState(false);
   const [importDialog, setImportDialog] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+
   const [offerForm, setOfferForm] = useState<OfferForm>(emptyOffer);
   const [offerMetaForm, setOfferMetaForm] = useState<OfferMetaForm>({
     name: '', validUntil: '', customerReference: '', deliveryTime: '', paymentTerms: '', notes: '', assignedUserId: '',
@@ -238,47 +232,76 @@ export default function Tarjoukset() {
   const [editingLine, setEditingLine] = useState<OfferLine | null>(null);
   const [sectionTitle, setSectionTitle] = useState('');
   const [sectionDescription, setSectionDescription] = useState('');
+  const [editingSection, setEditingSection] = useState<OfferSection | null>(null);
   const [editingCatalog, setEditingCatalog] = useState<PriceCatalogItem | null>(null);
   const [catalogForm, setCatalogForm] = useState<CatalogForm>(emptyCatalog);
   const [takeoffId, setTakeoffId] = useState('');
-  const [settings, setSettings] = useState({ vatRate: '25.5', overheadPercent: '0', riskPercent: '0', marginPercent: '20', notes: '', terms: '' });
+  const [settings, setSettings] = useState({
+    vatRate: '25.5', overheadPercent: '0', riskPercent: '0', marginPercent: '20', notes: '', terms: '',
+  });
   const [errors, setErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [operationSuccess, setOperationSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const normalizedSearch = search.trim().toLocaleLowerCase('fi-FI');
+
   const filteredOffers = useMemo(() => data.offers.filter((offer) => {
     if (statusFilter !== 'all' && offer.status !== statusFilter) return false;
+    if (scopeFilter === 'mine' && offer.assignedUserId !== user?.id) return false;
+    if (scopeFilter === 'convertible' && (offer.status !== 'Hyväksytty' || offer.convertedProjectId)) return false;
+    if (scopeFilter === 'expiring') {
+      const remaining = daysUntil(offer.validUntil);
+      const relevant = offer.status === 'Luonnos' || offer.status === 'Lähetetty' || offer.status === 'Vanhentunut';
+      if (!relevant || remaining == null || remaining > 7) return false;
+    }
     if (!normalizedSearch) return true;
     const customer = customers.find((item) => item.id === offer.customerId);
-    return [offer.name, offer.offerNumber, customer?.name]
+    const assignee = people.find((person) => person.userId === offer.assignedUserId);
+    return [offer.name, offer.offerNumber, customer?.name, assignee?.name]
       .filter(Boolean)
       .join(' ')
       .toLocaleLowerCase('fi-FI')
       .includes(normalizedSearch);
-  }), [customers, data.offers, normalizedSearch, statusFilter]);
+  }), [customers, data.offers, normalizedSearch, people, scopeFilter, statusFilter, user?.id]);
 
   const selectedOffer = data.offers.find((offer) => offer.id === selectedOfferId)
-    ?? filteredOffers[0]
-    ?? null;
-  const offerVersions = selectedOffer
-    ? data.versions.filter((version) => version.offerId === selectedOffer.id)
-    : [];
+    ?? (selectedOfferId ? null : filteredOffers[0] ?? null);
+  const offerVersions = useMemo(
+    () => (selectedOffer
+      ? data.versions.filter((version) => version.offerId === selectedOffer.id)
+      : []),
+    [data.versions, selectedOffer],
+  );
   const selectedVersion = offerVersions.find((version) => version.id === selectedVersionId)
     ?? offerVersions[0]
     ?? null;
-  const versionSections = selectedVersion
-    ? data.sections.filter((section) => section.offerVersionId === selectedVersion.id)
-    : [];
-  const versionLines = selectedVersion
-    ? data.lines.filter((line) => line.offerVersionId === selectedVersion.id)
-    : [];
-  const versionEvents = selectedOffer
-    ? data.events.filter((event) => event.offerId === selectedOffer.id)
-    : [];
+  const versionSections = useMemo(
+    () => (selectedVersion
+      ? data.sections.filter((section) => section.offerVersionId === selectedVersion.id)
+      : []),
+    [data.sections, selectedVersion],
+  );
+  const versionLines = useMemo(
+    () => (selectedVersion
+      ? data.lines.filter((line) => line.offerVersionId === selectedVersion.id)
+      : []),
+    [data.lines, selectedVersion],
+  );
+  const versionEvents = useMemo(
+    () => (selectedOffer
+      ? data.events.filter((event) => event.offerId === selectedOffer.id)
+      : []),
+    [data.events, selectedOffer],
+  );
   const customer = selectedOffer ? customers.find((item) => item.id === selectedOffer.customerId) : undefined;
   const lead = selectedOffer ? crmLeads.find((item) => item.id === selectedOffer.crmLeadId) : undefined;
-  const linkedProject = selectedOffer ? projects.find((item) => item.id === (selectedOffer.convertedProjectId ?? selectedOffer.projectId)) : undefined;
+  const linkedProject = selectedOffer
+    ? projects.find((item) => item.id === (selectedOffer.convertedProjectId ?? selectedOffer.projectId))
+    : undefined;
+  const assignee = selectedOffer
+    ? people.find((person) => person.userId === selectedOffer.assignedUserId)
+    : undefined;
   const draft = selectedOffer?.status === 'Luonnos' && selectedVersion?.status === 'Luonnos';
 
   const browserTotals = selectedVersion
@@ -296,11 +319,44 @@ export default function Tarjoukset() {
         targetMarginPercent: selectedVersion.marginPercent,
       })
     : null;
+
   const totalsMismatch = Boolean(selectedVersion && browserTotals && (
     Math.abs(selectedVersion.subtotalCents - browserTotals.saleSubtotalCents) > 1
     || Math.abs(selectedVersion.estimatedCostCents - browserTotals.estimatedCostCents) > 1
     || Math.abs(selectedVersion.totalCents - browserTotals.totalCents) > 1
   ));
+
+  const categoryBreakdown = useMemo(() => {
+    const map = new Map<string, { cost: number; sale: number }>();
+    versionLines.filter((line) => !line.optional).forEach((line) => {
+      const totals = calculateOfferLineTotals(line);
+      const current = map.get(line.category) ?? { cost: 0, sale: 0 };
+      map.set(line.category, {
+        cost: current.cost + totals.directCostCents,
+        sale: current.sale + totals.saleSubtotalCents,
+      });
+    });
+    return [...map.entries()].sort((a, b) => b[1].sale - a[1].sale);
+  }, [versionLines]);
+
+  const linePreview = useMemo(() => {
+    const quantity = moneyInput(lineForm.quantity);
+    const costUnitPriceCents = centsInput(lineForm.costUnitPrice);
+    const saleUnitPriceCents = centsInput(lineForm.saleUnitPrice);
+    const wastePercent = moneyInput(lineForm.wastePercent);
+    const discountPercent = moneyInput(lineForm.discountPercent);
+    if (![quantity, costUnitPriceCents, saleUnitPriceCents, wastePercent, discountPercent].every(Number.isFinite)) {
+      return null;
+    }
+    return calculateOfferLineTotals({
+      quantity,
+      costUnitPriceCents,
+      saleUnitPriceCents,
+      wastePercent,
+      discountPercent,
+      optional: lineForm.optional,
+    });
+  }, [lineForm]);
 
   useEffect(() => {
     if (selectedOffer && selectedOffer.id !== selectedOfferId) setSelectedOfferId(selectedOffer.id);
@@ -309,6 +365,17 @@ export default function Tarjoukset() {
   useEffect(() => {
     if (selectedVersion && selectedVersion.id !== selectedVersionId) setSelectedVersionId(selectedVersion.id);
   }, [selectedVersion, selectedVersionId]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'catalog') next.set('tab', 'hinnasto');
+    else next.delete('tab');
+    if (selectedOfferId) next.set('offer', selectedOfferId);
+    else next.delete('offer');
+    const current = searchParams.toString();
+    const upcoming = next.toString();
+    if (current !== upcoming) setSearchParams(next, { replace: true });
+  }, [selectedOfferId, setSearchParams, searchParams, tab]);
 
   useEffect(() => {
     const leadId = searchParams.get('lead');
@@ -327,7 +394,12 @@ export default function Tarjoukset() {
     next.assignedUserId = queryLead?.assigneeUserId ?? '';
     setOfferForm(next);
     setOfferDialog(true);
-    setSearchParams({}, { replace: true });
+    setTab('offers');
+    const cleaned = new URLSearchParams(searchParams);
+    cleaned.delete('lead');
+    cleaned.delete('customer');
+    cleaned.delete('project');
+    setSearchParams(cleaned, { replace: true });
   }, [crmLeads, customers, projects, searchParams, setSearchParams]);
 
   useEffect(() => {
@@ -342,11 +414,18 @@ export default function Tarjoukset() {
     });
   }, [selectedVersion]);
 
-  const run = async (action: () => Promise<void>) => {
+  useEffect(() => {
+    if (!operationSuccess) return;
+    const timer = window.setTimeout(() => setOperationSuccess(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [operationSuccess]);
+
+  const run = async (action: () => Promise<void>, successMessage?: string) => {
     setSaving(true);
     setOperationError(null);
     try {
       await action();
+      if (successMessage) setOperationSuccess(successMessage);
     } catch (caught) {
       setOperationError(caught instanceof Error ? caught.message : 'Toiminto epäonnistui.');
     } finally {
@@ -397,11 +476,18 @@ export default function Tarjoukset() {
         notes: offerForm.notes.trim() || undefined,
         assignedUserId: offerForm.assignedUserId || undefined,
       });
+      if (offerForm.paymentTerms.trim() || offerForm.deliveryTime.trim()) {
+        await updateOffer(currentOrg.id, offerId, {
+          paymentTerms: offerForm.paymentTerms.trim(),
+          deliveryTime: offerForm.deliveryTime.trim(),
+        });
+      }
       await refreshAll();
       setSelectedOfferId(offerId);
       setSelectedVersionId('');
+      setDetailTab('lines');
       setOfferDialog(false);
-    });
+    }, 'Tarjous luotiin.');
   };
 
   const openOfferMeta = () => {
@@ -427,7 +513,7 @@ export default function Tarjoukset() {
       });
       await data.refresh();
       setOfferMetaDialog(false);
-    });
+    }, 'Perustiedot tallennettiin.');
   };
 
   const saveSettings = async () => {
@@ -451,7 +537,7 @@ export default function Tarjoukset() {
         terms: settings.terms,
       });
       await data.refresh();
-    });
+    }, 'Laskenta-asetukset tallennettiin.');
   };
 
   const openLineCreate = (sectionId = UNSECTIONED) => {
@@ -553,24 +639,46 @@ export default function Tarjoukset() {
       else await addOfferLine(currentOrg.id, user?.id, value);
       await data.refresh();
       setLineDialog(false);
-    });
+    }, editingLine ? 'Tarjousrivi päivitettiin.' : 'Tarjousrivi lisättiin.');
+  };
+
+  const openSectionCreate = () => {
+    setEditingSection(null);
+    setSectionTitle('');
+    setSectionDescription('');
+    setSectionDialog(true);
+  };
+
+  const openSectionEdit = (section: OfferSection) => {
+    setEditingSection(section);
+    setSectionTitle(section.title);
+    setSectionDescription(section.description);
+    setSectionDialog(true);
   };
 
   const saveSection = async () => {
     if (!currentOrg || !selectedVersion || !sectionTitle.trim()) return;
     await run(async () => {
-      await addOfferSection(currentOrg.id, user?.id, {
-        offerVersionId: selectedVersion.id,
-        title: sectionTitle.trim(),
-        description: sectionDescription.trim(),
-        sortOrder: versionSections.length,
-        customerVisible: true,
-      });
+      if (editingSection) {
+        await updateOfferSection(currentOrg.id, editingSection.id, {
+          title: sectionTitle.trim(),
+          description: sectionDescription.trim(),
+        });
+      } else {
+        await addOfferSection(currentOrg.id, user?.id, {
+          offerVersionId: selectedVersion.id,
+          title: sectionTitle.trim(),
+          description: sectionDescription.trim(),
+          sortOrder: versionSections.length,
+          customerVisible: true,
+        });
+      }
       await data.refresh();
       setSectionDialog(false);
+      setEditingSection(null);
       setSectionTitle('');
       setSectionDescription('');
-    });
+    }, editingSection ? 'Osio päivitettiin.' : 'Osio lisättiin.');
   };
 
   const importTakeoff = async () => {
@@ -616,23 +724,39 @@ export default function Tarjoukset() {
       await data.refresh();
       setImportDialog(false);
       setTakeoffId('');
-    });
+      setDetailTab('lines');
+    }, `${lines.length} riviä tuotiin määrälaskelmasta.`);
   };
 
-  const performTransition = async (status: OfferStatus) => {
-    if (!selectedOffer || !selectedVersion) return;
-    const confirmations: Partial<Record<OfferStatus, string>> = {
-      Lähetetty: 'Lähetetty versio lukitaan, eikä sen rivejä voi enää muokata. Jatketaanko?',
-      Hyväksytty: 'Merkitäänkö tarjous hyväksytyksi?',
-      Hylätty: 'Merkitäänkö tarjous hylätyksi?',
-      Arkistoitu: 'Arkistoidaanko tarjous?',
+  const requestTransition = (status: OfferStatus) => {
+    const messages: Partial<Record<OfferStatus, ConfirmAction>> = {
+      Lähetetty: {
+        kind: 'transition',
+        status,
+        title: 'Merkitse lähetetyksi?',
+        description: 'Lähetetty versio lukitaan, eikä sen rivejä voi enää muokata. CRM-tilanne päivittyy automaattisesti.',
+      },
+      Hyväksytty: {
+        kind: 'transition',
+        status,
+        title: 'Merkitse hyväksytyksi?',
+        description: 'Tarjous merkitään hyväksytyksi. Voit sen jälkeen luoda projektin yhdellä napilla.',
+      },
+      Hylätty: {
+        kind: 'transition',
+        status,
+        title: 'Merkitse hylätyksi?',
+        description: 'Tarjous merkitään hylätyksi. Voit tarvittaessa tehdä uuden version myöhemmin.',
+      },
+      Arkistoitu: {
+        kind: 'transition',
+        status,
+        title: 'Arkistoi tarjous?',
+        description: 'Arkistoitu tarjous poistuu aktiivisesta tarjouskannasta.',
+      },
     };
-    const message = confirmations[status];
-    if (message && !window.confirm(message)) return;
-    await run(async () => {
-      await transitionOffer(selectedOffer.id, selectedVersion.id, status);
-      await refreshAll();
-    });
+    const action = messages[status];
+    if (action) setConfirmAction(action);
   };
 
   const newVersion = async () => {
@@ -641,16 +765,17 @@ export default function Tarjoukset() {
       const versionId = await createOfferVersion(selectedOffer.id);
       await data.refresh();
       setSelectedVersionId(versionId);
-    });
+      setDetailTab('lines');
+    }, 'Uusi tarjousversio luotiin.');
   };
 
   const convertProject = async () => {
-    if (!selectedOffer || !window.confirm('Luodaanko hyväksytystä tarjouksesta uusi projekti?')) return;
+    if (!selectedOffer) return;
     await run(async () => {
       const projectId = await convertOfferToProject(selectedOffer.id);
       await refreshAll();
       navigate(`/projektit/${projectId}/tyotila`);
-    });
+    }, 'Projekti luotiin hyväksytystä tarjouksesta.');
   };
 
   const printOffer = () => {
@@ -716,124 +841,900 @@ export default function Tarjoukset() {
       else await addCatalogItem(currentOrg.id, user?.id, value);
       await data.refresh();
       setCatalogDialog(false);
-    });
+    }, 'Hinnastorivi tallennettiin.');
   };
 
-  const removeLine = async (line: OfferLine) => {
-    if (!currentOrg || !window.confirm(`Poistetaanko tarjousrivi ”${line.description}”?`)) return;
-    await run(async () => { await deleteOfferLine(currentOrg.id, line.id); await data.refresh(); });
+  const executeConfirm = async () => {
+    if (!confirmAction || !currentOrg) return;
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action.kind === 'transition' && selectedOffer && selectedVersion) {
+      await run(async () => {
+        await transitionOffer(selectedOffer.id, selectedVersion.id, action.status);
+        await refreshAll();
+      }, `Tila päivitettiin: ${action.status}.`);
+      return;
+    }
+    if (action.kind === 'delete-offer' && selectedOffer) {
+      await run(async () => {
+        await deleteOffer(currentOrg.id, selectedOffer.id);
+        setSelectedOfferId('');
+        await data.refresh();
+      }, 'Luonnos poistettiin.');
+      return;
+    }
+    if (action.kind === 'delete-line') {
+      await run(async () => {
+        await deleteOfferLine(currentOrg.id, action.line.id);
+        await data.refresh();
+      }, 'Tarjousrivi poistettiin.');
+      return;
+    }
+    if (action.kind === 'delete-section') {
+      await run(async () => {
+        await deleteOfferSection(currentOrg.id, action.section.id);
+        await data.refresh();
+      }, 'Osio poistettiin.');
+      return;
+    }
+    if (action.kind === 'delete-catalog') {
+      await run(async () => {
+        await deleteCatalogItem(currentOrg.id, action.item.id);
+        await data.refresh();
+      }, 'Hinnastorivi poistettiin.');
+      return;
+    }
+    if (action.kind === 'convert') {
+      await convertProject();
+    }
   };
 
-  const removeSection = async (section: OfferSection) => {
-    if (!currentOrg || !window.confirm(`Poistetaanko osio ”${section.title}”? Rivien osiointi poistuu, mutta rivit säilyvät.`)) return;
-    await run(async () => { await deleteOfferSection(currentOrg.id, section.id); await data.refresh(); });
-  };
+  const sectionSaleTotal = (sectionId: string) => versionLines
+    .filter((line) => line.sectionId === sectionId && !line.optional)
+    .reduce((sum, line) => sum + calculateOfferLineTotals(line).saleSubtotalCents, 0);
 
-  const removeSelectedOffer = async () => {
-    if (!currentOrg || !selectedOffer || !window.confirm(`Poistetaanko luonnostarjous ”${selectedOffer.name}”?`)) return;
-    await run(async () => {
-      await deleteOffer(currentOrg.id, selectedOffer.id);
-      setSelectedOfferId('');
-      await data.refresh();
-    });
-  };
-
-  const removeCatalog = async (item: PriceCatalogItem) => {
-    if (!currentOrg || !window.confirm(`Poistetaanko hinnastorivi ”${item.name}”?`)) return;
-    await run(async () => { await deleteCatalogItem(currentOrg.id, item.id); await data.refresh(); });
-  };
-
-  const renderLine = (line: OfferLine) => {
-    const totals = calculateOfferLineTotals({
-      quantity: line.quantity,
-      costUnitPriceCents: line.costUnitPriceCents,
-      saleUnitPriceCents: line.saleUnitPriceCents,
-      wastePercent: line.wastePercent,
-      discountPercent: line.discountPercent,
-      optional: line.optional,
-    });
-    return <div key={line.id} className="grid gap-3 border-b border-slate-100 px-4 py-4 lg:grid-cols-[115px_1.4fr_80px_100px_120px_120px_100px] lg:items-center">
-      <div><Badge variant="outline">{line.category}</Badge>{line.optional && <Badge className="ml-1 border-amber-200 bg-amber-50 text-amber-700">Optio</Badge>}</div>
-      <div className="min-w-0"><p className="font-medium text-slate-900">{line.description}</p><p className="mt-1 text-xs text-slate-500">{line.customerNote || line.internalNote || 'Ei lisätietoja'}</p></div>
-      <span className="font-mono text-sm">{line.quantity} {line.unit}</span>
-      <span className="font-mono text-sm text-slate-600">{euro(line.costUnitPriceCents)}</span>
-      <span className="font-mono text-sm">{euro(line.saleUnitPriceCents)}</span>
-      <span className="font-mono text-sm font-semibold">{line.optional ? 'Ei perussummassa' : euro(totals.saleSubtotalCents)}</span>
-      <div className="flex justify-end gap-1">{draft && <><Button variant="ghost" size="sm" onClick={() => openLineEdit(line)}><Edit3 size={14} /></Button><Button variant="ghost" size="sm" className="text-red-600" onClick={() => void removeLine(line)}><Trash2 size={14} /></Button></>}</div>
-    </div>;
-  };
-
+  const unsectionedLines = versionLines.filter((line) => !line.sectionId);
   const visibleError = operationError ?? data.error ?? finance.error;
+  const expiry = selectedOffer ? expiryLabel(selectedOffer.validUntil, selectedOffer.status) : null;
 
-  return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto max-w-[1700px] space-y-5">
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div><h1 className="text-hero text-text-primary">Tarjouslaskenta</h1><p className="mt-1 text-body-sm text-text-secondary">Kustannukset, myyntihinnat, tavoitekate, versiointi ja projektiksi muuntaminen</p></div>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void refreshAll()} disabled={data.refreshing}><RefreshCw size={16} className={data.refreshing ? 'mr-2 animate-spin' : 'mr-2'} /> Päivitä</Button><Button onClick={openOfferCreate}><Plus size={16} className="mr-2" /> Uusi tarjous</Button></div>
-    </div>
-
-    {visibleError && <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span>{visibleError}</span></div>}
-    {totalsMismatch && <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span>Selain- ja palvelinlaskennan summissa on ero. Päivitä näkymä ennen tarjouksen lähettämistä.</span></div>}
-
-    <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-      <TabsList><TabsTrigger value="offers">Tarjoukset</TabsTrigger><TabsTrigger value="catalog">Hinnasto ({data.catalog.length})</TabsTrigger></TabsList>
-      <TabsContent value="offers" className="space-y-4">
-        <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
-          <Card className="h-fit xl:sticky xl:top-4">
-            <CardContent className="space-y-3 p-3">
-              <div className="relative"><Search size={16} className="absolute left-3 top-3 text-slate-400" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae tarjousta tai asiakasta" className="pl-9" /></div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Kaikki tilat</SelectItem>{['Luonnos','Lähetetty','Hyväksytty','Hylätty','Vanhentunut','Arkistoitu'].map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>
-              <div className="max-h-[68vh] space-y-2 overflow-y-auto pr-1">
-                {filteredOffers.map((offer) => {
-                  const latest = data.versions.find((version) => version.offerId === offer.id);
-                  const offerCustomer = customers.find((item) => item.id === offer.customerId);
-                  return <button key={offer.id} type="button" onClick={() => { setSelectedOfferId(offer.id); setSelectedVersionId(''); }} className={`w-full rounded-xl border p-3 text-left transition ${selectedOffer?.id === offer.id ? 'border-orange-400 bg-orange-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-                    <div className="flex items-start justify-between gap-2"><div className="min-w-0 break-words"><p className="font-semibold">{offer.name}</p><p className="mt-0.5 text-xs text-slate-500">{offer.offerNumber || 'Numero muodostuu tallennuksessa'}</p></div><Badge variant="outline" className={statusTone(offer.status)}>{offer.status}</Badge></div>
-                    <p className="mt-2 break-words text-sm text-slate-600">{offerCustomer?.name || 'Ei asiakasta'}</p><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-500">Voimassa {date(offer.validUntil)}</span><strong className="font-mono text-sm">{latest ? euro(latest.totalCents) : '—'}</strong></div>
-                  </button>;
-                })}
-                {!data.loading && filteredOffers.length === 0 && <div className="py-10 text-center text-sm text-slate-500"><FileText size={38} className="mx-auto mb-3 text-slate-300" />Ei tarjouksia</div>}
-                {data.loading && <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><Loader2 size={17} className="animate-spin" />Ladataan tarjouksia…</div>}
-              </div>
-            </CardContent>
-          </Card>
-
-          {selectedOffer && selectedVersion ? <div className="min-w-0 space-y-4">
-            <Card className="overflow-hidden border-slate-200">
-              <div className="bg-gradient-to-r from-slate-950 to-slate-800 p-5 text-white sm:p-6">
-                <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Badge className={statusTone(selectedOffer.status)}>{selectedOffer.status}</Badge><span className="font-mono text-xs text-slate-300">{selectedOffer.offerNumber}</span><span className="text-xs text-slate-400">Versio {selectedVersion.versionNumber}</span></div><h2 className="mt-3 break-words text-2xl font-bold">{selectedOffer.name}</h2><p className="mt-2 text-sm text-slate-300">{customer?.name || lead?.company || 'Ei asiakasta'} · voimassa {date(selectedOffer.validUntil)}</p></div>
-                  <div className="flex flex-wrap gap-2"><Button variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10" onClick={printOffer}><Download size={15} className="mr-2" /> Tulosta/PDF</Button>{draft && <Button variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10" onClick={openOfferMeta}><Edit3 size={15} className="mr-2" /> Perustiedot</Button>}{selectedOffer.status === 'Hyväksytty' && !selectedOffer.convertedProjectId && <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => void convertProject()}><FolderKanban size={15} className="mr-2" /> Luo projekti</Button>}{linkedProject && <Button className="bg-white text-slate-950 hover:bg-slate-100" onClick={() => navigate(`/projektit/${linkedProject.id}/tyotila`)}><FolderKanban size={15} className="mr-2" /> Avaa projekti</Button>}</div>
-                </div>
-              </div>
-              <CardContent className="p-4 sm:p-5"><div className="grid grid-cols-2 gap-3 xl:grid-cols-4"><div className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">Arvioitu kustannus</p><p className="mt-1 font-mono text-xl font-bold">{euro(selectedVersion.estimatedCostCents)}</p><p className="mt-1 text-xs text-slate-500">Suorat {euro(selectedVersion.directCostCents)}</p></div><div className="rounded-xl bg-blue-50 p-4"><p className="text-xs text-blue-700">Veroton myynti</p><p className="mt-1 font-mono text-xl font-bold text-blue-900">{euro(selectedVersion.subtotalCents)}</p><p className="mt-1 text-xs text-blue-700">ALV {euro(selectedVersion.taxCents)}</p></div><div className="rounded-xl bg-emerald-50 p-4"><p className="text-xs text-emerald-700">Arvioitu kate</p><p className={`mt-1 font-mono text-xl font-bold ${marginTone(selectedVersion.grossMarginPercent)}`}>{euro(selectedVersion.grossMarginCents)}</p><p className={`mt-1 text-xs font-semibold ${marginTone(selectedVersion.grossMarginPercent)}`}>{selectedVersion.grossMarginPercent.toFixed(1)} %</p></div><div className="rounded-xl bg-orange-50 p-4"><p className="text-xs text-orange-700">Tarjous yhteensä</p><p className="mt-1 font-mono text-xl font-bold text-orange-900">{euro(selectedVersion.totalCents)}</p><p className="mt-1 text-xs text-orange-700">sis. ALV {selectedVersion.vatRate} %</p></div></div></CardContent>
-            </Card>
-
-            <Card><CardHeader className="pb-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><CardTitle className="flex items-center gap-2"><History size={18} /> Versiot ja tila</CardTitle><div className="flex flex-wrap gap-2">{offerVersions.map((version) => <Button key={version.id} size="sm" variant={selectedVersion.id === version.id ? 'default' : 'outline'} onClick={() => setSelectedVersionId(version.id)}>v{version.versionNumber} · {version.status}</Button>)}</div></div></CardHeader><CardContent className="flex flex-wrap gap-2">{draft && <><Button onClick={() => void performTransition('Lähetetty')}><Send size={15} className="mr-2" /> Merkitse lähetetyksi</Button><Button variant="outline" onClick={() => void performTransition('Hyväksytty')}><CheckCircle2 size={15} className="mr-2" /> Hyväksy suoraan</Button><Button variant="ghost" className="text-red-600" onClick={() => void removeSelectedOffer()}><Trash2 size={15} className="mr-2" /> Poista luonnos</Button></>}{selectedOffer.status === 'Lähetetty' && <><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => void performTransition('Hyväksytty')}><CheckCircle2 size={15} className="mr-2" /> Hyväksytty</Button><Button variant="outline" className="text-red-600" onClick={() => void performTransition('Hylätty')}><XCircle size={15} className="mr-2" /> Hylätty</Button><Button variant="outline" onClick={() => void newVersion()}><Copy size={15} className="mr-2" /> Uusi versio</Button></>}{selectedOffer.status === 'Hylätty' && <Button variant="outline" onClick={() => void newVersion()}><Copy size={15} className="mr-2" /> Tee uusi versio</Button>}{selectedOffer.status !== 'Arkistoitu' && <Button variant="ghost" onClick={() => void performTransition('Arkistoitu')}><Archive size={15} className="mr-2" /> Arkistoi</Button>}</CardContent></Card>
-
-            <Card><CardHeader><CardTitle className="flex items-center gap-2"><Settings2 size={18} /> Laskenta-asetukset</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><div className="space-y-1"><Label>ALV %</Label><Input type="number" value={settings.vatRate} onChange={(event) => setSettings((previous) => ({ ...previous, vatRate: event.target.value }))} disabled={!draft} /></div><div className="space-y-1"><Label>Yleiskulut %</Label><Input type="number" value={settings.overheadPercent} onChange={(event) => setSettings((previous) => ({ ...previous, overheadPercent: event.target.value }))} disabled={!draft} /></div><div className="space-y-1"><Label>Riskivaraus %</Label><Input type="number" value={settings.riskPercent} onChange={(event) => setSettings((previous) => ({ ...previous, riskPercent: event.target.value }))} disabled={!draft} /></div><div className="space-y-1"><Label>Tavoitekate % myynnistä</Label><Input type="number" value={settings.marginPercent} onChange={(event) => setSettings((previous) => ({ ...previous, marginPercent: event.target.value }))} disabled={!draft} /></div></div><div className="grid gap-3 lg:grid-cols-2"><div className="space-y-1"><Label>Tarjouksen kuvaus</Label><Textarea value={settings.notes} onChange={(event) => setSettings((previous) => ({ ...previous, notes: event.target.value }))} disabled={!draft} rows={3} /></div><div className="space-y-1"><Label>Ehdot ja rajaukset</Label><Textarea value={settings.terms} onChange={(event) => setSettings((previous) => ({ ...previous, terms: event.target.value }))} disabled={!draft} rows={3} /></div></div>{draft && <div className="flex justify-end"><Button onClick={() => void saveSettings()} disabled={saving}>Tallenna asetukset</Button></div>}<p className="text-xs text-slate-500">Tavoitekate lasketaan myyntihinnasta: esimerkiksi 10 000 € kustannus ja 20 % tavoitekate tarkoittaa 12 500 € myyntihintaa ennen muita kustannuksia.</p></CardContent></Card>
-
-            <div className="flex flex-wrap justify-end gap-2">{draft && <><Button variant="outline" onClick={() => { setSectionTitle(''); setSectionDescription(''); setSectionDialog(true); }}><FilePlus2 size={15} className="mr-2" /> Lisää osio</Button><Button variant="outline" onClick={() => setImportDialog(true)}><Ruler size={15} className="mr-2" /> Tuo määrälaskennasta</Button><Button onClick={() => openLineCreate()}><Plus size={15} className="mr-2" /> Lisää tarjousrivi</Button></>}</div>
-
-            {versionSections.map((section) => <Card key={section.id} className="overflow-hidden"><CardHeader className="border-b bg-slate-50 py-3"><div className="flex items-center justify-between gap-3"><div><CardTitle className="text-base">{section.title}</CardTitle>{section.description && <p className="mt-1 text-xs text-slate-500">{section.description}</p>}</div>{draft && <div className="flex gap-1"><Button size="sm" variant="outline" onClick={() => openLineCreate(section.id)}><Plus size={14} className="mr-1" /> Rivi</Button><Button size="sm" variant="ghost" className="text-red-600" onClick={() => void removeSection(section)}><Trash2 size={14} /></Button></div>}</div></CardHeader><CardContent className="p-0">{versionLines.filter((line) => line.sectionId === section.id).map(renderLine)}{!versionLines.some((line) => line.sectionId === section.id) && <p className="p-6 text-center text-sm text-slate-500">Osiossa ei ole rivejä.</p>}</CardContent></Card>)}
-            <Card className="overflow-hidden"><CardHeader className="border-b bg-slate-50 py-3"><CardTitle className="text-base">Muut tarjousrivit</CardTitle></CardHeader><CardContent className="p-0"><div className="hidden grid-cols-[115px_1.4fr_80px_100px_120px_120px_100px] gap-3 border-b bg-white px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 lg:grid"><span>Laji</span><span>Kuvaus</span><span>Määrä</span><span>Kust./yks.</span><span>Myynti/yks.</span><span>Myynti yht.</span><span /></div>{versionLines.filter((line) => !line.sectionId).map(renderLine)}{!versionLines.some((line) => !line.sectionId) && <div className="p-10 text-center text-sm text-slate-500"><Calculator size={38} className="mx-auto mb-3 text-slate-300" />Ei osioimattomia rivejä.</div>}</CardContent></Card>
-
-            <Card><CardHeader><CardTitle className="flex items-center gap-2"><History size={18} /> Tapahtumahistoria</CardTitle></CardHeader><CardContent className="space-y-2">{versionEvents.slice(0, 12).map((event) => <div key={event.id} className="flex items-start justify-between gap-4 border-b border-slate-100 py-2"><div><p className="text-sm font-medium">{event.detail || event.eventType}</p><p className="text-xs text-slate-500">{event.eventType}</p></div><span className="shrink-0 text-xs text-slate-400">{dateTime(event.createdAt)}</span></div>)}{!versionEvents.length && <p className="py-6 text-center text-sm text-slate-500">Ei tapahtumia.</p>}</CardContent></Card>
-          </div> : <Card><CardContent className="p-14 text-center"><FileText size={48} className="mx-auto mb-4 text-slate-300" /><h2 className="text-lg font-semibold">Valitse tai luo tarjous</h2><p className="mt-1 text-sm text-slate-500">Tarjous yhdistää sisäisen kustannuksen, myyntihinnan ja projektin tavoitekatteen.</p><Button className="mt-5" onClick={openOfferCreate}><Plus size={16} className="mr-2" /> Uusi tarjous</Button></CardContent></Card>}
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto max-w-[1700px] space-y-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-hero text-text-primary">Tarjouslaskenta</h1>
+          <p className="mt-1 max-w-3xl break-words text-body-sm text-text-secondary">
+            Rakenna tarjous kustannuksista myyntihintaan, seuraa katetta, lukitse lähetetty versio ja muunna hyväksytty tarjous projektiksi.
+          </p>
         </div>
-      </TabsContent>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/maaralaskenta"><Ruler size={16} className="mr-2" /> Määrälaskenta</Link>
+          </Button>
+          <Button variant="outline" onClick={() => void refreshAll()} disabled={data.refreshing}>
+            <RefreshCw size={16} className={cn('mr-2', data.refreshing && 'animate-spin')} /> Päivitä
+          </Button>
+          <Button onClick={openOfferCreate}>
+            <Plus size={16} className="mr-2" /> Uusi tarjous
+          </Button>
+        </div>
+      </div>
 
-      <TabsContent value="catalog" className="space-y-4"><div className="flex justify-end"><Button onClick={openCatalogCreate}><PackagePlus size={16} className="mr-2" /> Uusi hinnastorivi</Button></div><Card className="overflow-hidden"><CardContent className="p-0"><div className="hidden grid-cols-[110px_1.2fr_130px_100px_140px_140px_100px] gap-3 border-b bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 lg:grid"><span>Tunnus</span><span>Nimi</span><span>Laji</span><span>Yks.</span><span>Kustannus</span><span>Myynti</span><span /></div>{data.catalog.map((item) => <div key={item.id} className="grid gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-[110px_1.2fr_130px_100px_140px_140px_100px] lg:items-center"><span className="font-mono text-sm">{item.code || '—'}</span><div><p className="font-semibold">{item.name}</p><p className="text-xs text-slate-500">{item.description || 'Ei kuvausta'}</p></div><Badge variant="outline">{item.category}</Badge><span>{item.unit}</span><span className="font-mono">{euro(item.costUnitPriceCents)}</span><span className="font-mono font-semibold">{euro(item.saleUnitPriceCents)}</span><div className="flex justify-end gap-1"><Button variant="ghost" size="sm" onClick={() => openCatalogEdit(item)}><Edit3 size={14} /></Button><Button variant="ghost" size="sm" className="text-red-600" onClick={() => void removeCatalog(item)}><Trash2 size={14} /></Button></div></div>)}{!data.catalog.length && <div className="p-14 text-center"><Euro size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Hinnasto on tyhjä</p><p className="mt-1 text-sm text-slate-500">Lisää työn, materiaalien ja aliurakoiden vakiohinnat.</p></div>}</CardContent></Card></TabsContent>
-    </Tabs>
+      <OfferKpiStrip offers={data.offers} versions={data.versions} />
 
-    <Dialog open={offerDialog} onOpenChange={setOfferDialog}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Uusi tarjous</DialogTitle></DialogHeader>{errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((error) => <p key={error}>{error}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1 sm:col-span-2"><Label>Tarjouksen nimi *</Label><Input value={offerForm.name} onChange={(event) => setOfferForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-1"><Label>CRM-mahdollisuus</Label><Select value={offerForm.crmLeadId || UNSECTIONED} onValueChange={(value) => selectLead(value === UNSECTIONED ? '' : value)}><SelectTrigger><SelectValue placeholder="Valitse" /></SelectTrigger><SelectContent><SelectItem value={UNSECTIONED}>Ei CRM-mahdollisuutta</SelectItem>{crmLeads.filter((item) => !['Voitettu','Hävitty'].includes(item.stage)).map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.company}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Asiakas</Label><Select value={offerForm.customerId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, customerId: value === UNSECTIONED ? '' : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={UNSECTIONED}>Ei asiakasta</SelectItem>{customers.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Nykyinen projekti</Label><Select value={offerForm.projectId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, projectId: value === UNSECTIONED ? '' : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={UNSECTIONED}>Ei projektia</SelectItem>{projects.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Vastuuhenkilö</Label><Select value={offerForm.assignedUserId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, assignedUserId: value === UNSECTIONED ? '' : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={UNSECTIONED}>Ei vastuuhenkilöä</SelectItem>{people.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Tarjousnumero</Label><Input value={offerForm.offerNumber} onChange={(event) => setOfferForm((previous) => ({ ...previous, offerNumber: event.target.value }))} placeholder="Muodostetaan automaattisesti" /></div><div className="space-y-1"><Label>Voimassa asti</Label><Input type="date" value={offerForm.validUntil} onChange={(event) => setOfferForm((previous) => ({ ...previous, validUntil: event.target.value }))} /></div><div className="space-y-1 sm:col-span-2"><Label>Muistiinpanot</Label><Textarea value={offerForm.notes} onChange={(event) => setOfferForm((previous) => ({ ...previous, notes: event.target.value }))} rows={3} /></div></div><DialogFooter><Button variant="outline" onClick={() => setOfferDialog(false)}>Peruuta</Button><Button onClick={() => void saveOffer()} disabled={saving}>{saving ? 'Luodaan…' : 'Luo tarjous'}</Button></DialogFooter></DialogContent></Dialog>
+      {visibleError && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <span className="break-words">{visibleError}</span>
+        </div>
+      )}
+      {operationSuccess && (
+        <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          <CheckCircle2 size={17} className="mt-0.5 shrink-0" />
+          <span className="break-words">{operationSuccess}</span>
+        </div>
+      )}
+      {totalsMismatch && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+          <span className="break-words">
+            Selain- ja palvelinlaskennan summissa on ero. Päivitä näkymä ennen tarjouksen lähettämistä.
+          </span>
+        </div>
+      )}
 
-    <Dialog open={offerMetaDialog} onOpenChange={setOfferMetaDialog}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Tarjouksen perustiedot</DialogTitle></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1 sm:col-span-2"><Label>Nimi *</Label><Input value={offerMetaForm.name} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-1"><Label>Voimassa asti</Label><Input type="date" value={offerMetaForm.validUntil} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, validUntil: event.target.value }))} /></div><div className="space-y-1"><Label>Asiakkaan viite</Label><Input value={offerMetaForm.customerReference} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, customerReference: event.target.value }))} /></div><div className="space-y-1"><Label>Toimitusaika</Label><Input value={offerMetaForm.deliveryTime} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, deliveryTime: event.target.value }))} /></div><div className="space-y-1"><Label>Maksuehto</Label><Input value={offerMetaForm.paymentTerms} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, paymentTerms: event.target.value }))} /></div><div className="space-y-1"><Label>Vastuuhenkilö</Label><Select value={offerMetaForm.assignedUserId || UNSECTIONED} onValueChange={(value) => setOfferMetaForm((previous) => ({ ...previous, assignedUserId: value === UNSECTIONED ? '' : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={UNSECTIONED}>Ei vastuuhenkilöä</SelectItem>{people.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1 sm:col-span-2"><Label>Sisäinen huomio</Label><Textarea value={offerMetaForm.notes} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, notes: event.target.value }))} /></div></div><DialogFooter><Button variant="outline" onClick={() => setOfferMetaDialog(false)}>Peruuta</Button><Button onClick={() => void saveOfferMeta()} disabled={saving}>Tallenna</Button></DialogFooter></DialogContent></Dialog>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="offers">Tarjoukset ({data.offers.length})</TabsTrigger>
+          <TabsTrigger value="catalog">Hinnasto ({data.catalog.length})</TabsTrigger>
+        </TabsList>
 
-    <Dialog open={lineDialog} onOpenChange={setLineDialog}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{editingLine ? 'Muokkaa tarjousriviä' : 'Uusi tarjousrivi'}</DialogTitle></DialogHeader>{errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((error) => <p key={error}>{error}</p>)}</div>}<div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1 sm:col-span-2"><Label>Hinnastosta</Label><Select value={lineForm.catalogItemId || UNSECTIONED} onValueChange={(value) => value !== UNSECTIONED && selectCatalogItem(value)}><SelectTrigger><SelectValue placeholder="Valitse valmis hinnastorivi" /></SelectTrigger><SelectContent><SelectItem value={UNSECTIONED}>Ei hinnastoriviä</SelectItem>{data.catalog.filter((item) => item.active).map((item) => <SelectItem key={item.id} value={item.id}>{item.code ? `${item.code} · ` : ''}{item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Kustannuslaji</Label><Select value={lineForm.category} onValueChange={(value) => setLineForm((previous) => ({ ...previous, category: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Osio</Label><Select value={lineForm.sectionId} onValueChange={(value) => setLineForm((previous) => ({ ...previous, sectionId: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={UNSECTIONED}>Ei osiota</SelectItem>{versionSections.map((section) => <SelectItem key={section.id} value={section.id}>{section.title}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1 sm:col-span-2"><Label>Kuvaus *</Label><Input value={lineForm.description} onChange={(event) => setLineForm((previous) => ({ ...previous, description: event.target.value }))} /></div><div className="space-y-1"><Label>Määrä</Label><Input type="number" step="0.01" value={lineForm.quantity} onChange={(event) => setLineForm((previous) => ({ ...previous, quantity: event.target.value }))} /></div><div className="space-y-1"><Label>Yksikkö</Label><Input value={lineForm.unit} onChange={(event) => setLineForm((previous) => ({ ...previous, unit: event.target.value }))} /></div><div className="space-y-1"><Label>Sisäinen kustannus / yks. €</Label><Input type="number" step="0.01" value={lineForm.costUnitPrice} onChange={(event) => setLineForm((previous) => ({ ...previous, costUnitPrice: event.target.value }))} /></div><div className="space-y-1"><div className="flex items-center justify-between"><Label>Myyntihinta / yks. €</Label><button type="button" className="text-xs font-semibold text-orange-600" onClick={recommendLinePrice}>Laske suositus</button></div><Input type="number" step="0.01" value={lineForm.saleUnitPrice} onChange={(event) => setLineForm((previous) => ({ ...previous, saleUnitPrice: event.target.value }))} /></div><div className="space-y-1"><Label>Hukka %</Label><Input type="number" step="0.1" value={lineForm.wastePercent} onChange={(event) => setLineForm((previous) => ({ ...previous, wastePercent: event.target.value }))} /></div><div className="space-y-1"><Label>Alennus %</Label><Input type="number" step="0.1" value={lineForm.discountPercent} onChange={(event) => setLineForm((previous) => ({ ...previous, discountPercent: event.target.value }))} /></div><div className="space-y-1 sm:col-span-2"><Label>Asiakkaalle näkyvä huomio</Label><Textarea value={lineForm.customerNote} onChange={(event) => setLineForm((previous) => ({ ...previous, customerNote: event.target.value }))} rows={2} /></div><div className="space-y-1 sm:col-span-2"><Label>Sisäinen huomio</Label><Textarea value={lineForm.internalNote} onChange={(event) => setLineForm((previous) => ({ ...previous, internalNote: event.target.value }))} rows={2} /></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={lineForm.customerVisible} onChange={(event) => setLineForm((previous) => ({ ...previous, customerVisible: event.target.checked }))} /> Näytä asiakkaan tarjouksessa</label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={lineForm.optional} onChange={(event) => setLineForm((previous) => ({ ...previous, optional: event.target.checked }))} /> Valinnainen optio</label></div><DialogFooter><Button variant="outline" onClick={() => setLineDialog(false)}>Peruuta</Button><Button onClick={() => void saveLine()} disabled={saving}>Tallenna rivi</Button></DialogFooter></DialogContent></Dialog>
+        <TabsContent value="offers" className="space-y-4">
+          <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+            <OfferListPanel
+              offers={filteredOffers}
+              versions={data.versions}
+              selectedOfferId={selectedOffer?.id}
+              search={search}
+              statusFilter={statusFilter}
+              scopeFilter={scopeFilter}
+              loading={data.loading}
+              metaForOffer={(offer) => ({
+                customerName: customers.find((item) => item.id === offer.customerId)?.name,
+                assigneeName: people.find((person) => person.userId === offer.assignedUserId)?.name,
+              })}
+              onSearchChange={setSearch}
+              onStatusFilterChange={setStatusFilter}
+              onScopeFilterChange={setScopeFilter}
+              onSelect={(offerId) => {
+                setSelectedOfferId(offerId);
+                setSelectedVersionId('');
+                setDetailTab('lines');
+              }}
+            />
 
-    <Dialog open={sectionDialog} onOpenChange={setSectionDialog}><DialogContent><DialogHeader><DialogTitle>Uusi tarjousosio</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-1"><Label>Otsikko *</Label><Input value={sectionTitle} onChange={(event) => setSectionTitle(event.target.value)} placeholder="Esim. Purkutyöt" /></div><div className="space-y-1"><Label>Kuvaus</Label><Textarea value={sectionDescription} onChange={(event) => setSectionDescription(event.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => setSectionDialog(false)}>Peruuta</Button><Button onClick={() => void saveSection()} disabled={saving || !sectionTitle.trim()}>Lisää osio</Button></DialogFooter></DialogContent></Dialog>
+            {selectedOffer && selectedVersion ? (
+              <div className="min-w-0 space-y-4">
+                <Card className="overflow-hidden border-slate-200/80 shadow-none">
+                  <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-5 text-white sm:p-6">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                      <div className="min-w-0 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className="border-white/20 bg-white/10 text-white">{selectedOffer.status}</Badge>
+                          <span className="break-words font-mono text-xs text-slate-300">
+                            {selectedOffer.offerNumber}
+                          </span>
+                          <span className="text-xs text-slate-400">Versio {selectedVersion.versionNumber}</span>
+                          {expiry && (
+                            <Badge className="border-amber-300/40 bg-amber-400/20 text-amber-100">{expiry}</Badge>
+                          )}
+                        </div>
+                        <h2 className="break-words text-2xl font-bold tracking-tight">{selectedOffer.name}</h2>
+                        <div className="space-y-1 text-sm text-slate-300">
+                          <p className="break-words">
+                            {customer?.name || lead?.company || 'Ei asiakasta'}
+                            {' · '}
+                            voimassa {date(selectedOffer.validUntil)}
+                          </p>
+                          {assignee && <p className="break-words">Vastuu: {assignee.name}</p>}
+                          {selectedOffer.paymentTerms && (
+                            <p className="break-words">Maksuehto: {selectedOffer.paymentTerms}</p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {lead && (
+                            <Button asChild size="sm" variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10">
+                              <Link to="/crm">
+                                <ExternalLink size={14} className="mr-2" /> Avaa CRM · {lead.name}
+                              </Link>
+                            </Button>
+                          )}
+                          {linkedProject && (
+                            <Button asChild size="sm" variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10">
+                              <Link to={`/projektit/${linkedProject.id}/tyotila`}>
+                                <FolderKanban size={14} className="mr-2" /> {linkedProject.name}
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          className="border-slate-600 bg-white/5 text-white hover:bg-white/10"
+                          onClick={printOffer}
+                        >
+                          <Download size={15} className="mr-2" /> Tulosta / PDF
+                        </Button>
+                        {draft && (
+                          <Button
+                            variant="outline"
+                            className="border-slate-600 bg-white/5 text-white hover:bg-white/10"
+                            onClick={openOfferMeta}
+                          >
+                            <Edit3 size={15} className="mr-2" /> Perustiedot
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
-    <Dialog open={importDialog} onOpenChange={setImportDialog}><DialogContent><DialogHeader><DialogTitle>Tuo määrälaskelmasta</DialogTitle></DialogHeader><div className="space-y-3"><Label>Määrälaskelma</Label><Select value={takeoffId} onValueChange={setTakeoffId}><SelectTrigger><SelectValue placeholder="Valitse määrälaskelma" /></SelectTrigger><SelectContent>{finance.takeoffs.map((takeoff) => <SelectItem key={takeoff.id} value={takeoff.id}>{takeoff.name} · {finance.takeoffLines.filter((line) => line.takeoffId === takeoff.id).length} riviä</SelectItem>)}</SelectContent></Select><p className="text-sm text-slate-500">Sovellus yhdistää rivit hinnastoon nimen tai tunnuksen perusteella. Tunnistamattomat rivit tuodaan nollahinnalla ja merkitään hinnoiteltaviksi.</p></div><DialogFooter><Button variant="outline" onClick={() => setImportDialog(false)}>Peruuta</Button><Button onClick={() => void importTakeoff()} disabled={saving || !takeoffId}>Tuo rivit</Button></DialogFooter></DialogContent></Dialog>
+                  <CardContent className="space-y-4 p-4 sm:p-5">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-xl bg-slate-50 p-4">
+                        <p className="text-xs text-slate-500">Arvioitu kustannus</p>
+                        <p className="mt-1 break-words font-mono text-xl font-bold">
+                          {euro(selectedVersion.estimatedCostCents)}
+                        </p>
+                        <p className="mt-1 break-words text-xs text-slate-500">
+                          Suorat {euro(selectedVersion.directCostCents)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-sky-50 p-4">
+                        <p className="text-xs text-sky-700">Veroton myynti</p>
+                        <p className="mt-1 break-words font-mono text-xl font-bold text-sky-950">
+                          {euro(selectedVersion.subtotalCents)}
+                        </p>
+                        <p className="mt-1 break-words text-xs text-sky-700">
+                          ALV {euro(selectedVersion.taxCents)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-emerald-50 p-4">
+                        <p className="text-xs text-emerald-700">Arvioitu kate</p>
+                        <p className={cn('mt-1 break-words font-mono text-xl font-bold', marginTone(selectedVersion.grossMarginPercent))}>
+                          {euro(selectedVersion.grossMarginCents)}
+                        </p>
+                        <p className={cn('mt-1 text-xs font-semibold', marginTone(selectedVersion.grossMarginPercent))}>
+                          {selectedVersion.grossMarginPercent.toFixed(1)} %
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-orange-50 p-4">
+                        <p className="text-xs text-orange-700">Tarjous yhteensä</p>
+                        <p className="mt-1 break-words font-mono text-xl font-bold text-orange-950">
+                          {euro(selectedVersion.totalCents)}
+                        </p>
+                        <p className="mt-1 break-words text-xs text-orange-700">
+                          sis. ALV {selectedVersion.vatRate} %
+                        </p>
+                      </div>
+                    </div>
 
-    <Dialog open={catalogDialog} onOpenChange={setCatalogDialog}><DialogContent className="sm:max-w-2xl"><DialogHeader><DialogTitle>{editingCatalog ? 'Muokkaa hinnastoriviä' : 'Uusi hinnastorivi'}</DialogTitle></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-1"><Label>Tunnus</Label><Input value={catalogForm.code} onChange={(event) => setCatalogForm((previous) => ({ ...previous, code: event.target.value }))} /></div><div className="space-y-1"><Label>Kategoria</Label><Select value={catalogForm.category} onValueChange={(value) => setCatalogForm((previous) => ({ ...previous, category: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1 sm:col-span-2"><Label>Nimi *</Label><Input value={catalogForm.name} onChange={(event) => setCatalogForm((previous) => ({ ...previous, name: event.target.value }))} /></div><div className="space-y-1 sm:col-span-2"><Label>Kuvaus</Label><Textarea value={catalogForm.description} onChange={(event) => setCatalogForm((previous) => ({ ...previous, description: event.target.value }))} /></div><div className="space-y-1"><Label>Yksikkö</Label><Input value={catalogForm.unit} onChange={(event) => setCatalogForm((previous) => ({ ...previous, unit: event.target.value }))} /></div><div className="space-y-1"><Label>Oletushukka %</Label><Input type="number" value={catalogForm.wastePercent} onChange={(event) => setCatalogForm((previous) => ({ ...previous, wastePercent: event.target.value }))} /></div><div className="space-y-1"><Label>Kustannushinta €</Label><Input type="number" step="0.01" value={catalogForm.costUnitPrice} onChange={(event) => setCatalogForm((previous) => ({ ...previous, costUnitPrice: event.target.value }))} /></div><div className="space-y-1"><Label>Myyntihinta €</Label><Input type="number" step="0.01" value={catalogForm.saleUnitPrice} onChange={(event) => setCatalogForm((previous) => ({ ...previous, saleUnitPrice: event.target.value }))} /></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={catalogForm.active} onChange={(event) => setCatalogForm((previous) => ({ ...previous, active: event.target.checked }))} /> Aktiivinen hinnastossa</label></div><DialogFooter><Button variant="outline" onClick={() => setCatalogDialog(false)}>Peruuta</Button><Button onClick={() => void saveCatalog()} disabled={saving}>Tallenna</Button></DialogFooter></DialogContent></Dialog>
-  </motion.div>;
+                    {categoryBreakdown.length > 0 && (
+                      <div className="rounded-xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Myynti kustannuslajeittain
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {categoryBreakdown.map(([category, values]) => {
+                            const share = selectedVersion.subtotalCents > 0
+                              ? Math.round((values.sale / selectedVersion.subtotalCents) * 100)
+                              : 0;
+                            return (
+                              <div key={category} className="space-y-1">
+                                <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                                  <span className="break-words font-medium text-slate-700">{category}</span>
+                                  <span className="break-words font-mono text-slate-900">
+                                    {euro(values.sale)} · {share} %
+                                  </span>
+                                </div>
+                                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                  <div className="h-full rounded-full bg-orange-400" style={{ width: `${share}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <OfferWorkflowCard
+                  offer={selectedOffer}
+                  versions={offerVersions}
+                  selectedVersion={selectedVersion}
+                  draft={Boolean(draft)}
+                  hasConvertedProject={Boolean(selectedOffer.convertedProjectId)}
+                  saving={saving}
+                  onSelectVersion={setSelectedVersionId}
+                  onTransition={requestTransition}
+                  onNewVersion={() => void newVersion()}
+                  onConvertProject={() => setConfirmAction({
+                    kind: 'convert',
+                    title: 'Luo projekti hyväksytystä tarjouksesta?',
+                    description: 'Projekti luodaan hyväksytyn version perusteella ja avataan työtilaan.',
+                  })}
+                  onOpenProject={() => {
+                    if (selectedOffer.convertedProjectId) {
+                      navigate(`/projektit/${selectedOffer.convertedProjectId}/tyotila`);
+                    }
+                  }}
+                  onDeleteDraft={() => setConfirmAction({
+                    kind: 'delete-offer',
+                    title: 'Poista luonnostarjous?',
+                    description: `Poistetaanko tarjous ”${selectedOffer.name}”? Toimintoa ei voi perua.`,
+                  })}
+                />
+
+                <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-4">
+                  <TabsList>
+                    <TabsTrigger value="lines">Rivit ({versionLines.length})</TabsTrigger>
+                    <TabsTrigger value="settings">Laskenta</TabsTrigger>
+                    <TabsTrigger value="history">Historia ({versionEvents.length})</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="lines" className="space-y-4">
+                    {draft && (
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button variant="outline" onClick={openSectionCreate}>
+                          <FilePlus2 size={15} className="mr-2" /> Lisää osio
+                        </Button>
+                        <Button variant="outline" onClick={() => setImportDialog(true)}>
+                          <Ruler size={15} className="mr-2" /> Tuo määrälaskennasta
+                        </Button>
+                        <Button onClick={() => openLineCreate()}>
+                          <Plus size={15} className="mr-2" /> Lisää tarjousrivi
+                        </Button>
+                      </div>
+                    )}
+
+                    {versionSections.map((section) => (
+                      <Card key={section.id} className="overflow-hidden border-slate-200/80 shadow-none">
+                        <CardHeader className="border-b bg-slate-50 py-3">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <CardTitle className="break-words text-base">{section.title}</CardTitle>
+                              {section.description && (
+                                <p className="mt-1 break-words text-xs text-slate-500">{section.description}</p>
+                              )}
+                              <p className="mt-1 font-mono text-xs text-slate-500">
+                                Osio yht. {euro(sectionSaleTotal(section.id))}
+                              </p>
+                            </div>
+                            {draft && (
+                              <div className="flex flex-wrap gap-1">
+                                <Button size="sm" variant="outline" onClick={() => openLineCreate(section.id)}>
+                                  <Plus size={14} className="mr-1" /> Rivi
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => openSectionEdit(section)}>
+                                  <Edit3 size={14} />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-red-600"
+                                  onClick={() => setConfirmAction({
+                                    kind: 'delete-section',
+                                    section,
+                                    title: 'Poista osio?',
+                                    description: `Osion ”${section.title}” rivien osiointi poistuu, mutta rivit säilyvät.`,
+                                  })}
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                          {versionLines.filter((line) => line.sectionId === section.id).map((line) => (
+                            <OfferLineCard
+                              key={line.id}
+                              line={line}
+                              draft={Boolean(draft)}
+                              onEdit={openLineEdit}
+                              onDelete={(current) => setConfirmAction({
+                                kind: 'delete-line',
+                                line: current,
+                                title: 'Poista tarjousrivi?',
+                                description: `Poistetaanko rivi ”${current.description}”?`,
+                              })}
+                            />
+                          ))}
+                          {!versionLines.some((line) => line.sectionId === section.id) && (
+                            <p className="p-6 text-center text-sm text-slate-500">Osiossa ei ole rivejä.</p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+
+                    <Card className="overflow-hidden border-slate-200/80 shadow-none">
+                      <CardHeader className="border-b bg-slate-50 py-3">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <CardTitle className="text-base">Muut tarjousrivit</CardTitle>
+                          <p className="font-mono text-xs text-slate-500">
+                            Yht. {euro(unsectionedLines.filter((line) => !line.optional).reduce((sum, line) => sum + calculateOfferLineTotals(line).saleSubtotalCents, 0))}
+                          </p>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        {unsectionedLines.map((line) => (
+                          <OfferLineCard
+                            key={line.id}
+                            line={line}
+                            draft={Boolean(draft)}
+                            onEdit={openLineEdit}
+                            onDelete={(current) => setConfirmAction({
+                              kind: 'delete-line',
+                              line: current,
+                              title: 'Poista tarjousrivi?',
+                              description: `Poistetaanko rivi ”${current.description}”?`,
+                            })}
+                          />
+                        ))}
+                        {!unsectionedLines.length && (
+                          <div className="p-10 text-center text-sm text-slate-500">
+                            <Calculator size={38} className="mx-auto mb-3 text-slate-300" />
+                            {versionLines.length
+                              ? 'Kaikki rivit on sijoitettu osioihin.'
+                              : 'Lisää ensimmäinen tarjousrivi tai tuo määrät määrälaskelmasta.'}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  <TabsContent value="settings">
+                    <Card className="border-slate-200/80 shadow-none">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Settings2 size={18} /> Laskenta-asetukset
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="space-y-1">
+                            <Label>ALV %</Label>
+                            <Input type="number" value={settings.vatRate} disabled={!draft} onChange={(event) => setSettings((previous) => ({ ...previous, vatRate: event.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Yleiskulut %</Label>
+                            <Input type="number" value={settings.overheadPercent} disabled={!draft} onChange={(event) => setSettings((previous) => ({ ...previous, overheadPercent: event.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Riskivaraus %</Label>
+                            <Input type="number" value={settings.riskPercent} disabled={!draft} onChange={(event) => setSettings((previous) => ({ ...previous, riskPercent: event.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Tavoitekate % myynnistä</Label>
+                            <Input type="number" value={settings.marginPercent} disabled={!draft} onChange={(event) => setSettings((previous) => ({ ...previous, marginPercent: event.target.value }))} />
+                          </div>
+                        </div>
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label>Tarjouksen kuvaus</Label>
+                            <Textarea value={settings.notes} disabled={!draft} rows={4} onChange={(event) => setSettings((previous) => ({ ...previous, notes: event.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Ehdot ja rajaukset</Label>
+                            <Textarea value={settings.terms} disabled={!draft} rows={4} onChange={(event) => setSettings((previous) => ({ ...previous, terms: event.target.value }))} />
+                          </div>
+                        </div>
+                        {draft && (
+                          <div className="flex justify-end">
+                            <Button onClick={() => void saveSettings()} disabled={saving}>Tallenna asetukset</Button>
+                          </div>
+                        )}
+                        <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              {settingsOpen ? 'Piilota ohje' : 'Näytä hinnoitteluohje'}
+                            </Button>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="pt-2 text-sm text-slate-500">
+                            Tavoitekate lasketaan myyntihinnasta: esimerkiksi 10 000 € kustannus ja 20 % tavoitekate tarkoittaa 12 500 € myyntihintaa ennen muita kustannuksia. Yleiskulut ja riskivaraus lisätään kustannukseen ennen katteen laskentaa. Rivin ”Laske suositus” käyttää näitä asetuksia.
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  <TabsContent value="history">
+                    <Card className="border-slate-200/80 shadow-none">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <History size={18} /> Tapahtumahistoria
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {versionEvents.map((event) => (
+                          <div key={event.id} className="flex items-start justify-between gap-4 border-b border-slate-100 py-3 last:border-b-0">
+                            <div className="min-w-0">
+                              <p className="break-words text-sm font-medium">{event.detail || event.eventType}</p>
+                              <p className="break-words text-xs text-slate-500">{event.eventType}</p>
+                            </div>
+                            <span className="shrink-0 text-xs text-slate-400">{dateTime(event.createdAt)}</span>
+                          </div>
+                        ))}
+                        {!versionEvents.length && (
+                          <p className="py-6 text-center text-sm text-slate-500">Ei tapahtumia.</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
+              </div>
+            ) : (
+              <Card className="border-slate-200/80 shadow-none">
+                <CardContent className="p-14 text-center">
+                  <FileText size={48} className="mx-auto mb-4 text-slate-300" />
+                  <h2 className="text-lg font-semibold">Valitse tai luo tarjous</h2>
+                  <p className="mx-auto mt-1 max-w-md break-words text-sm text-slate-500">
+                    Tarjous yhdistää sisäisen kustannuksen, myyntihinnan ja tavoitekatteen. CRM-mahdollisuudesta voit avata tarjouksen suoraan valmiilla asiakastiedoilla.
+                  </p>
+                  <Button className="mt-5" onClick={openOfferCreate}>
+                    <Plus size={16} className="mr-2" /> Uusi tarjous
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="catalog">
+          <CatalogTab
+            items={data.catalog}
+            search={catalogSearch}
+            categoryFilter={catalogCategory}
+            onSearchChange={setCatalogSearch}
+            onCategoryFilterChange={setCatalogCategory}
+            onCreate={openCatalogCreate}
+            onEdit={openCatalogEdit}
+            onDelete={(item) => setConfirmAction({
+              kind: 'delete-catalog',
+              item,
+              title: 'Poista hinnastorivi?',
+              description: `Poistetaanko hinnastorivi ”${item.name}”?`,
+            })}
+          />
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={offerDialog} onOpenChange={setOfferDialog}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader><DialogTitle>Uusi tarjous</DialogTitle></DialogHeader>
+          {errors.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {errors.map((error) => <p key={error}>{error}</p>)}
+            </div>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Tarjouksen nimi *</Label>
+              <Input value={offerForm.name} onChange={(event) => setOfferForm((previous) => ({ ...previous, name: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>CRM-mahdollisuus</Label>
+              <Select value={offerForm.crmLeadId || UNSECTIONED} onValueChange={(value) => selectLead(value === UNSECTIONED ? '' : value)}>
+                <SelectTrigger><SelectValue placeholder="Valitse" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSECTIONED}>Ei CRM-mahdollisuutta</SelectItem>
+                  {crmLeads.filter((item) => !['Voitettu', 'Hävitty'].includes(item.stage)).map((item) => (
+                    <SelectItem key={item.id} value={item.id}>{item.name} · {item.company}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Asiakas</Label>
+              <Select value={offerForm.customerId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, customerId: value === UNSECTIONED ? '' : value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSECTIONED}>Ei asiakasta</SelectItem>
+                  {customers.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Nykyinen projekti</Label>
+              <Select value={offerForm.projectId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, projectId: value === UNSECTIONED ? '' : value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSECTIONED}>Ei projektia</SelectItem>
+                  {projects.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Vastuuhenkilö</Label>
+              <Select value={offerForm.assignedUserId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, assignedUserId: value === UNSECTIONED ? '' : value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSECTIONED}>Ei vastuuhenkilöä</SelectItem>
+                  {people.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Tarjousnumero</Label>
+              <Input value={offerForm.offerNumber} placeholder="Muodostetaan automaattisesti" onChange={(event) => setOfferForm((previous) => ({ ...previous, offerNumber: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Voimassa asti</Label>
+              <Input type="date" value={offerForm.validUntil} onChange={(event) => setOfferForm((previous) => ({ ...previous, validUntil: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Maksuehto</Label>
+              <Input value={offerForm.paymentTerms} onChange={(event) => setOfferForm((previous) => ({ ...previous, paymentTerms: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Toimitusaika</Label>
+              <Input value={offerForm.deliveryTime} placeholder="Esim. 4–6 viikkoa" onChange={(event) => setOfferForm((previous) => ({ ...previous, deliveryTime: event.target.value }))} />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Muistiinpanot</Label>
+              <Textarea value={offerForm.notes} rows={3} onChange={(event) => setOfferForm((previous) => ({ ...previous, notes: event.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOfferDialog(false)}>Peruuta</Button>
+            <Button onClick={() => void saveOffer()} disabled={saving}>{saving ? 'Luodaan…' : 'Luo tarjous'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={offerMetaDialog} onOpenChange={setOfferMetaDialog}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader><DialogTitle>Tarjouksen perustiedot</DialogTitle></DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Nimi *</Label>
+              <Input value={offerMetaForm.name} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, name: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Voimassa asti</Label>
+              <Input type="date" value={offerMetaForm.validUntil} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, validUntil: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Asiakkaan viite</Label>
+              <Input value={offerMetaForm.customerReference} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, customerReference: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Toimitusaika</Label>
+              <Input value={offerMetaForm.deliveryTime} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, deliveryTime: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Maksuehto</Label>
+              <Input value={offerMetaForm.paymentTerms} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, paymentTerms: event.target.value }))} />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Vastuuhenkilö</Label>
+              <Select value={offerMetaForm.assignedUserId || UNSECTIONED} onValueChange={(value) => setOfferMetaForm((previous) => ({ ...previous, assignedUserId: value === UNSECTIONED ? '' : value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSECTIONED}>Ei vastuuhenkilöä</SelectItem>
+                  {people.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Sisäinen huomio</Label>
+              <Textarea value={offerMetaForm.notes} onChange={(event) => setOfferMetaForm((previous) => ({ ...previous, notes: event.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOfferMetaDialog(false)}>Peruuta</Button>
+            <Button onClick={() => void saveOfferMeta()} disabled={saving}>Tallenna</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={lineDialog} onOpenChange={setLineDialog}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{editingLine ? 'Muokkaa tarjousriviä' : 'Uusi tarjousrivi'}</DialogTitle>
+          </DialogHeader>
+          {errors.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {errors.map((error) => <p key={error}>{error}</p>)}
+            </div>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Hinnastosta</Label>
+              <Select value={lineForm.catalogItemId || UNSECTIONED} onValueChange={(value) => value !== UNSECTIONED && selectCatalogItem(value)}>
+                <SelectTrigger><SelectValue placeholder="Valitse valmis hinnastorivi" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSECTIONED}>Ei hinnastoriviä</SelectItem>
+                  {data.catalog.filter((item) => item.active).map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.code ? `${item.code} · ` : ''}{item.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Kustannuslaji</Label>
+              <Select value={lineForm.category} onValueChange={(value) => setLineForm((previous) => ({ ...previous, category: value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {OFFER_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Osio</Label>
+              <Select value={lineForm.sectionId} onValueChange={(value) => setLineForm((previous) => ({ ...previous, sectionId: value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSECTIONED}>Ei osiota</SelectItem>
+                  {versionSections.map((section) => <SelectItem key={section.id} value={section.id}>{section.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Kuvaus *</Label>
+              <Input value={lineForm.description} onChange={(event) => setLineForm((previous) => ({ ...previous, description: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Määrä</Label>
+              <Input type="number" step="0.01" value={lineForm.quantity} onChange={(event) => setLineForm((previous) => ({ ...previous, quantity: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Yksikkö</Label>
+              <Input value={lineForm.unit} onChange={(event) => setLineForm((previous) => ({ ...previous, unit: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Sisäinen kustannus / yks. €</Label>
+              <Input type="number" step="0.01" value={lineForm.costUnitPrice} onChange={(event) => setLineForm((previous) => ({ ...previous, costUnitPrice: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Myyntihinta / yks. €</Label>
+                <button type="button" className="text-xs font-semibold text-orange-600" onClick={recommendLinePrice}>
+                  Laske suositus
+                </button>
+              </div>
+              <Input type="number" step="0.01" value={lineForm.saleUnitPrice} onChange={(event) => setLineForm((previous) => ({ ...previous, saleUnitPrice: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Hukka %</Label>
+              <Input type="number" step="0.1" value={lineForm.wastePercent} onChange={(event) => setLineForm((previous) => ({ ...previous, wastePercent: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Alennus %</Label>
+              <Input type="number" step="0.1" value={lineForm.discountPercent} onChange={(event) => setLineForm((previous) => ({ ...previous, discountPercent: event.target.value }))} />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Asiakkaalle näkyvä huomio</Label>
+              <Textarea value={lineForm.customerNote} rows={2} onChange={(event) => setLineForm((previous) => ({ ...previous, customerNote: event.target.value }))} />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Sisäinen huomio</Label>
+              <Textarea value={lineForm.internalNote} rows={2} onChange={(event) => setLineForm((previous) => ({ ...previous, internalNote: event.target.value }))} />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={lineForm.customerVisible} onChange={(event) => setLineForm((previous) => ({ ...previous, customerVisible: event.target.checked }))} />
+              Näytä asiakkaan tarjouksessa
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={lineForm.optional} onChange={(event) => setLineForm((previous) => ({ ...previous, optional: event.target.checked }))} />
+              Valinnainen optio
+            </label>
+          </div>
+          {linePreview && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+              <p className="font-semibold text-slate-800">Rivikohtainen esikatselu</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                <p className="break-words">Kustannus: <strong className="font-mono">{euro(linePreview.directCostCents)}</strong></p>
+                <p className="break-words">Myynti: <strong className="font-mono">{euro(linePreview.saleSubtotalCents)}</strong></p>
+                <p className={cn('break-words', marginTone(linePreview.grossMarginPercent))}>
+                  Kate: <strong className="font-mono">{euro(linePreview.grossMarginCents)}</strong> ({linePreview.grossMarginPercent.toFixed(1)} %)
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLineDialog(false)}>Peruuta</Button>
+            <Button onClick={() => void saveLine()} disabled={saving}>Tallenna rivi</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={sectionDialog} onOpenChange={setSectionDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingSection ? 'Muokkaa osiota' : 'Uusi tarjousosio'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label>Otsikko *</Label>
+              <Input value={sectionTitle} placeholder="Esim. Purkutyöt" onChange={(event) => setSectionTitle(event.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>Kuvaus</Label>
+              <Textarea value={sectionDescription} onChange={(event) => setSectionDescription(event.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSectionDialog(false)}>Peruuta</Button>
+            <Button onClick={() => void saveSection()} disabled={saving || !sectionTitle.trim()}>
+              {editingSection ? 'Tallenna osio' : 'Lisää osio'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importDialog} onOpenChange={setImportDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Tuo määrälaskelmasta</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Label>Määrälaskelma</Label>
+            <Select value={takeoffId} onValueChange={setTakeoffId}>
+              <SelectTrigger><SelectValue placeholder="Valitse määrälaskelma" /></SelectTrigger>
+              <SelectContent>
+                {finance.takeoffs.map((takeoff) => (
+                  <SelectItem key={takeoff.id} value={takeoff.id}>
+                    {takeoff.name} · {finance.takeoffLines.filter((line) => line.takeoffId === takeoff.id).length} riviä
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="break-words text-sm text-slate-500">
+              Rivien nimet ja tunnukset yhdistetään hinnastoon. Tunnistamattomat rivit tuodaan nollahinnalla hinnoiteltaviksi.
+            </p>
+            <Button variant="outline" asChild className="w-full sm:w-auto">
+              <Link to="/maaralaskenta"><Ruler size={15} className="mr-2" /> Avaa määrälaskenta</Link>
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportDialog(false)}>Peruuta</Button>
+            <Button onClick={() => void importTakeoff()} disabled={saving || !takeoffId}>Tuo rivit</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={catalogDialog} onOpenChange={setCatalogDialog}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingCatalog ? 'Muokkaa hinnastoriviä' : 'Uusi hinnastorivi'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Tunnus</Label>
+              <Input value={catalogForm.code} onChange={(event) => setCatalogForm((previous) => ({ ...previous, code: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Kategoria</Label>
+              <Select value={catalogForm.category} onValueChange={(value) => setCatalogForm((previous) => ({ ...previous, category: value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {OFFER_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Nimi *</Label>
+              <Input value={catalogForm.name} onChange={(event) => setCatalogForm((previous) => ({ ...previous, name: event.target.value }))} />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Kuvaus</Label>
+              <Textarea value={catalogForm.description} onChange={(event) => setCatalogForm((previous) => ({ ...previous, description: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Yksikkö</Label>
+              <Input value={catalogForm.unit} onChange={(event) => setCatalogForm((previous) => ({ ...previous, unit: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Oletushukka %</Label>
+              <Input type="number" value={catalogForm.wastePercent} onChange={(event) => setCatalogForm((previous) => ({ ...previous, wastePercent: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Kustannushinta €</Label>
+              <Input type="number" step="0.01" value={catalogForm.costUnitPrice} onChange={(event) => setCatalogForm((previous) => ({ ...previous, costUnitPrice: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Myyntihinta €</Label>
+              <Input type="number" step="0.01" value={catalogForm.saleUnitPrice} onChange={(event) => setCatalogForm((previous) => ({ ...previous, saleUnitPrice: event.target.value }))} />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={catalogForm.active} onChange={(event) => setCatalogForm((previous) => ({ ...previous, active: event.target.checked }))} />
+              Aktiivinen hinnastossa
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCatalogDialog(false)}>Peruuta</Button>
+            <Button onClick={() => void saveCatalog()} disabled={saving}>Tallenna</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={Boolean(confirmAction)} onOpenChange={(open) => !open && setConfirmAction(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmAction?.title}</AlertDialogTitle>
+            <AlertDialogDescription className="break-words">
+              {confirmAction?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Peruuta</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void executeConfirm()} disabled={saving}>
+              Vahvista
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </motion.div>
+  );
 }
