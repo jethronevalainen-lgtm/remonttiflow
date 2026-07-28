@@ -22,3 +22,10 @@ slider: it is `completed/total` linked `work_orders` (`Valmis`/`Peruttu` count).
 Phases without linked work orders show “Ei työmääräyksiä” instead of a fake 0%.
 DB trigger `private.refresh_project_phase_progress` keeps stored progress in sync
 when work-order status changes.
+
+### Resurssikalenteri team scope
+
+`/tyovuorokalenteri` can show **all**, **my team**, or a chosen supervisor's team.
+Teams come from `supervisor_team_members` bridged to calendar rows via
+`employees.user_id` (`src/lib/calendarTeamFilter.ts`). Do not use `project_members`
+for this filter.
