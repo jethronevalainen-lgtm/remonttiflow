@@ -112,13 +112,15 @@ export async function createSafetyItemRecord(
   organizationId: string,
   createdBy: string | undefined,
   item: Omit<SafetyItem, 'id'>,
-): Promise<void> {
-  const { error } = await supabase.from('safety_items').insert({
+): Promise<string> {
+  const { data, error } = await supabase.from('safety_items').insert({
     organization_id: organizationId,
     ...(createdBy ? { created_by: createdBy } : {}),
     ...safetyPayload(item),
-  });
+  }).select('id').single();
   if (error) throw new Error(`Turvallisuushavainnon tallennus epäonnistui: ${error.message}`);
+  if (!data?.id) throw new Error('Turvallisuushavainnon tunnusta ei saatu tallennuksen jälkeen.');
+  return String(data.id);
 }
 
 export async function updateSafetyItemRecord(
