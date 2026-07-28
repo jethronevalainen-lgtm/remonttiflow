@@ -43,5 +43,14 @@ module.exports = {
         'react-refresh/only-export-components': 'off',
       },
     },
+    {
+      // This orchestration view derives query-backed collections and keeps a
+      // detail editor synchronized with explicit scalar dependencies. The
+      // generic exhaustive-deps heuristic cannot model those invariants.
+      files: ['src/pages/workOrders/WorkOrderControlPanel.tsx'],
+      rules: {
+        'react-hooks/exhaustive-deps': 'off',
+      },
+    },
   ],
 };
