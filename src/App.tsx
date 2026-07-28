@@ -44,6 +44,7 @@ const KayttajaEsikatselu = lazy(() => import('./pages/KayttajaEsikatseluV2'));
 const Tilaukset = lazy(() => import('./pages/Tilaukset'));
 const TilaajanTyot = lazy(() => import('./pages/TilaajanTyotV2'));
 const NewCustomerWorkRequest = lazy(() => import('./pages/NewCustomerWorkRequest'));
+const CustomerOrderDetail = lazy(() => import('./pages/CustomerOrderDetail'));
 const CustomerProject = lazy(() => import('./pages/CustomerProjectV2'));
 const CustomerCollaborationManager = lazy(() => import('./pages/CustomerCollaborationManager'));
 const ProjectDiscussions = lazy(() => import('./pages/ProjectDiscussions'));
@@ -170,6 +171,7 @@ function AppRoutes() {
         <Route path="/tilaukset" element={<RoleGuard allowedRoles={rolesForRoute('/tilaukset')}><Tilaukset /></RoleGuard>} />
         <Route path="/tilaajan-tyot" element={<RoleGuard allowedRoles={rolesForRoute('/tilaajan-tyot')}><TilaajanTyot /></RoleGuard>} />
         <Route path="/tilaajan-tyot/uusi" element={<RoleGuard allowedRoles={rolesForRoute('/tilaajan-tyot')}><NewCustomerWorkRequest /></RoleGuard>} />
+        <Route path="/tilaajan-tyot/:requestId" element={<RoleGuard allowedRoles={['admin', 'supervisor', 'project_coordinator', 'worker', 'customer']}><CustomerOrderDetail /></RoleGuard>} />
         <Route path="/tilaajan-projektit/:projectId" element={<RoleGuard allowedRoles={rolesForRoute('/tilaajan-projektit')}><CustomerProject /></RoleGuard>} />
         <Route path="/tyovuorokalenteri" element={<RoleGuard allowedRoles={rolesForRoute('/tyovuorokalenteri')}><Tyovuorokalenteri /></RoleGuard>} />
         <Route path="/tuntikirjaukset" element={<RoleGuard allowedRoles={rolesForRoute('/tuntikirjaukset')}><TimeEntriesRoute /></RoleGuard>} />
