@@ -12,12 +12,31 @@ import type {
   ProfileRow,
 } from '@/lib/supabase/types';
 
+export type InvitationStatus = 'pending' | 'active' | 'disabled';
+
 export interface OrganizationMemberView {
   organizationId: string;
   userId: string;
   role: OrganizationRole;
   createdAt: string;
+  invitationStatus: InvitationStatus;
+  invitedAt: string | null;
+  activatedAt: string | null;
+  disabledAt: string | null;
   profile: ProfileRow | null;
+}
+
+export interface EmployeeOnboardingInput {
+  jobTitle: string;
+  department: string;
+  phone: string;
+  startDate: string;
+  status: 'Aktiivinen' | 'Lomalla' | 'Sairas' | 'Koulutuksessa' | 'Eroonnut';
+  hourlyCostCents: number | null;
+  employmentType: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  supervisorUserId: string | null;
 }
 
 interface MembershipRow {
@@ -25,12 +44,17 @@ interface MembershipRow {
   user_id: string;
   role: OrganizationRole;
   created_at: string;
+  invitation_status: InvitationStatus;
+  invited_at: string | null;
+  activated_at: string | null;
+  disabled_at: string | null;
 }
 
 interface InviteResponse {
   ok: boolean;
   invited: boolean;
   userId: string;
+  employeeId?: string;
   message: string;
 }
 
@@ -55,7 +79,7 @@ export async function fetchOrganizationMembers(
 ): Promise<OrganizationMemberView[]> {
   const { data: memberships, error: membershipError } = await supabase
     .from('organization_members')
-    .select('organization_id, user_id, role, created_at')
+    .select('organization_id, user_id, role, created_at, invitation_status, invited_at, activated_at, disabled_at')
     .eq('organization_id', organizationId)
     .order('created_at', { ascending: true });
 
@@ -85,6 +109,10 @@ export async function fetchOrganizationMembers(
     userId: row.user_id,
     role: row.role,
     createdAt: row.created_at,
+    invitationStatus: row.invitation_status ?? 'active',
+    invitedAt: row.invited_at,
+    activatedAt: row.activated_at,
+    disabledAt: row.disabled_at,
     profile: profileMap.get(row.user_id) ?? null,
   }));
 }
@@ -178,7 +206,7 @@ export async function updateOrganizationMemberRole(
   role: OrganizationRole,
 ): Promise<void> {
   if (role === 'customer') {
-    throw new Error('Tilaajarooli määritetään käyttäjäkutsun kautta, jotta asiakkuudet ja projektioikeudet eivät jää puuttumaan.');
+    throw new Error('Tilaajarooli määritetään tilaajakutsun kautta, jotta asiakkuudet ja projektioikeudet eivät jää puuttumaan.');
   }
   const { error } = await supabase
     .from('organization_members')
@@ -233,6 +261,7 @@ export async function inviteOrganizationMember(values: {
   role: OrganizationRole;
   customerId?: string;
   customerAccess?: CustomerAccessAssignment[];
+  employee?: EmployeeOnboardingInput;
 }): Promise<InviteResponse> {
   const customerAccess = values.customerAccess?.map((item) => ({
     customerId: item.customerId,
@@ -249,6 +278,7 @@ export async function inviteOrganizationMember(values: {
         role: values.role,
         customerId: values.customerId || customerAccess[0]?.customerId || null,
         customerAccess,
+        employee: values.employee,
       },
     },
   );
