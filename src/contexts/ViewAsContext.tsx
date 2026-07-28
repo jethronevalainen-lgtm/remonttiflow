@@ -106,7 +106,10 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     const signedInDisplayName = profile?.full_name ?? user?.email ?? '';
     const target = impersonation?.target ?? null;
     return {
-      actualRole: target?.role ?? organizationRole,
+      // Real impersonation can only be started by an administrator. Keep that
+      // actor role available for the guarded return/admin-control routes while
+      // every normal application route uses the selected user's effective role.
+      actualRole: target ? 'admin' : organizationRole,
       effectiveRole: target?.role ?? organizationRole,
       effectiveUserId: target?.userId ?? user?.id ?? null,
       effectiveDisplayName: target?.displayName || target?.email || signedInDisplayName,
