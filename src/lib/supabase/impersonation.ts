@@ -29,6 +29,13 @@ interface StartResponse {
   target?: unknown;
 }
 
+interface ImpersonationRequest {
+  action: 'start' | 'stop';
+  organizationId: string;
+  targetUserId: string;
+  sessionId?: string;
+}
+
 type Row = Record<string, unknown>;
 
 function asRow(value: unknown): Row {
@@ -97,26 +104,74 @@ function parseStartResponse(value: StartResponse): {
   };
 }
 
+async function administratorAccessToken(forceRefresh = false): Promise<string> {
+  if (forceRefresh) {
+    const { data, error } = await administratorSupabase.auth.refreshSession();
+    if (error || !data.session?.access_token) {
+      throw new Error(error?.message || 'Admin-istunnon päivittäminen epäonnistui.');
+    }
+    return data.session.access_token;
+  }
+
+  const { data, error } = await administratorSupabase.auth.getSession();
+  if (error || !data.session?.access_token) {
+    throw new Error(error?.message || 'Admin-istunto ei ole voimassa.');
+  }
+
+  const expiresAtMs = (data.session.expires_at ?? 0) * 1000;
+  if (!expiresAtMs || expiresAtMs - Date.now() < 60_000) {
+    return administratorAccessToken(true);
+  }
+  return data.session.access_token;
+}
+
+async function invokeImpersonationFunction<T>(
+  body: ImpersonationRequest,
+  forceRefresh = false,
+) {
+  const accessToken = await administratorAccessToken(forceRefresh);
+  return administratorSupabase.functions.invoke<T>('admin-impersonation', {
+    body,
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+async function invokeWithSessionRetry<T>(body: ImpersonationRequest) {
+  let result = await invokeImpersonationFunction<T>(body);
+  if (!result.error) return result;
+
+  const firstMessage = await readFunctionError(result.error, 'Käyttäjänä toimimisen palvelukutsu epäonnistui.');
+  const invalidSession = firstMessage === 'Istunto ei ole voimassa.'
+    || /invalid\s+(?:jwt|token)|jwt\s+expired|token\s+expired/i.test(firstMessage);
+  if (!invalidSession) return { ...result, resolvedMessage: firstMessage };
+
+  result = await invokeImpersonationFunction<T>(body, true);
+  if (!result.error) return result;
+  return {
+    ...result,
+    resolvedMessage: await readFunctionError(result.error, 'Käyttäjänä toimimisen palvelukutsu epäonnistui.'),
+  };
+}
+
 export async function startAdministratorImpersonation(input: {
   organizationId: string;
   targetUserId: string;
 }): Promise<ActiveImpersonation> {
-  const { data, error } = await administratorSupabase.functions.invoke<StartResponse>(
-    'admin-impersonation',
-    {
-      body: {
-        action: 'start',
-        organizationId: input.organizationId,
-        targetUserId: input.targetUserId,
-      },
-    },
-  );
+  const result = await invokeWithSessionRetry<StartResponse>({
+    action: 'start',
+    organizationId: input.organizationId,
+    targetUserId: input.targetUserId,
+  });
 
-  if (error) {
-    throw new Error(await readFunctionError(error, 'Käyttäjänä toimimisen käynnistys epäonnistui.'));
+  if (result.error) {
+    throw new Error(
+      'resolvedMessage' in result && typeof result.resolvedMessage === 'string'
+        ? result.resolvedMessage
+        : await readFunctionError(result.error, 'Käyttäjänä toimimisen käynnistys epäonnistui.'),
+    );
   }
 
-  const parsed = parseStartResponse(data ?? {});
+  const parsed = parseStartResponse(result.data ?? {});
   let session: Session | null = null;
   try {
     session = await activateImpersonationSession(parsed.tokenHash);
@@ -137,17 +192,25 @@ export async function stopAdministratorImpersonation(
   // the browser in the selected user's session.
   await deactivateImpersonationSession();
 
-  const { error } = await administratorSupabase.functions.invoke('admin-impersonation', {
-    body: {
+  try {
+    const result = await invokeWithSessionRetry({
       action: 'stop',
       organizationId: impersonation.target.organizationId,
       targetUserId: impersonation.target.userId,
       sessionId: impersonation.sessionId,
-    },
-  });
-  if (error) {
+    });
+    if (result.error) {
+      console.warn(
+        'resolvedMessage' in result && typeof result.resolvedMessage === 'string'
+          ? result.resolvedMessage
+          : await readFunctionError(result.error, 'Käyttäjänä toimimisen lopetuksen auditointi epäonnistui.'),
+      );
+    }
+  } catch (caught) {
     console.warn(
-      await readFunctionError(error, 'Käyttäjänä toimimisen lopetuksen auditointi epäonnistui.'),
+      caught instanceof Error
+        ? caught.message
+        : 'Käyttäjänä toimimisen lopetuksen auditointi epäonnistui.',
     );
   }
 }
