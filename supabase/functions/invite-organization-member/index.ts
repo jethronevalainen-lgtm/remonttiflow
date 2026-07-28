@@ -149,7 +149,20 @@ Deno.serve(async (request: Request) => {
     .eq('user_id', actor.id)
     .maybeSingle();
   if (membershipError) return json({ error: 'Käyttöoikeuden tarkistus epäonnistui.' }, 500);
-  if (actorMembership?.role !== 'admin') return json({ error: 'Vain organisaation ylläpitäjä voi kutsua käyttäjiä.' }, 403);
+
+  const actorRole = actorMembership?.role as OrganizationRole | undefined;
+  const canInviteCustomers = actorRole === 'admin'
+    || actorRole === 'supervisor'
+    || actorRole === 'project_coordinator';
+  if (!canInviteCustomers) {
+    return json({ error: 'Vain ylläpitäjä, työnjohtaja tai projektikoordinaattori voi kutsua tilaajia.' }, 403);
+  }
+  if (actorRole !== 'admin' && role !== 'customer') {
+    return json({ error: 'Muiden henkilöstöroolien kutsuminen on sallittu vain organisaation ylläpitäjälle.' }, 403);
+  }
+  if (actorRole === 'project_coordinator' && customerAccess.some((item) => item.accessScope !== 'selected_projects')) {
+    return json({ error: 'Projektikoordinaattori voi myöntää vain projektikohtaisia tilaajaoikeuksia.' }, 403);
+  }
 
   const adminClient = createClient(supabaseUrl, secretKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -264,6 +277,7 @@ Deno.serve(async (request: Request) => {
       target_user_id: targetUserId,
       email,
       role,
+      actor_role: actorRole,
       customer_access: role === 'customer' ? customerAccess : [],
       activation_origin: DEFAULT_APP_ORIGIN,
     },
