@@ -58,3 +58,11 @@ New `project_messages` rows create `app_notifications` of type
 conversation marks the matching notification resolved via
 `mark_project_messages_read`. Header path matching allows nested routes like
 `/projektikeskustelut/:id`.
+
+### Project work plan targets (wizard step 1)
+
+`ProjectWorkPlanDialog` keeps an always-editable target list. Paste list,
+number series, CSV/Excel text, and project units **merge/append** (dedupe by
+title+location, cap 100) — they do not wipe the list. Unit import uses
+`loadProjectStructureForWorkPlan` (`project_units` + buildings/stairwells for
+location labels). Helpers live in `src/lib/projectWorkPlanBuilder.ts`.

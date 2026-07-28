@@ -4,7 +4,12 @@ import type {
 } from './inspectionTypes';
 
 export * from './inspectionTypes';
-export { loadInspectionWorkspace, loadInspectionDetail, loadTemplateEditor } from './inspectionRead';
+export {
+  loadInspectionWorkspace,
+  loadInspectionDetail,
+  loadTemplateEditor,
+  loadProjectStructureForWorkPlan,
+} from './inspectionRead';
 
 function failure(prefix: string, message: string): Error {
   return new Error(`${prefix}: ${message}`);

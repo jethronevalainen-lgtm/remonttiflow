@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   createGenericProjectPhases,
   generateProjectWorkTargets,
+  mergeProjectWorkTargets,
   normalizeProjectWorkTargets,
+  parseProjectWorkTargetsCsv,
+  projectUnitsToWorkTargets,
   projectWorkPlanSize,
+  rekeyProjectWorkTargets,
   spreadProjectPhaseDates,
 } from '../projectWorkPlanBuilder';
 
@@ -19,6 +23,53 @@ describe('project work plan builder', () => {
   it('generates a bounded target sequence', () => {
     const targets = generateProjectWorkTargets({ prefix: 'Lohko ', start: 3, count: 3, padLength: 2 });
     expect(targets.map((target) => target.title)).toEqual(['Lohko 03', 'Lohko 04', 'Lohko 05']);
+  });
+
+  it('merges targets without replacing the editable list', () => {
+    const existing = normalizeProjectWorkTargets('A1 | 1. kerros');
+    const result = mergeProjectWorkTargets(existing, normalizeProjectWorkTargets('A1 | 1. kerros\nB2 | 2. kerros'));
+    expect(result.added).toBe(1);
+    expect(result.skippedDuplicates).toBe(1);
+    expect(result.targets.map((target) => target.title)).toEqual(['A1', 'B2']);
+  });
+
+  it('parses Finnish CSV with a header row', () => {
+    const targets = parseProjectWorkTargetsCsv('nimi;sijainti\nA1;1. kerros\nA2;1. kerros');
+    expect(targets).toEqual([
+      expect.objectContaining({ title: 'A1', location: '1. kerros' }),
+      expect.objectContaining({ title: 'A2', location: '1. kerros' }),
+    ]);
+  });
+
+  it('maps project units into work targets with building and floor labels', () => {
+    const targets = projectUnitsToWorkTargets(
+      [
+        {
+          id: 'u1',
+          projectId: 'p1',
+          buildingId: 'b1',
+          stairwellId: 's1',
+          unitCode: 'A12',
+          floor: '2',
+          unitType: 'Huoneisto',
+          renovationScope: '',
+          status: 'Avoin',
+          notes: '',
+        },
+      ],
+      [{ id: 'b1', projectId: 'p1', name: 'Rakennus A', address: '' }],
+      [{ id: 's1', projectId: 'p1', buildingId: 'b1', name: 'A-rappu' }],
+    );
+    expect(targets).toEqual([
+      expect.objectContaining({ title: 'A12', location: 'Rakennus A · A-rappu · 2. kerros' }),
+    ]);
+  });
+
+  it('rekeys targets after manual edits', () => {
+    const targets = rekeyProjectWorkTargets([
+      { id: 't1', key: 'old', title: 'Uusi nimi', location: 'Kerros 1' },
+    ]);
+    expect(targets[0].key).toMatch(/^001-uusi-nimi$/);
   });
 
   it('spreads phase dates over the project interval without gaps', () => {

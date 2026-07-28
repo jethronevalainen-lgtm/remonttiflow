@@ -191,6 +191,45 @@ export async function loadInspectionWorkspace(organizationId: string): Promise<I
   };
 }
 
+/** Project-scoped buildings, stairwells and units for work-plan target import. */
+export async function loadProjectStructureForWorkPlan(
+  organizationId: string,
+  projectId: string,
+): Promise<{
+  buildings: ProjectBuilding[];
+  stairwells: ProjectStairwell[];
+  units: ProjectUnit[];
+}> {
+  const [buildingResponse, stairwellResponse, unitResponse] = await Promise.all([
+    supabase
+      .from('project_buildings')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('project_id', projectId)
+      .order('name'),
+    supabase
+      .from('project_stairwells')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('project_id', projectId)
+      .order('name'),
+    supabase
+      .from('project_units')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('project_id', projectId)
+      .order('unit_code'),
+  ]);
+  if (buildingResponse.error) throw failure('Rakennusten haku epäonnistui', buildingResponse.error.message);
+  if (stairwellResponse.error) throw failure('Rappujen haku epäonnistui', stairwellResponse.error.message);
+  if (unitResponse.error) throw failure('Huoneistojen haku epäonnistui', unitResponse.error.message);
+  return {
+    buildings: rows(buildingResponse.data).map(mapBuilding),
+    stairwells: rows(stairwellResponse.data).map(mapStairwell),
+    units: rows(unitResponse.data).map(mapUnit),
+  };
+}
+
 export async function loadInspectionDetail(inspectionId: string): Promise<InspectionDetail> {
   const { data: inspectionData, error: inspectionError } = await supabase.from('inspections').select('*').eq('id', inspectionId).single();
   if (inspectionError) throw failure('Tarkastuksen haku epäonnistui', inspectionError.message);
