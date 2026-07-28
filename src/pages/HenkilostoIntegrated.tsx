@@ -4,12 +4,15 @@ import {
   AlertTriangle,
   Award,
   Calendar,
+  CheckCircle2,
   Download,
   Edit3,
   Mail,
   Phone,
   Plus,
   Search,
+  Send,
+  ShieldCheck,
   Trash2,
   UserCheck,
   UserRoundCheck,
@@ -47,7 +50,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuth } from '@/contexts/AuthContext';
+import { ROLE_LABELS, useAuth } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useOrganizationAdmin } from '@/hooks/useOrganizationAdmin';
@@ -65,6 +68,10 @@ import {
   updateEmployeeRecord,
 } from '@/lib/supabase/organizationEntities';
 import {
+  inviteOrganizationMember,
+  type EmployeeOnboardingInput,
+} from '@/lib/supabase/organizationAdmin';
+import {
   createEmployeeAbsence,
   createEmployeeCertification,
   deleteEmployeeAbsence,
@@ -72,6 +79,7 @@ import {
   type EmployeeAbsence,
   type EmployeeCertification,
 } from '@/lib/supabase/resourceManagement';
+import type { OrganizationRole } from '@/lib/supabase/types';
 import type { Employee, EmployeeStatus } from '@/types';
 
 const NONE = 'none';
@@ -92,6 +100,10 @@ const CERTIFICATION_TYPES = [
 ];
 const ABSENCE_TYPES = ['Loma', 'Sairaus', 'Koulutus', 'Palkaton vapaa', 'Muu'];
 
+type AccountMode = 'invite' | 'record_only';
+type InternalRole = Exclude<OrganizationRole, 'customer'>;
+const INTERNAL_ROLES: InternalRole[] = ['worker', 'supervisor', 'project_coordinator', 'admin'];
+
 interface EmployeeForm {
   name: string;
   role: string;
@@ -104,6 +116,8 @@ interface EmployeeForm {
   employmentType: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  accountMode: AccountMode;
+  accessRole: InternalRole;
 }
 
 const emptyEmployee: EmployeeForm = {
@@ -118,6 +132,8 @@ const emptyEmployee: EmployeeForm = {
   employmentType: '',
   emergencyContactName: '',
   emergencyContactPhone: '',
+  accountMode: 'invite',
+  accessRole: 'worker',
 };
 
 function statusBadge(status: EmployeeStatus) {
@@ -145,7 +161,12 @@ export default function HenkilostoIntegrated() {
   const { user } = useAuth();
   const { currentOrg, actualRole } = useOrganization();
   const { employees, refresh: refreshDomain } = useAppDataContext();
-  const { members, loading: membersLoading, error: membersError } = useOrganizationAdmin();
+  const {
+    members,
+    loading: membersLoading,
+    error: membersError,
+    refresh: refreshMembers,
+  } = useOrganizationAdmin();
   const resources = useResourceManagement();
 
   const [search, setSearch] = useState('');
@@ -154,6 +175,7 @@ export default function HenkilostoIntegrated() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [deleteEmployee, setDeleteEmployee] = useState<Employee | null>(null);
   const [employeeForm, setEmployeeForm] = useState<EmployeeForm>(emptyEmployee);
+  const [reviewingInvite, setReviewingInvite] = useState(false);
 
   const [supervisorAssignments, setSupervisorAssignments] = useState<EmployeeSupervisorAssignment[]>([]);
   const [selectedSupervisorUserId, setSelectedSupervisorUserId] = useState(NONE);
@@ -178,9 +200,11 @@ export default function HenkilostoIntegrated() {
   const [deleteAbsence, setDeleteAbsence] = useState<EmployeeAbsence | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const canManageSupervisors = actualRole === 'admin' || actualRole === 'supervisor';
+  const canInviteInternalUsers = actualRole === 'admin';
   const today = localDateIso();
   const nextMonthDate = new Date();
   nextMonthDate.setDate(nextMonthDate.getDate() + 30);
@@ -188,12 +212,17 @@ export default function HenkilostoIntegrated() {
 
   const supervisors = useMemo(
     () => members
-      .filter((member) => member.role === 'supervisor')
+      .filter((member) => member.role === 'supervisor' && member.invitationStatus !== 'disabled')
       .map((member) => ({
         userId: member.userId,
         name: member.profile?.full_name || member.profile?.email || 'Nimetön työnjohtaja',
       }))
       .sort((a, b) => a.name.localeCompare(b.name, 'fi')),
+    [members],
+  );
+
+  const memberByUserId = useMemo(
+    () => new Map(members.map((member) => [member.userId, member])),
     [members],
   );
 
@@ -243,16 +272,18 @@ export default function HenkilostoIntegrated() {
       const supervisorName = supervisorNameByUserId.get(
         supervisorByEmployeeId.get(employee.id) ?? '',
       ) ?? '';
+      const member = employee.userId ? memberByUserId.get(employee.userId) : undefined;
       const matchesSearch = !query || [
         employee.name,
         employee.role,
         employee.department,
         employee.email,
         supervisorName,
+        member ? ROLE_LABELS[member.role] : '',
       ].some((value) => value.toLocaleLowerCase('fi').includes(query));
       return matchesSearch && (statusFilter === 'Kaikki' || employee.status === statusFilter);
     });
-  }, [employees, search, statusFilter, supervisorByEmployeeId, supervisorNameByUserId]);
+  }, [employees, memberByUserId, search, statusFilter, supervisorByEmployeeId, supervisorNameByUserId]);
 
   const employeeById = useMemo(
     () => new Map(employees.map((employee) => [employee.id, employee])),
@@ -271,14 +302,20 @@ export default function HenkilostoIntegrated() {
 
   const openEmployeeCreate = () => {
     setEditingEmployee(null);
-    setEmployeeForm(emptyEmployee);
+    setEmployeeForm({
+      ...emptyEmployee,
+      accountMode: canInviteInternalUsers ? 'invite' : 'record_only',
+    });
     setSelectedSupervisorUserId(NONE);
+    setReviewingInvite(false);
     setErrors([]);
     setOperationError(null);
+    setSuccessMessage(null);
     setEmployeeDialog(true);
   };
 
   const openEmployeeEdit = (employee: Employee) => {
+    const membership = employee.userId ? memberByUserId.get(employee.userId) : undefined;
     setEditingEmployee(employee);
     setEmployeeForm({
       name: employee.name,
@@ -292,37 +329,59 @@ export default function HenkilostoIntegrated() {
       employmentType: employee.employmentType ?? '',
       emergencyContactName: employee.emergencyContactName ?? '',
       emergencyContactPhone: employee.emergencyContactPhone ?? '',
+      accountMode: employee.userId ? 'invite' : 'record_only',
+      accessRole: membership && membership.role !== 'customer' ? membership.role : 'worker',
     });
     setSelectedSupervisorUserId(supervisorByEmployeeId.get(employee.id) ?? NONE);
+    setReviewingInvite(false);
     setErrors([]);
     setOperationError(null);
+    setSuccessMessage(null);
     setEmployeeDialog(true);
   };
 
-  const saveEmployee = async () => {
-    const hourlyCost = employeeForm.hourlyCost === ''
-      ? undefined
-      : Number(employeeForm.hourlyCost.replace(',', '.'));
-    const nextErrors: string[] = [];
+  const parsedHourlyCost = () => employeeForm.hourlyCost === ''
+    ? undefined
+    : Number(employeeForm.hourlyCost.replace(',', '.'));
 
+  const validateEmployee = () => {
+    const hourlyCost = parsedHourlyCost();
+    const nextErrors: string[] = [];
     if (!employeeForm.name.trim()) nextErrors.push('Nimi on pakollinen.');
-    if (!employeeForm.role.trim()) nextErrors.push('Tehtävä on pakollinen.');
+    if (!employeeForm.role.trim()) nextErrors.push('Tehtävänimike on pakollinen.');
     if (!employeeForm.department.trim()) nextErrors.push('Osasto on pakollinen.');
     if (employeeForm.email && !/^\S+@\S+\.\S+$/.test(employeeForm.email)) {
       nextErrors.push('Sähköpostiosoite ei ole kelvollinen.');
+    }
+    if (!editingEmployee && employeeForm.accountMode === 'invite') {
+      if (!canInviteInternalUsers) nextErrors.push('Vain ylläpitäjä voi lähettää sisäisen käyttäjän kutsun.');
+      if (!employeeForm.email.trim()) nextErrors.push('Sähköposti on pakollinen kutsua varten.');
+      if (employeeForm.accessRole === 'worker' && supervisors.length > 0 && selectedSupervisorUserId === NONE) {
+        nextErrors.push('Valitse työntekijälle tiimiä vastaava työnjohtaja ennen kutsun lähettämistä.');
+      }
     }
     if (hourlyCost !== undefined && (!Number.isFinite(hourlyCost) || hourlyCost < 0)) {
       nextErrors.push('Tuntikustannuksen pitää olla nolla tai positiivinen.');
     }
     setErrors(nextErrors);
-    if (nextErrors.length || !currentOrg) return;
+    return nextErrors.length === 0;
+  };
 
+  const openInviteReview = () => {
+    setOperationError(null);
+    if (!validateEmployee()) return;
+    setReviewingInvite(true);
+  };
+
+  const saveEmployee = async () => {
+    if (!validateEmployee() || !currentOrg) return;
+    const hourlyCost = parsedHourlyCost();
     const payload: Omit<Employee, 'id'> = {
       name: employeeForm.name.trim(),
       role: employeeForm.role.trim(),
       department: employeeForm.department.trim(),
       phone: employeeForm.phone.trim(),
-      email: employeeForm.email.trim(),
+      email: employeeForm.email.trim().toLowerCase(),
       startDate: employeeForm.startDate,
       status: employeeForm.status,
       hourlyCostCents: hourlyCost == null ? undefined : Math.round(hourlyCost * 100),
@@ -337,6 +396,7 @@ export default function HenkilostoIntegrated() {
 
     setSaving(true);
     setOperationError(null);
+    setSuccessMessage(null);
     try {
       if (editingEmployee) {
         await updateEmployeeRecord(currentOrg.id, editingEmployee.id, payload);
@@ -347,11 +407,42 @@ export default function HenkilostoIntegrated() {
             supervisorUserId: selectedSupervisorUserId === NONE ? null : selectedSupervisorUserId,
           });
         }
+        setSuccessMessage('Henkilön tiedot päivitettiin.');
+      } else if (employeeForm.accountMode === 'invite') {
+        const onboarding: EmployeeOnboardingInput = {
+          jobTitle: payload.role,
+          department: payload.department,
+          phone: payload.phone,
+          startDate: payload.startDate,
+          status: payload.status,
+          hourlyCostCents: payload.hourlyCostCents ?? null,
+          employmentType: payload.employmentType ?? '',
+          emergencyContactName: payload.emergencyContactName ?? '',
+          emergencyContactPhone: payload.emergencyContactPhone ?? '',
+          supervisorUserId: selectedSupervisorUserId === NONE ? null : selectedSupervisorUserId,
+        };
+        const result = await inviteOrganizationMember({
+          organizationId: currentOrg.id,
+          email: payload.email,
+          fullName: payload.name,
+          role: employeeForm.accessRole,
+          employee: onboarding,
+        });
+        setSuccessMessage(result.message);
       } else {
-        await createEmployeeRecord(currentOrg.id, user?.id, payload);
+        const employeeId = await createEmployeeRecord(currentOrg.id, user?.id, payload);
+        if (canManageSupervisors && selectedSupervisorUserId !== NONE) {
+          await setEmployeeSupervisor({
+            organizationId: currentOrg.id,
+            employeeId,
+            supervisorUserId: selectedSupervisorUserId,
+          });
+        }
+        setSuccessMessage('Henkilöstökortti luotiin ilman sovellustunnusta.');
       }
-      await Promise.all([refreshDomain(), refreshSupervisorAssignments()]);
+      await Promise.all([refreshDomain(), refreshMembers(), refreshSupervisorAssignments()]);
       setEmployeeDialog(false);
+      setReviewingInvite(false);
     } catch (caught) {
       setOperationError(caught instanceof Error ? caught.message : 'Tallennus epäonnistui.');
       logger.error('Henkilön tallennus epäonnistui', { error: caught });
@@ -396,7 +487,6 @@ export default function HenkilostoIntegrated() {
       setOperationError('Voimassaolo ei voi päättyä ennen myöntämispäivää.');
       return;
     }
-
     setSaving(true);
     setOperationError(null);
     try {
@@ -439,7 +529,6 @@ export default function HenkilostoIntegrated() {
       setOperationError('Anna kelvollinen poissaolojakso.');
       return;
     }
-
     setSaving(true);
     setOperationError(null);
     try {
@@ -493,6 +582,7 @@ export default function HenkilostoIntegrated() {
   const exportCsv = () => {
     const rows = employees.map((employee) => {
       const supervisorUserId = supervisorByEmployeeId.get(employee.id);
+      const member = employee.userId ? memberByUserId.get(employee.userId) : undefined;
       return [
         employee.name,
         employee.role,
@@ -503,11 +593,12 @@ export default function HenkilostoIntegrated() {
         employee.status,
         employee.employmentType ?? '',
         supervisorUserId ? supervisorNameByUserId.get(supervisorUserId) ?? '' : '',
+        member ? ROLE_LABELS[member.role] : 'Ei sovellustunnusta',
         (employee.hourlyCostCents ?? 0) / 100,
       ];
     });
     const csv = [
-      ['Nimi', 'Tehtävä', 'Osasto', 'Puhelin', 'Sähköposti', 'Aloittanut', 'Tila', 'Työsuhde', 'Esihenkilö', 'Tuntikustannus EUR'],
+      ['Nimi', 'Tehtävä', 'Osasto', 'Puhelin', 'Sähköposti', 'Aloittanut', 'Tila', 'Työsuhde', 'Esihenkilö', 'Käyttöoikeus', 'Tuntikustannus EUR'],
       ...rows,
     ].map((row) => row.map(csvCell).join(';')).join('\n');
     const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
@@ -518,12 +609,21 @@ export default function HenkilostoIntegrated() {
     URL.revokeObjectURL(url);
   };
 
+  const accessBadge = (employee: Employee) => {
+    if (!employee.userId) return <Badge variant="outline">Ei sovellustunnusta</Badge>;
+    const member = memberByUserId.get(employee.userId);
+    if (!member) return <Badge className="border-0 bg-red-50 text-red-700">Tili ei organisaatiossa</Badge>;
+    if (member.invitationStatus === 'pending') return <Badge className="border-0 bg-amber-50 text-amber-700">Kutsu lähetetty</Badge>;
+    if (member.invitationStatus === 'disabled') return <Badge className="border-0 bg-red-50 text-red-700">Käyttö estetty</Badge>;
+    return <Badge className="border-0 bg-blue-50 text-blue-700">{ROLE_LABELS[member.role]}</Badge>;
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-hero text-text-primary">Henkilöstö ja pätevyydet</h1>
-          <p className="mt-1 text-body-sm text-text-secondary">Henkilörekisteri, osaamiset, kortit, voimassaolot ja poissaolot</p>
+          <p className="mt-1 text-body-sm text-text-secondary">Henkilörekisteri, käyttöoikeudet, tiimit, kortit ja poissaolot</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={openEmployeeCreate}><Plus size={16} className="mr-2" /> Lisää henkilö</Button>
@@ -532,8 +632,15 @@ export default function HenkilostoIntegrated() {
       </div>
 
       {(resources.error || operationError || membersError) && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          <AlertTriangle size={16} />{operationError ?? resources.error ?? membersError}
+        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span className="break-words">{operationError ?? resources.error ?? membersError}</span>
+        </div>
+      )}
+      {successMessage && (
+        <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+          <span className="break-words">{successMessage}</span>
         </div>
       )}
 
@@ -546,7 +653,7 @@ export default function HenkilostoIntegrated() {
         ].map((item) => (
           <Card key={item.label}>
             <CardContent className="p-5">
-              <div className="flex justify-between text-sm text-text-secondary"><span>{item.label}</span><item.icon size={18} className="text-primary" /></div>
+              <div className="flex justify-between gap-3 text-sm text-text-secondary"><span>{item.label}</span><item.icon size={18} className="shrink-0 text-primary" /></div>
               <p className="mt-2 font-mono text-3xl font-bold">{item.value}</p>
             </CardContent>
           </Card>
@@ -564,7 +671,7 @@ export default function HenkilostoIntegrated() {
           <div className="flex flex-col gap-3 sm:flex-row">
             <div className="relative flex-1 sm:max-w-md">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae nimellä, tehtävällä, osastolla tai esihenkilöllä…" className="pl-9" />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae nimellä, tehtävällä, osastolla, roolilla tai esihenkilöllä…" className="pl-9" />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-48"><SelectValue /></SelectTrigger>
@@ -578,16 +685,26 @@ export default function HenkilostoIntegrated() {
               const supervisorUserId = supervisorByEmployeeId.get(employee.id);
               const supervisorName = supervisorUserId ? supervisorNameByUserId.get(supervisorUserId) ?? 'Työnjohtaja' : null;
               return (
-                <div key={employee.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_1fr_130px_170px] lg:items-center">
-                  <div><p className="font-semibold">{employee.name}</p><p className="text-xs text-text-secondary">{employee.email || 'Ei sähköpostia'}</p></div>
-                  <div>
-                    <p className="text-sm">{employee.role}</p>
-                    <p className="text-xs text-text-secondary">{employee.department}{employee.employmentType ? ` · ${employee.employmentType}` : ''}</p>
-                    {canManageSupervisors && <p className="mt-1 flex items-center gap-1 text-xs text-text-muted"><UserRoundCheck size={12} />Esihenkilö: {supervisorName ?? 'ei nimetty'}</p>}
+                <div key={employee.id} className="grid gap-4 border-b px-5 py-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(150px,0.7fr)_auto] lg:items-center">
+                  <div className="min-w-0">
+                    <p className="break-words font-semibold">{employee.name}</p>
+                    <p className="mt-1 break-all text-xs text-text-secondary">{employee.email || 'Ei sähköpostia'}</p>
                   </div>
-                  <div className="text-xs text-text-secondary">{employee.phone && <p className="flex items-center gap-1"><Phone size={12} />{employee.phone}</p>}{employee.email && <p className="flex items-center gap-1"><Mail size={12} />{employee.email}</p>}</div>
-                  <div>{statusBadge(employee.status)}{absent && <Badge className="ml-1 border-0 bg-amber-50 text-amber-700">Poissa</Badge>}<p className="mt-1 text-xs text-text-muted">{certCount} pätevyyttä</p></div>
-                  <div className="flex flex-wrap justify-end gap-1">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm">{employee.role}</p>
+                    <p className="break-words text-xs text-text-secondary">{employee.department}{employee.employmentType ? ` · ${employee.employmentType}` : ''}</p>
+                    {canManageSupervisors && <p className="mt-1 flex items-start gap-1 text-xs text-text-muted"><UserRoundCheck size={12} className="mt-0.5 shrink-0" /><span className="break-words">Esihenkilö: {supervisorName ?? 'ei nimetty'}</span></p>}
+                  </div>
+                  <div className="min-w-0 text-xs text-text-secondary">
+                    {employee.phone && <p className="flex items-start gap-1"><Phone size={12} className="mt-0.5 shrink-0" /><span className="break-words">{employee.phone}</span></p>}
+                    {employee.email && <p className="mt-1 flex items-start gap-1"><Mail size={12} className="mt-0.5 shrink-0" /><span className="break-all">{employee.email}</span></p>}
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap gap-1">{statusBadge(employee.status)}{absent && <Badge className="border-0 bg-amber-50 text-amber-700">Poissa</Badge>}</div>
+                    <div>{accessBadge(employee)}</div>
+                    <p className="text-xs text-text-muted">{certCount} pätevyyttä</p>
+                  </div>
+                  <div className="flex flex-wrap justify-start gap-1 lg:justify-end">
                     <Button variant="ghost" size="sm" aria-label={`Lisää pätevyys henkilölle ${employee.name}`} onClick={() => openCertification(employee.id)}><Award size={14} /></Button>
                     <Button variant="ghost" size="sm" aria-label={`Lisää poissaolo henkilölle ${employee.name}`} onClick={() => openAbsence(employee.id)}><Calendar size={14} /></Button>
                     <Button variant="ghost" size="sm" aria-label={`Muokkaa henkilöä ${employee.name}`} onClick={() => openEmployeeEdit(employee)}><Edit3 size={14} /></Button>
@@ -609,9 +726,9 @@ export default function HenkilostoIntegrated() {
               const isExpired = Boolean(item.expiresAt && item.expiresAt < today);
               const isExpiring = Boolean(item.expiresAt && item.expiresAt >= today && item.expiresAt <= nextMonthIso);
               return (
-                <div key={item.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_160px_130px_60px] lg:items-center">
-                  <div><p className="font-semibold">{item.certificationType}</p><p className="text-xs text-text-secondary">{employee?.name ?? 'Tuntematon henkilö'} · {item.certificationNumber || 'Ei numeroa'}</p></div>
-                  <span className="text-sm">{item.issuer || '—'}</span>
+                <div key={item.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_180px_140px_auto] lg:items-center">
+                  <div><p className="break-words font-semibold">{item.certificationType}</p><p className="break-words text-xs text-text-secondary">{employee?.name ?? 'Tuntematon henkilö'} · {item.certificationNumber || 'Ei numeroa'}</p></div>
+                  <span className="break-words text-sm">{item.issuer || '—'}</span>
                   <span className="text-sm">{dateLabel(item.issuedAt)} – {dateLabel(item.expiresAt)}</span>
                   <div>{isExpired ? <Badge className="border-0 bg-red-50 text-red-700">Vanhentunut</Badge> : isExpiring ? <Badge className="border-0 bg-amber-50 text-amber-700">Vanhenee pian</Badge> : <Badge className="border-0 bg-emerald-50 text-emerald-700">Voimassa</Badge>}</div>
                   <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteCertification(item)}><Trash2 size={14} /></Button>
@@ -626,9 +743,9 @@ export default function HenkilostoIntegrated() {
           <div className="flex justify-end"><Button onClick={() => openAbsence()}><Plus size={16} className="mr-2" /> Lisää poissaolo</Button></div>
           <Card><CardContent className="p-0">
             {resources.absences.map((item) => (
-              <div key={item.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[1.2fr_1fr_180px_120px_60px] lg:items-center">
-                <div><p className="font-semibold">{employeeById.get(item.employeeId)?.name ?? 'Tuntematon henkilö'}</p><p className="text-xs text-text-secondary">{item.notes || 'Ei lisätietoja'}</p></div>
-                <span>{item.absenceType}</span>
+              <div key={item.id} className="grid gap-3 border-b px-5 py-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_180px_120px_auto] lg:items-center">
+                <div><p className="break-words font-semibold">{employeeById.get(item.employeeId)?.name ?? 'Tuntematon henkilö'}</p><p className="break-words text-xs text-text-secondary">{item.notes || 'Ei lisätietoja'}</p></div>
+                <span className="break-words">{item.absenceType}</span>
                 <span>{dateLabel(item.startDate)} – {dateLabel(item.endDate)}</span>
                 <Badge variant="outline">{item.status}</Badge>
                 <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setDeleteAbsence(item)}><Trash2 size={14} /></Button>
@@ -639,42 +756,95 @@ export default function HenkilostoIntegrated() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={employeeDialog} onOpenChange={setEmployeeDialog}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader><DialogTitle>{editingEmployee ? 'Henkilön asetukset' : 'Lisää henkilö'}</DialogTitle></DialogHeader>
-          {errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((item) => <p key={item}>{item}</p>)}</div>}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2"><Label>Nimi *</Label><Input value={employeeForm.name} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, name: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Tehtävä *</Label><Input value={employeeForm.role} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, role: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Osasto *</Label><Input value={employeeForm.department} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, department: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Puhelin</Label><Input value={employeeForm.phone} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, phone: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Sähköposti</Label><Input value={employeeForm.email} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, email: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Aloituspäivä</Label><Input type="date" value={employeeForm.startDate} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Tila</Label><Select value={employeeForm.status} onValueChange={(status: EmployeeStatus) => setEmployeeForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{EMPLOYEE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label>Työsuhdetyyppi</Label><Input value={employeeForm.employmentType} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, employmentType: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Tuntikustannus €</Label><Input inputMode="decimal" value={employeeForm.hourlyCost} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, hourlyCost: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Hätäyhteyshenkilö</Label><Input value={employeeForm.emergencyContactName} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactName: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Hätäyhteyshenkilön puhelin</Label><Input value={employeeForm.emergencyContactPhone} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactPhone: event.target.value }))} /></div>
+      <Dialog open={employeeDialog} onOpenChange={(open) => { setEmployeeDialog(open); if (!open) setReviewingInvite(false); }}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader><DialogTitle>{editingEmployee ? 'Henkilön asetukset' : reviewingInvite ? 'Tarkista kutsu' : 'Lisää henkilö'}</DialogTitle></DialogHeader>
+          {errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((item) => <p className="break-words" key={item}>{item}</p>)}</div>}
 
-            {editingEmployee && canManageSupervisors && (
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:col-span-2">
-                <div>
-                  <div className="flex items-center gap-2 font-semibold"><UserRoundCheck size={17} className="text-primary" />Esihenkilö</div>
-                  <p className="mt-1 text-sm text-text-secondary">Valitse henkilölle vastuullinen työnjohtaja.</p>
-                </div>
-                <Select value={selectedSupervisorUserId} onValueChange={setSelectedSupervisorUserId} disabled={membersLoading || supervisorsLoading}>
-                  <SelectTrigger><SelectValue placeholder="Valitse esihenkilö" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Ei nimettyä esihenkilöä</SelectItem>
-                    {supervisors.map((supervisor) => <SelectItem key={supervisor.userId} value={supervisor.userId}>{supervisor.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+          {!editingEmployee && reviewingInvite ? (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                <div className="flex items-center gap-2 font-semibold text-blue-950"><ShieldCheck size={18} /> Kutsun yhteenveto</div>
+                <p className="mt-2 text-sm leading-6 text-blue-900">Kutsuttava ei täytä henkilöstö-, rooli- tai tiimitietoja itse. Alla olevat tiedot tallennetaan ennen kutsun lähettämistä.</p>
               </div>
-            )}
+              <dl className="grid gap-4 rounded-xl border border-slate-200 p-5 sm:grid-cols-2">
+                <div><dt className="text-xs font-medium text-text-secondary">Henkilö</dt><dd className="mt-1 break-words font-semibold">{employeeForm.name}</dd></div>
+                <div><dt className="text-xs font-medium text-text-secondary">Sähköposti</dt><dd className="mt-1 break-all">{employeeForm.email || 'Ei sovellustunnusta'}</dd></div>
+                <div><dt className="text-xs font-medium text-text-secondary">Tehtävänimike</dt><dd className="mt-1 break-words">{employeeForm.role}</dd></div>
+                <div><dt className="text-xs font-medium text-text-secondary">Osasto</dt><dd className="mt-1 break-words">{employeeForm.department}</dd></div>
+                <div><dt className="text-xs font-medium text-text-secondary">Sovelluksen käyttöoikeus</dt><dd className="mt-1">{employeeForm.accountMode === 'invite' ? ROLE_LABELS[employeeForm.accessRole] : 'Ei sovellustunnusta'}</dd></div>
+                <div><dt className="text-xs font-medium text-text-secondary">Tiimi / esihenkilö</dt><dd className="mt-1 break-words">{selectedSupervisorUserId === NONE ? 'Ei nimettyä esihenkilöä' : supervisorNameByUserId.get(selectedSupervisorUserId) ?? 'Valittu työnjohtaja'}</dd></div>
+              </dl>
+              {employeeForm.accountMode === 'invite' && (
+                <div className="rounded-xl border border-orange-200 bg-orange-50 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Sähköpostikutsun otsikko</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">Sinut on kutsuttu käyttämään VaKanttia</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">Kutsussa kerrotaan organisaatio, kutsun lähettäjä ja turvallinen linkki tilin aktivointiin sekä salasanan määrittämiseen.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {!editingEmployee && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:col-span-2">
+                  <p className="font-semibold text-blue-950">Kutsuja määrittää tiedot valmiiksi</p>
+                  <p className="mt-1 text-sm leading-6 text-blue-900">Täytä henkilöstötiedot, käyttöoikeusrooli ja tiimi. Kutsu lähetetään vasta yhteenvedon hyväksymisen jälkeen.</p>
+                </div>
+              )}
+              <div className="space-y-2 sm:col-span-2"><Label>Nimi *</Label><Input value={employeeForm.name} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, name: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>Tehtävänimike *</Label><Input value={employeeForm.role} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, role: event.target.value }))} placeholder="Esimerkiksi kirvesmies" /></div>
+              <div className="space-y-2"><Label>Osasto *</Label><Input value={employeeForm.department} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, department: event.target.value }))} placeholder="Esimerkiksi korjausrakentaminen" /></div>
+              <div className="space-y-2"><Label>Puhelin</Label><Input value={employeeForm.phone} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, phone: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>Sähköposti{!editingEmployee && employeeForm.accountMode === 'invite' ? ' *' : ''}</Label><Input type="email" disabled={Boolean(editingEmployee?.userId)} value={employeeForm.email} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, email: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>Aloituspäivä</Label><Input type="date" value={employeeForm.startDate} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>Tila</Label><Select value={employeeForm.status} onValueChange={(status: EmployeeStatus) => setEmployeeForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{EMPLOYEE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Työsuhdetyyppi</Label><Input value={employeeForm.employmentType} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, employmentType: event.target.value }))} placeholder="Esimerkiksi vakituinen" /></div>
+              <div className="space-y-2"><Label>Tuntikustannus €</Label><Input inputMode="decimal" value={employeeForm.hourlyCost} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, hourlyCost: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>Hätäyhteyshenkilö</Label><Input value={employeeForm.emergencyContactName} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactName: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>Hätäyhteyshenkilön puhelin</Label><Input value={employeeForm.emergencyContactPhone} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactPhone: event.target.value }))} /></div>
 
-            {!editingEmployee && canManageSupervisors && <p className="rounded-lg bg-slate-50 p-3 text-sm text-text-secondary sm:col-span-2">Esihenkilö voidaan valita henkilön asetuksista sen jälkeen, kun henkilö on luotu.</p>}
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setEmployeeDialog(false)}>Peruuta</Button><Button onClick={() => void saveEmployee()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></DialogFooter>
+              {!editingEmployee && (
+                <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:col-span-2">
+                  <div>
+                    <div className="flex items-center gap-2 font-semibold"><ShieldCheck size={17} className="text-primary" />Sovelluksen käyttö</div>
+                    <p className="mt-1 text-sm leading-6 text-text-secondary">Valitse lähetetäänkö henkilölle VaKantti-kutsu vai luodaanko vain henkilöstökortti.</p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2"><Label>Käyttäjätili</Label><Select value={employeeForm.accountMode} onValueChange={(accountMode: AccountMode) => setEmployeeForm((previous) => ({ ...previous, accountMode }))} disabled={!canInviteInternalUsers}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="invite">Luo tili ja lähetä kutsu</SelectItem><SelectItem value="record_only">Vain henkilöstökortti</SelectItem></SelectContent></Select>{!canInviteInternalUsers && <p className="text-xs text-text-secondary">Työnjohtaja voi luoda henkilöstökortin. Ylläpitäjä lähettää sovelluskutsun.</p>}</div>
+                    {employeeForm.accountMode === 'invite' && <div className="space-y-2"><Label>Käyttöoikeusrooli *</Label><Select value={employeeForm.accessRole} onValueChange={(accessRole: InternalRole) => setEmployeeForm((previous) => ({ ...previous, accessRole }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{INTERNAL_ROLES.map((role) => <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>)}</SelectContent></Select></div>}
+                  </div>
+                </div>
+              )}
+
+              {canManageSupervisors && (
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:col-span-2">
+                  <div>
+                    <div className="flex items-center gap-2 font-semibold"><UserRoundCheck size={17} className="text-primary" />Tiimi ja esihenkilö</div>
+                    <p className="mt-1 text-sm leading-6 text-text-secondary">Valitse henkilölle vastuullinen työnjohtaja ennen tallennusta tai kutsun lähettämistä.</p>
+                  </div>
+                  <Select value={selectedSupervisorUserId} onValueChange={setSelectedSupervisorUserId} disabled={membersLoading || supervisorsLoading}>
+                    <SelectTrigger><SelectValue placeholder="Valitse esihenkilö" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Ei nimettyä esihenkilöä</SelectItem>
+                      {supervisors.map((supervisor) => <SelectItem key={supervisor.userId} value={supervisor.userId}>{supervisor.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {!supervisors.length && <p className="text-xs text-amber-700">Organisaatiossa ei ole vielä aktiivista Työnjohtaja-roolista käyttäjää, joten tiimiä ei voida valita.</p>}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => reviewingInvite ? setReviewingInvite(false) : setEmployeeDialog(false)} disabled={saving}>{reviewingInvite ? 'Muokkaa tietoja' : 'Peruuta'}</Button>
+            {editingEmployee ? (
+              <Button onClick={() => void saveEmployee()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna muutokset'}</Button>
+            ) : reviewingInvite ? (
+              <Button onClick={() => void saveEmployee()} disabled={saving} className="gap-2">{employeeForm.accountMode === 'invite' ? <Send size={16} /> : <UserCheck size={16} />}{saving ? 'Tallennetaan…' : employeeForm.accountMode === 'invite' ? 'Luo henkilö ja lähetä kutsu' : 'Luo henkilöstökortti'}</Button>
+            ) : (
+              <Button onClick={openInviteReview} disabled={saving}>Tarkista tiedot</Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -699,7 +869,7 @@ export default function HenkilostoIntegrated() {
           <DialogHeader><DialogTitle>Lisää poissaolo</DialogTitle></DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2"><Label>Henkilö *</Label><Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}><SelectTrigger><SelectValue placeholder="Valitse henkilö" /></SelectTrigger><SelectContent>{employees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label>Poissaolotyyppi</Label><Select value={absenceType} onValueChange={setAbsenceType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ABSENCE_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2 sm:col-span-2"><Label>Poissaolotyyppi</Label><Select value={absenceType} onValueChange={setAbsenceType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ABSENCE_TYPES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Alkaa</Label><Input type="date" value={absenceStart} onChange={(event) => setAbsenceStart(event.target.value)} /></div>
             <div className="space-y-2"><Label>Päättyy</Label><Input type="date" value={absenceEnd} onChange={(event) => setAbsenceEnd(event.target.value)} /></div>
             <div className="space-y-2 sm:col-span-2"><Label>Huomiot</Label><Textarea value={absenceNotes} onChange={(event) => setAbsenceNotes(event.target.value)} /></div>
