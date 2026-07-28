@@ -14,7 +14,6 @@ import {
   CircleDollarSign,
   ClipboardCheck,
   Clock3,
-  Columns3,
   Download,
   Eye,
   FileText,
@@ -48,11 +47,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -176,10 +172,9 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
 };
 
 /**
- * Default columns are intentionally narrow enough to fit a typical laptop
- * viewport without horizontal scrolling. Secondary fields (hours, billing,
- * attention, work number, customer) stay available via the column picker and
- * are also summarized inside the primary cells when hidden.
+ * Saved-view column keys remain for API compatibility. The list UI always
+ * renders every field in full (no truncation, no horizontal scroll, no
+ * hidden text). Prefer wrapping over clipping.
  */
 const DEFAULT_COLUMNS: ColumnKey[] = [
   'title',
@@ -188,6 +183,9 @@ const DEFAULT_COLUMNS: ColumnKey[] = [
   'status',
   'priority',
   'schedule',
+  'hours',
+  'billing',
+  'attention',
   'actions',
 ];
 
@@ -742,8 +740,6 @@ export default function WorkOrderControlPanel({
     setOperationError(null);
   };
 
-  const showColumn = (column: ColumnKey) => visibleColumns.includes(column);
-
   return (
     <div className="space-y-5">
       {(error || controlQuery.error || operationError) && (
@@ -812,24 +808,6 @@ export default function WorkOrderControlPanel({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={exportCsv} className="gap-2"><Download size={15} /> Vie CSV</Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-2"><Columns3 size={15} /> Sarakkeet</Button></DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Näytettävät sarakkeet</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {(Object.keys(COLUMN_LABELS) as ColumnKey[]).map((column) => (
-                    <DropdownMenuCheckboxItem
-                      key={column}
-                      checked={visibleColumns.includes(column)}
-                      onCheckedChange={() => setVisibleColumns((current) => current.includes(column) ? current.filter((item) => item !== column) : [...current, column])}
-                    >
-                      {COLUMN_LABELS[column]}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setVisibleColumns(DEFAULT_COLUMNS)}><RotateCcw size={14} className="mr-2" /> Palauta oletus</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
               {canCreate && <Button size="sm" onClick={onCreate} className="gap-2 bg-orange-600 hover:bg-orange-700"><Plus size={15} /> Uusi työmääräys</Button>}
             </div>
           </div>
@@ -906,7 +884,7 @@ export default function WorkOrderControlPanel({
         </div>
       )}
 
-      <Card className="overflow-hidden border-slate-200 shadow-sm">
+      <Card className="overflow-visible border-slate-200 shadow-sm">
         <div className="flex flex-col gap-3 border-b bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-sm text-slate-600"><ListFilter size={16} /><strong className="text-slate-900">{sortedOrders.length}</strong> työmääräystä</div>
           <div className="flex flex-wrap items-center gap-2">
@@ -923,303 +901,208 @@ export default function WorkOrderControlPanel({
 
         {!loading && !controlQuery.isLoading && pageOrders.length > 0 && (
           <>
-            <div className="hidden lg:block">
-              <table className="w-full table-fixed border-collapse text-left text-sm">
-                <colgroup>
-                  <col className="w-10" />
-                  {showColumn('workNumber') && <col className="w-[7.5rem]" />}
-                  {showColumn('schedule') && <col className="w-[7rem]" />}
-                  {showColumn('customer') && <col className="w-[9rem]" />}
-                  {showColumn('project') && <col className="w-[14%]" />}
-                  {showColumn('title') && <col />}
-                  {showColumn('assignees') && <col className="w-[10%]" />}
-                  {showColumn('status') && <col className="w-[7.5rem]" />}
-                  {showColumn('priority') && <col className="w-[6.5rem]" />}
-                  {showColumn('hours') && <col className="w-[8rem]" />}
-                  {showColumn('billing') && <col className="w-[8rem]" />}
-                  {showColumn('quantity') && <col className="w-[5rem]" />}
-                  {showColumn('attention') && <col className="w-[10%]" />}
-                  {showColumn('actions') && <col className="w-12" />}
-                </colgroup>
-                <thead className="sticky top-0 z-10 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="border-b px-2 py-3">
-                      <Checkbox
-                        checked={pageAllSelected}
-                        onCheckedChange={() => setSelectedIds((current) => (
-                          pageAllSelected
-                            ? current.filter((id) => !pageOrders.some((order) => order.id === id))
-                            : [...new Set([...current, ...pageOrders.map((order) => order.id)])]
-                        ))}
-                      />
-                    </th>
-                    {showColumn('workNumber') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('workNumber')}>Tunnus</button></th>}
-                    {showColumn('schedule') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('dueDate')}>Ajankohta</button></th>}
-                    {showColumn('customer') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('customerName')}>Asiakas</button></th>}
-                    {showColumn('project') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('project')}>Kohde</button></th>}
-                    {showColumn('title') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('title')}>Työ</button></th>}
-                    {showColumn('assignees') && <th className="border-b px-2 py-3">Tekijät</th>}
-                    {showColumn('status') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('displayStatus')}>Tila</button></th>}
-                    {showColumn('priority') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('priority')}>Prio</button></th>}
-                    {showColumn('hours') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('totalMinutes')}>Tunnit</button></th>}
-                    {showColumn('billing') && <th className="border-b px-2 py-3"><button type="button" onClick={() => sortBy('billingStatus')}>Laskutus</button></th>}
-                    {showColumn('quantity') && <th className="border-b px-2 py-3">Määrä</th>}
-                    {showColumn('attention') && <th className="border-b px-2 py-3">Huomiot</th>}
-                    {showColumn('actions') && <th className="border-b px-2 py-3"><span className="sr-only">Toiminnot</span></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageOrders.map((order, index) => {
-                    const group = groupLabel(order);
-                    const previousGroup = index > 0 ? groupLabel(pageOrders[index - 1]) : null;
-                    const pendingReview = Boolean(order.completionRequestedAt && !order.completionApproved);
-                    const columnCount = 1 + visibleColumns.length;
-                    const showInlineWorkNumber = !showColumn('workNumber');
-                    const showInlineCustomer = !showColumn('customer');
-                    const showInlineHours = !showColumn('hours');
-                    const showInlineBilling = !showColumn('billing');
-                    const showInlineAttention = !showColumn('attention');
-                    return [
-                      filters.groupBy !== 'none' && group !== previousGroup ? (
-                        <tr key={`group-${group}-${order.id}`} className="bg-slate-50">
-                          <td colSpan={columnCount} className="border-b px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">{group || 'Ei määritetty'}</td>
-                        </tr>
-                      ) : null,
-                      <tr
-                        key={order.id}
-                        className={cn(
-                          'group border-b border-slate-100 align-top hover:bg-orange-50/30',
-                          selectedIds.includes(order.id) && 'bg-blue-50/50',
-                          order.activeSessionCount > 0 && 'border-l-4 border-l-orange-500',
-                        )}
-                      >
-                        <td className="px-2 py-3">
-                          <Checkbox
-                            checked={selectedIds.includes(order.id)}
-                            onCheckedChange={() => setSelectedIds((current) => toggleValue(current, order.id))}
-                          />
-                        </td>
-                        {showColumn('workNumber') && (
-                          <td className="px-2 py-3">
-                            <button type="button" onClick={() => openDetail(order)} className="block max-w-full truncate font-mono text-xs font-bold text-blue-700 hover:underline">
-                              {order.workNumber}
-                            </button>
-                            <p className="mt-1 truncate text-[10px] text-slate-400">{formatDateTime(order.createdAt)}</p>
-                          </td>
-                        )}
-                        {showColumn('schedule') && (
-                          <td className="px-2 py-3">
-                            <p className="truncate font-medium text-slate-800">{formatDate(order.dueDate, 'Ei määräpäivää')}</p>
-                            <p className="mt-1 truncate text-xs text-slate-500">
-                              {order.plannedStartDate ? `${formatDate(order.plannedStartDate)}–${formatDate(order.plannedEndDate)}` : 'Ei jaksoa'}
-                            </p>
-                          </td>
-                        )}
-                        {showColumn('customer') && (
-                          <td className="px-2 py-3">
-                            <p className="truncate font-medium text-slate-800" title={order.customerName}>{order.customerName}</p>
-                          </td>
-                        )}
-                        {showColumn('project') && (
-                          <td className="px-2 py-3">
-                            <p className="truncate font-medium text-slate-800" title={order.project}>{order.project}</p>
-                            {showInlineCustomer && (
-                              <p className="mt-0.5 truncate text-xs text-slate-500" title={order.customerName}>{order.customerName}</p>
-                            )}
-                            <p className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-slate-500">
-                              <MapPin size={11} className="shrink-0" />
-                              <span className="truncate">{order.location || order.projectLocation || 'Ei sijaintia'}</span>
-                            </p>
-                          </td>
-                        )}
-                        {showColumn('title') && (
-                          <td className="px-2 py-3">
-                            <button
-                              type="button"
-                              onClick={() => openDetail(order)}
-                              className="line-clamp-2 text-left font-semibold text-slate-950 hover:text-blue-700"
-                              title={order.title}
-                            >
-                              {order.title}
-                            </button>
-                            <p className="mt-1 truncate text-xs text-slate-500">
-                              {showInlineWorkNumber ? <span className="font-mono">{order.workNumber}</span> : null}
-                              {showInlineWorkNumber && order.type ? ' · ' : null}
-                              {order.type || null}
-                            </p>
-                            {(showInlineAttention || showInlineHours || showInlineBilling || pendingReview || order.activeSessionCount > 0) && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {order.activeSessionCount > 0 && (
-                                  <Badge className="bg-orange-600 text-[10px]"><Timer size={10} className="mr-1" /> Työssä</Badge>
-                                )}
-                                {pendingReview && (
-                                  <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">Hyväksyttävänä</Badge>
-                                )}
-                                {showInlineHours && (
-                                  <Badge variant="outline" className="text-[10px] text-slate-600">
-                                    {formatMinutes(order.totalMinutes)} / {formatMinutes(order.estimatedMinutes)}
-                                  </Badge>
-                                )}
-                                {showInlineBilling && (
-                                  <Badge variant="outline" className={cn('text-[10px]', billingClass(order.billingStatus))}>
-                                    {BILLING_LABELS[order.billingStatus]}
-                                  </Badge>
-                                )}
-                                {showInlineAttention && order.attentionFlags.slice(0, 2).map((flag) => (
-                                  <Badge
-                                    key={flag}
-                                    variant="outline"
-                                    className={cn(
-                                      'text-[10px]',
-                                      flag === 'overdue' || flag === 'estimate_exceeded'
-                                        ? 'border-red-200 bg-red-50 text-red-700'
-                                        : flag === 'pending_review'
-                                          ? 'border-violet-200 bg-violet-50 text-violet-700'
-                                          : 'border-amber-200 bg-amber-50 text-amber-800',
-                                    )}
-                                  >
-                                    {ATTENTION_LABELS[flag]}
-                                  </Badge>
-                                ))}
-                                {showInlineAttention && order.attentionFlags.length > 2 && (
-                                  <Badge variant="outline" className="text-[10px]">+{order.attentionFlags.length - 2}</Badge>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        )}
-                        {showColumn('assignees') && (
-                          <td className="px-2 py-3">
-                            {order.assignmentScope === 'project_team' ? (
-                              <Badge variant="outline" className="max-w-full truncate"><UsersRound size={12} className="mr-1 shrink-0" /> Tiimi</Badge>
-                            ) : order.assigneeUserIds.length > 0 ? (
-                              <div className="space-y-1">
-                                {order.assigneeUserIds.slice(0, 2).map((userId, personIndex) => (
-                                  <button
-                                    key={userId}
-                                    type="button"
-                                    onClick={() => setUserTargetId(userId)}
-                                    className="block max-w-full truncate text-left text-xs font-medium text-blue-700 hover:underline"
-                                    title={order.assigneeNames[personIndex] ?? people.find((person) => person.userId === userId)?.name ?? 'Nimetön käyttäjä'}
-                                  >
-                                    {order.assigneeNames[personIndex] ?? people.find((person) => person.userId === userId)?.name ?? 'Nimetön käyttäjä'}
-                                  </button>
-                                ))}
-                                {order.assigneeUserIds.length > 2 && (
-                                  <p className="text-[10px] text-slate-500">+{order.assigneeUserIds.length - 2} muuta</p>
-                                )}
-                              </div>
-                            ) : (
-                              <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">Puuttuu</Badge>
-                            )}
-                          </td>
-                        )}
-                        {showColumn('status') && (
-                          <td className="px-2 py-3">
-                            {pendingReview ? (
-                              <Badge variant="outline" className={cn('max-w-full truncate', statusClass(REVIEW_STATUS))}>{REVIEW_STATUS}</Badge>
-                            ) : (
-                              <Select value={order.status} disabled={saving} onValueChange={(value: WorkOrderStatus) => void runPatch([order.id], { status: value }, 'Tila päivitettiin')}>
-                                <SelectTrigger className={cn('h-8 w-full border text-xs font-semibold', statusClass(order.status))}><SelectValue /></SelectTrigger>
-                                <SelectContent>{(['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'] as WorkOrderStatus[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
-                              </Select>
-                            )}
-                          </td>
-                        )}
-                        {showColumn('priority') && (
-                          <td className="px-2 py-3">
-                            <Select value={order.priority} disabled={saving} onValueChange={(value: WorkOrderPriority) => void runPatch([order.id], { priority: value }, 'Prioriteetti päivitettiin')}>
-                              <SelectTrigger className={cn('h-8 w-full border text-xs font-semibold', priorityClass(order.priority))}><SelectValue /></SelectTrigger>
-                              <SelectContent>{(['Korkea', 'Normaali', 'Matala'] as WorkOrderPriority[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </td>
-                        )}
-                        {showColumn('hours') && (
-                          <td className="px-2 py-3">
-                            <p className="truncate font-mono text-xs font-semibold text-slate-800">{formatMinutes(order.totalMinutes)} / {formatMinutes(order.estimatedMinutes)}</p>
-                            {order.estimatedMinutes !== undefined && (
-                              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                  className={cn('h-full rounded-full', order.totalMinutes > order.estimatedMinutes ? 'bg-red-500' : 'bg-blue-500')}
-                                  style={{ width: `${Math.min(100, order.estimatedMinutes > 0 ? order.totalMinutes / order.estimatedMinutes * 100 : 0)}%` }}
-                                />
-                              </div>
-                            )}
-                          </td>
-                        )}
-                        {showColumn('billing') && (
-                          <td className="px-2 py-3">
-                            <Select value={order.billingStatus} disabled={saving} onValueChange={(value: WorkOrderBillingStatus) => void runPatch([order.id], { billingStatus: value }, 'Laskutuksen tila päivitettiin')}>
-                              <SelectTrigger className={cn('h-8 w-full border text-xs font-semibold', billingClass(order.billingStatus))}><SelectValue /></SelectTrigger>
-                              <SelectContent>{(Object.keys(BILLING_LABELS) as WorkOrderBillingStatus[]).map((value) => <SelectItem key={value} value={value}>{BILLING_LABELS[value]}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </td>
-                        )}
-                        {showColumn('quantity') && (
-                          <td className="px-2 py-3 text-xs font-medium text-slate-700">
-                            <span className="block truncate">{order.quantity === undefined ? '—' : `${order.quantity.toLocaleString('fi-FI')} ${order.quantityUnit}`}</span>
-                          </td>
-                        )}
-                        {showColumn('attention') && (
-                          <td className="px-2 py-3">
-                            <div className="flex flex-wrap gap-1">
-                              {order.activeSessionCount > 0 && <Badge className="bg-orange-600 text-[10px]"><Timer size={10} className="mr-1" /> Työssä</Badge>}
-                              {order.attentionFlags.map((flag) => (
-                                <Badge
-                                  key={flag}
-                                  variant="outline"
-                                  className={cn(
-                                    'text-[10px]',
-                                    flag === 'overdue' || flag === 'estimate_exceeded'
-                                      ? 'border-red-200 bg-red-50 text-red-700'
-                                      : flag === 'pending_review'
-                                        ? 'border-violet-200 bg-violet-50 text-violet-700'
-                                        : 'border-amber-200 bg-amber-50 text-amber-800',
-                                  )}
-                                >
-                                  {ATTENTION_LABELS[flag]}
-                                </Badge>
-                              ))}
-                            </div>
-                          </td>
-                        )}
-                        {showColumn('actions') && (
-                          <td className="px-2 py-3">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Toiminnot">
-                                  <MoreHorizontal size={16} />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openDetail(order)}><Eye size={14} className="mr-2" /> Avaa</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onEdit(order)}><Pencil size={14} className="mr-2" /> Muokkaa</DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => onDelete(order)}>
-                                  <Trash2 size={14} className="mr-2" /> Poista
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
-                        )}
-                      </tr>,
-                    ];
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <div className="divide-y divide-slate-100">
+              <div className="hidden items-center gap-3 bg-slate-100 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 lg:grid lg:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)_7.5rem_6.5rem_7rem_auto]">
+                <Checkbox
+                  checked={pageAllSelected}
+                  onCheckedChange={() => setSelectedIds((current) => (
+                    pageAllSelected
+                      ? current.filter((id) => !pageOrders.some((order) => order.id === id))
+                      : [...new Set([...current, ...pageOrders.map((order) => order.id)])]
+                  ))}
+                  aria-label="Valitse sivun työmääräykset"
+                />
+                <button type="button" className="text-left" onClick={() => sortBy('title')}>Työ</button>
+                <button type="button" className="text-left" onClick={() => sortBy('project')}>Kohde</button>
+                <span>Tekijät</span>
+                <button type="button" className="text-left" onClick={() => sortBy('displayStatus')}>Tila</button>
+                <button type="button" className="text-left" onClick={() => sortBy('priority')}>Prioriteetti</button>
+                <button type="button" className="text-left" onClick={() => sortBy('dueDate')}>Ajankohta</button>
+                <span className="sr-only">Toiminnot</span>
+              </div>
 
-            <div className="grid gap-3 p-3 lg:hidden">
-              {pageOrders.map((order) => (
-                <Card key={order.id} className={cn('overflow-hidden border-slate-200', selectedIds.includes(order.id) && 'ring-2 ring-blue-400', order.activeSessionCount > 0 && 'border-l-4 border-l-orange-500')}>
-                  <CardContent className="space-y-3 p-4">
-                    <div className="flex items-start gap-3"><Checkbox checked={selectedIds.includes(order.id)} onCheckedChange={() => setSelectedIds((current) => toggleValue(current, order.id))} className="mt-1" /><div className="min-w-0 flex-1"><div className="flex flex-wrap gap-1"><Badge variant="outline" className={statusClass(displayStatus(order))}>{displayStatus(order)}</Badge><Badge variant="outline" className={priorityClass(order.priority)}>{order.priority}</Badge>{order.activeSessionCount > 0 && <Badge className="bg-orange-600">Työssä nyt</Badge>}</div><button type="button" onClick={() => openDetail(order)} className="mt-2 text-left font-semibold text-slate-950">{order.title}</button><p className="mt-1 text-xs text-slate-500">{order.workNumber} · {order.project}</p></div></div>
-                    <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3 text-xs"><div><p className="text-slate-400">Asiakas</p><p className="mt-1 font-medium text-slate-700">{order.customerName}</p></div><div><p className="text-slate-400">Määräpäivä</p><p className="mt-1 font-medium text-slate-700">{formatDate(order.dueDate, 'Ei määräpäivää')}</p></div><div className="col-span-2"><p className="text-slate-400">Tekijät</p><p className="mt-1 font-medium text-slate-700">{assignmentLabel(order)}</p></div><div><p className="text-slate-400">Tunnit / arvio</p><p className="mt-1 font-medium text-slate-700">{formatMinutes(order.totalMinutes)} / {formatMinutes(order.estimatedMinutes)}</p></div><div><p className="text-slate-400">Laskutus</p><p className="mt-1 font-medium text-slate-700">{BILLING_LABELS[order.billingStatus]}</p></div></div>
-                    {order.attentionFlags.length > 0 && <div className="flex flex-wrap gap-1">{order.attentionFlags.map((flag) => <Badge key={flag} variant="outline" className="text-[10px]">{ATTENTION_LABELS[flag]}</Badge>)}</div>}
-                    <div className="flex gap-2 border-t pt-3"><Button variant="outline" size="sm" className="flex-1" onClick={() => openDetail(order)}><Eye size={14} className="mr-1" /> Avaa</Button><Button variant="outline" size="sm" className="flex-1" onClick={() => onEdit(order)}><Pencil size={14} className="mr-1" /> Muokkaa</Button></div>
-                  </CardContent>
-                </Card>
-              ))}
+              {pageOrders.map((order, index) => {
+                const group = groupLabel(order);
+                const previousGroup = index > 0 ? groupLabel(pageOrders[index - 1]) : null;
+                const pendingReview = Boolean(order.completionRequestedAt && !order.completionApproved);
+                const locationLabel = order.location || order.projectLocation || 'Ei sijaintia';
+                return (
+                  <div key={order.id}>
+                    {filters.groupBy !== 'none' && group !== previousGroup && (
+                      <div className="bg-slate-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+                        {group || 'Ei määritetty'}
+                      </div>
+                    )}
+                    <div
+                      className={cn(
+                        'grid gap-3 px-4 py-4 hover:bg-orange-50/30 lg:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)_7.5rem_6.5rem_7rem_auto] lg:items-start',
+                        selectedIds.includes(order.id) && 'bg-blue-50/50',
+                        order.activeSessionCount > 0 && 'border-l-4 border-l-orange-500',
+                      )}
+                    >
+                      <div className="flex items-start gap-3 lg:contents">
+                        <Checkbox
+                          checked={selectedIds.includes(order.id)}
+                          onCheckedChange={() => setSelectedIds((current) => toggleValue(current, order.id))}
+                          className="mt-1"
+                          aria-label={`Valitse ${order.title}`}
+                        />
+
+                        <div className="min-w-0 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => openDetail(order)}
+                            className="break-words text-left text-base font-semibold leading-snug text-slate-950 hover:text-blue-700"
+                          >
+                            {order.title}
+                          </button>
+                          <p className="break-words text-xs leading-5 text-slate-500">
+                            <span className="font-mono font-semibold text-blue-700">{order.workNumber}</span>
+                            {order.type ? <> · {order.type}</> : null}
+                            <> · {formatDateTime(order.createdAt)}</>
+                          </p>
+
+                          <div className="flex flex-wrap gap-1.5 lg:hidden">
+                            <Badge variant="outline" className={statusClass(displayStatus(order))}>{displayStatus(order)}</Badge>
+                            <Badge variant="outline" className={priorityClass(order.priority)}>{order.priority}</Badge>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5">
+                            {order.activeSessionCount > 0 && (
+                              <Badge className="bg-orange-600"><Timer size={11} className="mr-1" /> Työssä nyt</Badge>
+                            )}
+                            {pendingReview && (
+                              <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">Hyväksyttävänä</Badge>
+                            )}
+                            <Badge variant="outline" className="text-slate-700">
+                              Tunnit {formatMinutes(order.totalMinutes)} / {formatMinutes(order.estimatedMinutes)}
+                            </Badge>
+                            <Badge variant="outline" className={billingClass(order.billingStatus)}>
+                              {BILLING_LABELS[order.billingStatus]}
+                            </Badge>
+                            {order.quantity !== undefined && (
+                              <Badge variant="outline">
+                                Määrä {order.quantity.toLocaleString('fi-FI')} {order.quantityUnit}
+                              </Badge>
+                            )}
+                            {order.attentionFlags.map((flag) => (
+                              <Badge
+                                key={flag}
+                                variant="outline"
+                                className={cn(
+                                  flag === 'overdue' || flag === 'estimate_exceeded'
+                                    ? 'border-red-200 bg-red-50 text-red-700'
+                                    : flag === 'pending_review'
+                                      ? 'border-violet-200 bg-violet-50 text-violet-700'
+                                      : 'border-amber-200 bg-amber-50 text-amber-800',
+                                )}
+                              >
+                                {ATTENTION_LABELS[flag]}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="min-w-0 space-y-1 text-sm">
+                        <p className="break-words font-medium text-slate-900">{order.project}</p>
+                        <p className="break-words text-slate-600">{order.customerName}</p>
+                        <p className="flex items-start gap-1 break-words text-xs text-slate-500">
+                          <MapPin size={12} className="mt-0.5 shrink-0" />
+                          <span>{locationLabel}</span>
+                        </p>
+                        {order.projectNumber && (
+                          <p className="break-all font-mono text-[11px] text-slate-400">{order.projectNumber}</p>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 space-y-1 text-sm">
+                        {order.assignmentScope === 'project_team' ? (
+                          <Badge variant="outline" className="whitespace-normal">
+                            <UsersRound size={12} className="mr-1 shrink-0" /> Koko projektitiimi
+                          </Badge>
+                        ) : order.assigneeUserIds.length > 0 ? (
+                          <div className="flex flex-col items-start gap-1">
+                            {order.assigneeUserIds.map((userId, personIndex) => {
+                              const name = order.assigneeNames[personIndex]
+                                ?? people.find((person) => person.userId === userId)?.name
+                                ?? 'Nimetön käyttäjä';
+                              return (
+                                <button
+                                  key={userId}
+                                  type="button"
+                                  onClick={() => setUserTargetId(userId)}
+                                  className="break-words text-left text-sm font-medium text-blue-700 hover:underline"
+                                >
+                                  {name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700">Vastuuhenkilö puuttuu</Badge>
+                        )}
+                      </div>
+
+                      <div className="hidden lg:block">
+                        {pendingReview ? (
+                          <Badge variant="outline" className={cn('whitespace-normal', statusClass(REVIEW_STATUS))}>{REVIEW_STATUS}</Badge>
+                        ) : (
+                          <Select value={order.status} disabled={saving} onValueChange={(value: WorkOrderStatus) => void runPatch([order.id], { status: value }, 'Tila päivitettiin')}>
+                            <SelectTrigger className={cn('h-9 w-full border text-xs font-semibold', statusClass(order.status))}><SelectValue /></SelectTrigger>
+                            <SelectContent>{(['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'] as WorkOrderStatus[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+                          </Select>
+                        )}
+                      </div>
+
+                      <div className="hidden lg:block">
+                        <Select value={order.priority} disabled={saving} onValueChange={(value: WorkOrderPriority) => void runPatch([order.id], { priority: value }, 'Prioriteetti päivitettiin')}>
+                          <SelectTrigger className={cn('h-9 w-full border text-xs font-semibold', priorityClass(order.priority))}><SelectValue /></SelectTrigger>
+                          <SelectContent>{(['Korkea', 'Normaali', 'Matala'] as WorkOrderPriority[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="min-w-0 space-y-1 text-sm">
+                        <p className="break-words font-medium text-slate-800">{formatDate(order.dueDate, 'Ei määräpäivää')}</p>
+                        <p className="break-words text-xs text-slate-500">
+                          {order.plannedStartDate
+                            ? `${formatDate(order.plannedStartDate)}–${formatDate(order.plannedEndDate)}`
+                            : 'Ei työjaksoa'}
+                        </p>
+                        {order.estimatedMinutes !== undefined && (
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              className={cn('h-full rounded-full', order.totalMinutes > order.estimatedMinutes ? 'bg-red-500' : 'bg-blue-500')}
+                              style={{ width: `${Math.min(100, order.estimatedMinutes > 0 ? order.totalMinutes / order.estimatedMinutes * 100 : 0)}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 lg:justify-end">
+                        <Button variant="outline" size="sm" onClick={() => openDetail(order)}>
+                          <Eye size={14} className="mr-1" /> Avaa
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => onEdit(order)}>
+                          <Pencil size={14} className="mr-1" /> Muokkaa
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-9 w-9 p-0" aria-label="Lisää toimintoja">
+                              <MoreHorizontal size={16} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => onDelete(order)}>
+                              <Trash2 size={14} className="mr-2" /> Poista
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
@@ -1231,7 +1114,7 @@ export default function WorkOrderControlPanel({
       </Card>
 
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Tallenna nykyinen näkymä</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="view-name">Näkymän nimi *</Label><Input id="view-name" value={viewName} onChange={(event) => setViewName(event.target.value)} maxLength={80} placeholder="Esimerkiksi viikon kiireelliset työt" /></div><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><Checkbox checked={viewDefault} onCheckedChange={(checked) => setViewDefault(checked === true)} className="mt-0.5" /><span><span className="block text-sm font-medium">Avaa tämä oletuksena</span><span className="text-xs text-slate-500">Rajaukset, lajittelu, sivukoko ja sarakkeet palautetaan automaattisesti.</span></span></label></div><DialogFooter><Button variant="outline" onClick={() => setSaveViewOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveCurrentView()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna näkymä'}</Button></DialogFooter></DialogContent>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Tallenna nykyinen näkymä</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="view-name">Näkymän nimi *</Label><Input id="view-name" value={viewName} onChange={(event) => setViewName(event.target.value)} maxLength={80} placeholder="Esimerkiksi viikon kiireelliset työt" /></div><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><Checkbox checked={viewDefault} onCheckedChange={(checked) => setViewDefault(checked === true)} className="mt-0.5" /><span><span className="block text-sm font-medium">Avaa tämä oletuksena</span><span className="text-xs text-slate-500">Rajaukset, lajittelu ja sivukoko palautetaan automaattisesti.</span></span></label></div><DialogFooter><Button variant="outline" onClick={() => setSaveViewOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveCurrentView()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna näkymä'}</Button></DialogFooter></DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(bulkAction)} onOpenChange={(open) => { if (!open && !saving) { setBulkAction(null); setBulkValue(''); setBulkAssignees([]); } }}>
