@@ -53,6 +53,13 @@ import {
   type CalendarTeamScope,
 } from '@/lib/calendarTeamFilter';
 import {
+  buildAssignInstallerToWorkOrderValues,
+  buildCreateWorkOrderFromCalendarValues,
+  canAssignUserToWorkOrder,
+  filterAssignableWorkOrdersForCalendar,
+  type CalendarBookingKind,
+} from '@/lib/calendarWorkOrderBooking';
+import {
   hasScheduleConflict,
   hoursBetween,
   shiftedDate,
@@ -66,7 +73,10 @@ import {
   updateShift,
 } from '@/lib/supabase/schedulingEntities';
 import { listAccessibleEmployeeCards } from '@/lib/supabase/workforceHr';
-import { moveManagedWorkOrderSchedule } from '@/lib/supabase/workManagement';
+import {
+  moveManagedWorkOrderSchedule,
+  saveManagedWorkOrder,
+} from '@/lib/supabase/workManagement';
 import { cn } from '@/lib/utils';
 
 interface ShiftForm {
@@ -145,7 +155,12 @@ export default function Tyovuorokalenteri() {
   const { currentOrg } = useOrganization();
   const { effectiveRole, effectiveUserId, actualRole } = useViewAs();
   const { projects } = useAppDataContext();
-  const { people, workOrders, refresh: refreshWorkspace } = useRoleWorkspace();
+  const {
+    people,
+    projectMemberships,
+    workOrders,
+    refresh: refreshWorkspace,
+  } = useRoleWorkspace();
   const { shifts, loading, error, refresh } = useSchedulingData();
 
   const [weekOffset, setWeekOffset] = useState(0);
@@ -158,6 +173,9 @@ export default function Tyovuorokalenteri() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Shift | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Shift | null>(null);
+  const [bookingKind, setBookingKind] = useState<CalendarBookingKind>('work_order_existing');
+  const [existingWorkOrderId, setExistingWorkOrderId] = useState('');
+  const [workOrderSearch, setWorkOrderSearch] = useState('');
   const [form, setForm] = useState<ShiftForm>(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
@@ -255,9 +273,24 @@ export default function Tyovuorokalenteri() {
     hasScheduleConflict(shiftsFor(person, isoDate(day)))
   )).length, 0);
 
+  const assignableWorkOrders = useMemo(
+    () => filterAssignableWorkOrdersForCalendar({
+      workOrders,
+      userId: form.userId,
+      projectMemberships,
+      search: workOrderSearch,
+    }),
+    [form.userId, projectMemberships, workOrderSearch, workOrders],
+  );
+
+  const selectedExistingWorkOrder = workOrders.find((order) => order.id === existingWorkOrderId) ?? null;
+
   const openCreate = (date = isoDate(weekStart), userId = '') => {
     const person = peopleById.get(userId);
     setEditing(null);
+    setBookingKind('work_order_existing');
+    setExistingWorkOrderId('');
+    setWorkOrderSearch('');
     setForm({ ...EMPTY_FORM, date, userId, employeeName: person?.name ?? '' });
     setFormErrors([]);
     setOperationError(null);
@@ -267,10 +300,17 @@ export default function Tyovuorokalenteri() {
 
   const openEdit = (shift: Shift) => {
     if (shift.sourceType === 'work_order') {
-      navigate('/tyomaaraykset');
+      if (shift.workOrderId) {
+        navigate(`/tyomaaraykset?edit=${encodeURIComponent(shift.workOrderId)}`);
+      } else {
+        navigate('/tyomaaraykset');
+      }
       return;
     }
     setEditing(shift);
+    setBookingKind('manual');
+    setExistingWorkOrderId('');
+    setWorkOrderSearch('');
     setForm({
       userId: shift.userId ?? '',
       employeeName: shift.employeeName,
@@ -293,8 +333,37 @@ export default function Tyovuorokalenteri() {
     if (!form.userId) next.push('Valitse kirjautuva käyttäjä.');
     if (!form.date) next.push('Päivä on pakollinen.');
     if (!form.startTime || !form.endTime) next.push('Alku- ja päättymisaika ovat pakollisia.');
-    if (form.startTime && form.endTime && form.endTime <= form.startTime) next.push('Päättymisajan pitää olla alkamisajan jälkeen.');
-    if (!form.shiftType.trim()) next.push('Varaustyyppi on pakollinen.');
+    if (form.startTime && form.endTime && form.endTime <= form.startTime) {
+      next.push('Päättymisajan pitää olla alkamisajan jälkeen.');
+    }
+
+    if (editing || bookingKind === 'manual') {
+      if (!form.shiftType.trim()) next.push('Varaustyyppi on pakollinen.');
+      return next;
+    }
+
+    if (bookingKind === 'work_order_existing') {
+      if (!existingWorkOrderId) next.push('Valitse työmääräys, tilaus tai keikka.');
+      else if (!selectedExistingWorkOrder) next.push('Valittua työmääräystä ei löytynyt.');
+      else if (!canAssignUserToWorkOrder(selectedExistingWorkOrder, form.userId, projectMemberships)) {
+        next.push(
+          selectedExistingWorkOrder.projectId
+            ? 'Asentajan täytyy kuulua työmääräyksen projektitiimiin ennen kohdistusta.'
+            : 'Tätä työmääräystä ei voi enää kohdistaa.',
+        );
+      }
+      return next;
+    }
+
+    if (!form.title.trim()) next.push('Työmääräyksen otsikko on pakollinen.');
+    if (
+      form.projectId
+      && !projectMemberships.some(
+        (membership) => membership.projectId === form.projectId && membership.userId === form.userId,
+      )
+    ) {
+      next.push('Projektiin liitettäessä asentajan täytyy kuulua projektitiimiin.');
+    }
     return next;
   };
 
@@ -305,19 +374,54 @@ export default function Tyovuorokalenteri() {
 
     const person = peopleById.get(form.userId);
     const project = projects.find((item) => item.id === form.projectId);
-    const payload = manualShift({
-      ...form,
-      employeeName: person?.name ?? form.employeeName,
-    }, project?.name ?? '');
 
     setSaving(true);
     setOperationError(null);
     try {
-      if (editing) await updateShift(currentOrg.id, editing.id, payload);
-      else await createShift(currentOrg.id, user?.id, payload);
-      await refresh();
+      if (editing || bookingKind === 'manual') {
+        const payload = manualShift({
+          ...form,
+          employeeName: person?.name ?? form.employeeName,
+        }, project?.name ?? '');
+        if (editing) await updateShift(currentOrg.id, editing.id, payload);
+        else await createShift(currentOrg.id, user?.id, payload);
+        await refresh();
+        setDialogOpen(false);
+        setSuccessMessage(editing ? 'Varaus päivitettiin.' : 'Käsinvaraus lisättiin kalenteriin.');
+        return;
+      }
+
+      if (bookingKind === 'work_order_existing' && selectedExistingWorkOrder) {
+        const values = buildAssignInstallerToWorkOrderValues(
+          selectedExistingWorkOrder,
+          form.userId,
+          { date: form.date, startTime: form.startTime, endTime: form.endTime },
+        );
+        await saveManagedWorkOrder({ organizationId: currentOrg.id, ...values });
+        await Promise.all([refresh(), refreshWorkspace()]);
+        setDialogOpen(false);
+        setSuccessMessage(
+          `${person?.name ?? 'Asentaja'} kohdistettiin työmääräykseen “${selectedExistingWorkOrder.title}” ja kalenteri synkronoitiin.`,
+        );
+        return;
+      }
+
+      const values = buildCreateWorkOrderFromCalendarValues({
+        title: form.title,
+        userId: form.userId,
+        projectId: form.projectId || undefined,
+        description: form.notes,
+        type: form.shiftType.trim() || undefined,
+        input: { date: form.date, startTime: form.startTime, endTime: form.endTime },
+      });
+      const workOrderId = await saveManagedWorkOrder({ organizationId: currentOrg.id, ...values });
+      await Promise.all([refresh(), refreshWorkspace()]);
       setDialogOpen(false);
-      setSuccessMessage(editing ? 'Varaus päivitettiin.' : 'Varaus lisättiin kalenteriin.');
+      setSuccessMessage(
+        workOrderId
+          ? 'Uusi työmääräys luotiin ja synkronoitiin resurssikalenteriin.'
+          : 'Uusi työmääräys luotiin.',
+      );
     } catch (caught) {
       setOperationError(caught instanceof Error ? caught.message : 'Varauksen tallennus epäonnistui.');
     } finally {
@@ -501,9 +605,10 @@ export default function Tyovuorokalenteri() {
           <p className="mt-2 max-w-3xl break-words text-sm leading-6 text-slate-300">
             Siirrä varaus vetämällä. Pidä Alt/Option pohjassa kopioidaksesi käsin luodun varauksen.
             Työmääräysvaraus siirtää koko työjakson. Voit rajata näkymän omaan tiimiin tai valitun työnjohtajan tiimiin.
+            Työnjohtaja voi kohdistaa asentajan olemassa olevalle työmääräykselle tai luoda uuden suoraan kalenterista.
           </p>
         </div>
-        <Button onClick={() => openCreate()} className="gap-2 bg-orange-500 hover:bg-orange-600"><Plus size={16} /> Lisää varaus</Button>
+        <Button onClick={() => openCreate()} className="gap-2 bg-orange-500 hover:bg-orange-600"><Plus size={16} /> Lisää kalenteriin</Button>
       </div>
 
       {(error || operationError || teamQuery.error) && (
@@ -763,25 +868,258 @@ export default function Tyovuorokalenteri() {
 
       <Dialog open={dialogOpen} onOpenChange={(open) => !open && !saving && setDialogOpen(false)}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader><DialogTitle>{editing ? 'Muokkaa varausta' : 'Lisää varaus'}</DialogTitle></DialogHeader>
-          {formErrors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErrors.map((item) => <p key={item}>{item}</p>)}</div>}
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Muokkaa varausta' : 'Lisää kalenteriin'}</DialogTitle>
+          </DialogHeader>
+          {formErrors.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {formErrors.map((item) => <p key={item} className="break-words">{item}</p>)}
+            </div>
+          )}
+
+          {!editing && (
+            <div className="grid gap-2">
+              <Label>Varauksen tapa</Label>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([
+                  { value: 'work_order_existing' as const, label: 'Olemassa oleva työmääräys' },
+                  { value: 'work_order_new' as const, label: 'Uusi työmääräys' },
+                  { value: 'manual' as const, label: 'Käsinvaraus' },
+                ]).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setBookingKind(option.value);
+                      setFormErrors([]);
+                    }}
+                    className={cn(
+                      'rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors',
+                      bookingKind === option.value
+                        ? 'border-orange-500 bg-orange-50 text-orange-950'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                    )}
+                  >
+                    <span className="break-words">{option.label}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="break-words text-xs text-slate-500">
+                {bookingKind === 'work_order_existing'
+                  && 'Kohdista asentaja avoimeen työmääräykseen, tilaukseen tai keikkaan. Kalenteri synkronoituu automaattisesti.'}
+                {bookingKind === 'work_order_new'
+                  && 'Luo uusi työmääräys valitulle henkilölle tälle päivälle ja näytä se heti resurssikalenterissa.'}
+                {bookingKind === 'manual'
+                  && 'Käsinvaraus ei luo työmääräystä — sopii koulutukseen, lomaan tai muuhun resurssivaraukseen.'}
+              </p>
+            </div>
+          )}
+
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2"><Label>Käyttäjä *</Label><Select value={form.userId} onValueChange={(userId) => setForm((current) => ({ ...current, userId, employeeName: peopleById.get(userId)?.name ?? '' }))}><SelectTrigger><SelectValue placeholder="Valitse käyttäjä" /></SelectTrigger><SelectContent>{people.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name} · {ROLE_LABELS[person.role]}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="shift-title">Varauksen otsikko</Label><Input id="shift-title" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} placeholder="Esim. kalusteasennus tai työmaakäynti" /></div>
-            <div className="space-y-2"><Label htmlFor="shift-date">Päivä *</Label><Input id="shift-date" type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Projekti</Label><Select value={form.projectId || ALL_PROJECTS} onValueChange={(value) => setForm((current) => ({ ...current, projectId: value === ALL_PROJECTS ? '' : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value={ALL_PROJECTS}>Ei projektia</SelectItem>{projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="shift-start">Alkaa *</Label><Input id="shift-start" type="time" value={form.startTime} onChange={(event) => setForm((current) => ({ ...current, startTime: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="shift-end">Päättyy *</Label><Input id="shift-end" type="time" value={form.endTime} onChange={(event) => setForm((current) => ({ ...current, endTime: event.target.value }))} /></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="shift-type">Varaustyyppi *</Label><Input id="shift-type" value={form.shiftType} onChange={(event) => setForm((current) => ({ ...current, shiftType: event.target.value }))} placeholder="Työvuoro, koulutus, loma…" /></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="shift-notes">Huomio</Label><Textarea id="shift-notes" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} rows={3} /></div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Käyttäjä *</Label>
+              <Select
+                value={form.userId}
+                onValueChange={(userId) => {
+                  setForm((current) => ({
+                    ...current,
+                    userId,
+                    employeeName: peopleById.get(userId)?.name ?? '',
+                  }));
+                  setExistingWorkOrderId('');
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Valitse käyttäjä" /></SelectTrigger>
+                <SelectContent>
+                  {people.map((person) => (
+                    <SelectItem key={person.userId} value={person.userId}>
+                      {person.name} · {ROLE_LABELS[person.role]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {!editing && bookingKind === 'work_order_existing' && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="wo-search">Hae työmääräystä</Label>
+                <Input
+                  id="wo-search"
+                  value={workOrderSearch}
+                  onChange={(event) => setWorkOrderSearch(event.target.value)}
+                  placeholder="Otsikko, projekti, sijainti…"
+                  disabled={!form.userId}
+                />
+                <Label>Työmääräys / tilaus / keikka *</Label>
+                <Select
+                  value={existingWorkOrderId || undefined}
+                  onValueChange={setExistingWorkOrderId}
+                  disabled={!form.userId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={form.userId ? 'Valitse työmääräys' : 'Valitse ensin käyttäjä'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignableWorkOrders.map((order) => (
+                      <SelectItem key={order.id} value={order.id}>
+                        {order.title}
+                        {' · '}
+                        {order.project}
+                        {' · '}
+                        {order.status}
+                        {order.assigneeNames.length > 0
+                          ? ` · ${order.assigneeNames.join(', ')}`
+                          : ' · Ei vastuuhenkilöitä'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {form.userId && assignableWorkOrders.length === 0 && (
+                  <p className="break-words text-xs text-amber-700">
+                    Ei kohdistettavia avoimia työmääräyksiä tälle henkilölle.
+                    Luo uusi tai lisää henkilö projektitiimiin.
+                  </p>
+                )}
+                {selectedExistingWorkOrder && (
+                  <p className="break-words rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    {selectedExistingWorkOrder.plannedStartDate
+                      ? `Nykyinen jakso ${selectedExistingWorkOrder.plannedStartDate} – ${selectedExistingWorkOrder.plannedEndDate}.`
+                      : 'Työmääräyksellä ei ole vielä aikataulua — valittu päivä asetetaan työjaksoksi.'}
+                    {' '}
+                    Kalenterisynkronointi pidetään päällä.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {(editing || bookingKind !== 'work_order_existing') && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="shift-title">
+                  {bookingKind === 'work_order_new' && !editing ? 'Työmääräyksen otsikko *' : 'Varauksen otsikko'}
+                </Label>
+                <Input
+                  id="shift-title"
+                  value={form.title}
+                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Esim. kalusteasennus tai työmaakäynti"
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="shift-date">Päivä *</Label>
+              <Input
+                id="shift-date"
+                type="date"
+                value={form.date}
+                onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
+              />
+            </div>
+
+            {(editing || bookingKind !== 'work_order_existing') && (
+              <div className="space-y-2">
+                <Label>Projekti</Label>
+                <Select
+                  value={form.projectId || ALL_PROJECTS}
+                  onValueChange={(value) => setForm((current) => ({
+                    ...current,
+                    projectId: value === ALL_PROJECTS ? '' : value,
+                  }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_PROJECTS}>Ei projektia</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="shift-start">Alkaa *</Label>
+              <Input
+                id="shift-start"
+                type="time"
+                value={form.startTime}
+                onChange={(event) => setForm((current) => ({ ...current, startTime: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="shift-end">Päättyy *</Label>
+              <Input
+                id="shift-end"
+                type="time"
+                value={form.endTime}
+                onChange={(event) => setForm((current) => ({ ...current, endTime: event.target.value }))}
+              />
+            </div>
+
+            {(editing || bookingKind === 'manual' || bookingKind === 'work_order_new') && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="shift-type">
+                  {bookingKind === 'work_order_new' && !editing ? 'Tyyppi' : 'Varaustyyppi *'}
+                </Label>
+                <Input
+                  id="shift-type"
+                  value={form.shiftType}
+                  onChange={(event) => setForm((current) => ({ ...current, shiftType: event.target.value }))}
+                  placeholder={bookingKind === 'work_order_new' ? 'Esim. asennus' : 'Työvuoro, koulutus, loma…'}
+                />
+              </div>
+            )}
+
+            {(editing || bookingKind === 'manual' || bookingKind === 'work_order_new') && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="shift-notes">
+                  {bookingKind === 'work_order_new' && !editing ? 'Kuvaus / huomio' : 'Huomio'}
+                </Label>
+                <Textarea
+                  id="shift-notes"
+                  value={form.notes}
+                  onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+                  rows={3}
+                />
+              </div>
+            )}
           </div>
+
           <DialogFooter className="gap-2 sm:justify-between">
             <div className="flex flex-wrap gap-2">
-              {editing && <Button variant="outline" onClick={() => void copyEditingShift(1)} disabled={saving} className="gap-1"><Copy size={14} /> Seuraava päivä</Button>}
-              {editing && <Button variant="outline" onClick={() => void copyEditingShift(7)} disabled={saving} className="gap-1"><Copy size={14} /> Ensi viikko</Button>}
-              {editing && <Button variant="ghost" onClick={() => { setDeleteTarget(editing); setDialogOpen(false); }} disabled={saving} className="gap-1 text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 size={14} /> Poista</Button>}
+              {editing && (
+                <Button variant="outline" onClick={() => void copyEditingShift(1)} disabled={saving} className="gap-1">
+                  <Copy size={14} /> Seuraava päivä
+                </Button>
+              )}
+              {editing && (
+                <Button variant="outline" onClick={() => void copyEditingShift(7)} disabled={saving} className="gap-1">
+                  <Copy size={14} /> Ensi viikko
+                </Button>
+              )}
+              {editing && (
+                <Button
+                  variant="ghost"
+                  onClick={() => { setDeleteTarget(editing); setDialogOpen(false); }}
+                  disabled={saving}
+                  className="gap-1 text-red-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  <Trash2 size={14} /> Poista
+                </Button>
+              )}
             </div>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void save()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna'}</Button></div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button>
+              <Button onClick={() => void save()} disabled={saving}>
+                {saving
+                  ? 'Tallennetaan…'
+                  : bookingKind === 'work_order_existing' && !editing
+                    ? 'Kohdista työmääräys'
+                    : bookingKind === 'work_order_new' && !editing
+                      ? 'Luo työmääräys'
+                      : 'Tallenna'}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
