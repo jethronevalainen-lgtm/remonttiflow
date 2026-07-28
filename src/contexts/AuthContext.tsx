@@ -127,10 +127,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const {
         data: { subscription },
-      } = client.auth.onAuthStateChange((_event, nextSession) => {
+      } = client.auth.onAuthStateChange((event, nextSession) => {
         if (client !== getActiveSupabaseClient()) return;
+
+        // Supabase can emit a transient INITIAL_SESSION event without a session
+        // while the newly verified memory-only impersonation client is being
+        // bound. Treating that event as a sign-out immediately restored the
+        // administrator and made role guards intermittently run as admin.
         if (!nextSession && isImpersonationClientActive()) {
-          void deactivateImpersonationSession();
+          if (event === 'SIGNED_OUT') void deactivateImpersonationSession();
           return;
         }
         void hydrateSession(client, nextSession, expectedRevision);

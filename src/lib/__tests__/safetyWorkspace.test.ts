@@ -69,4 +69,13 @@ describe('safety command center rules', () => {
 
     expect(selected?.id).toBe('project');
   });
+
+  it('keeps the general workspace on organization guidance until a project is selected', () => {
+    const selected = selectPrimaryBriefing([
+      briefing({ id: 'organization', severity: 'warning' }),
+      briefing({ id: 'project', projectId: 'project-1', severity: 'danger' }),
+    ], undefined);
+
+    expect(selected?.id).toBe('organization');
+  });
 });
