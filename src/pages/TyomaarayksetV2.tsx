@@ -27,7 +27,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
+import { deleteManagedWorkOrders } from '@/lib/supabase/workOrderBulkDelete';
 import {
   reviewWorkOrderCompletion,
   saveManagedWorkOrder,
@@ -46,7 +48,8 @@ export default function TyomaarayksetV2() {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentOrg } = useOrganization();
-  const { projects, deleteWorkOrder, refresh: refreshDomain } = useAppDataContext();
+  const { effectiveRole, isPreviewing } = useViewAs();
+  const { projects, refresh: refreshDomain } = useAppDataContext();
   const {
     people,
     projectMemberships,
@@ -56,6 +59,9 @@ export default function TyomaarayksetV2() {
     error,
     refresh,
   } = useRoleWorkspace();
+
+  const canDeleteWorkOrders = !isPreviewing
+    && (effectiveRole === 'admin' || effectiveRole === 'supervisor');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ManagedWorkOrder | null>(null);
@@ -263,13 +269,15 @@ export default function TyomaarayksetV2() {
   };
 
   const remove = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !currentOrg || !canDeleteWorkOrders) return;
     setSaving(true);
     setOperationError(null);
     setOperationSuccess(null);
     try {
-      const removed = await deleteWorkOrder(deleteTarget.id);
-      if (!removed) throw new Error('Työmääräyksen poistaminen epäonnistui.');
+      await deleteManagedWorkOrders({
+        organizationId: currentOrg.id,
+        workOrderIds: [deleteTarget.id],
+      });
       setDeleteTarget(null);
       await refreshEverything();
       setOperationSuccess('Työmääräys poistettiin.');
@@ -353,7 +361,7 @@ export default function TyomaarayksetV2() {
       )}
 
       <WorkOrderControlPanel
-        canCreate
+        canDelete={canDeleteWorkOrders}
         error={error}
         loading={loading}
         organizationId={currentOrg.id}
@@ -362,7 +370,6 @@ export default function TyomaarayksetV2() {
         projectFilterId={projectFilterId}
         projectMemberships={projectMemberships}
         projects={projects}
-        onCreate={openCreate}
         onDelete={setDeleteTarget}
         onEdit={openEdit}
         onRefresh={refreshEverything}

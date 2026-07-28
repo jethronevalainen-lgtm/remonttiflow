@@ -26,7 +26,6 @@ import {
   PauseCircle,
   Pencil,
   PlayCircle,
-  Plus,
   Receipt,
   RotateCcw,
   Save,
@@ -76,6 +75,7 @@ import {
   type WorkOrderControlPatch,
   type WorkOrderSavedView,
 } from '@/lib/supabase/workOrderControl';
+import { deleteManagedWorkOrders } from '@/lib/supabase/workOrderBulkDelete';
 import { cn } from '@/lib/utils';
 import type { Project, WorkOrderPriority, WorkOrderStatus } from '@/types';
 
@@ -119,7 +119,7 @@ interface FilterState {
 }
 
 interface Props {
-  canCreate: boolean;
+  canDelete: boolean;
   error: string | null;
   loading: boolean;
   organizationId: string;
@@ -128,7 +128,6 @@ interface Props {
   projectFilterId?: string;
   projectMemberships: ProjectMembership[];
   projects: Project[];
-  onCreate: () => void;
   onDelete: (order: ManagedWorkOrder) => void;
   onEdit: (order: ManagedWorkOrder) => void;
   onRefresh: () => Promise<void>;
@@ -176,6 +175,8 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
  * renders every field in full (no truncation, no horizontal scroll, no
  * hidden text). Prefer wrapping over clipping.
  */
+const WORK_ORDER_GRID_COLUMNS = 'lg:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)_7.5rem_6.5rem_7rem_auto]';
+
 const DEFAULT_COLUMNS: ColumnKey[] = [
   'title',
   'project',
@@ -270,6 +271,12 @@ function assignmentLabel(order: ManagedWorkOrder) {
   return order.assigneeNames.length > 0 ? order.assigneeNames.join(', ') : 'Vastuuhenkilö puuttuu';
 }
 
+function deletionBlockReason(order: ControlledWorkOrder): string | null {
+  if (order.activeSessionCount > 0) return 'Työaika on käynnissä';
+  if (order.status === 'Käynnissä') return 'Työmääräyksen tila on Käynnissä';
+  return null;
+}
+
 function toggleValue<T extends string>(values: T[], value: T): T[] {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 }
@@ -360,7 +367,7 @@ function MultiSelectFilter({
 }
 
 export default function WorkOrderControlPanel({
-  canCreate,
+  canDelete,
   error,
   loading,
   organizationId,
@@ -369,7 +376,6 @@ export default function WorkOrderControlPanel({
   projectFilterId = '',
   projectMemberships,
   projects,
-  onCreate,
   onDelete,
   onEdit,
   onRefresh,
@@ -393,6 +399,7 @@ export default function WorkOrderControlPanel({
   const [bulkAction, setBulkAction] = useState<BulkAction | null>(null);
   const [bulkValue, setBulkValue] = useState('');
   const [bulkAssignees, setBulkAssignees] = useState<string[]>([]);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [metadataEstimate, setMetadataEstimate] = useState('');
   const [metadataQuantity, setMetadataQuantity] = useState('');
   const [metadataUnit, setMetadataUnit] = useState('');
@@ -533,6 +540,24 @@ export default function WorkOrderControlPanel({
 
   const selectedOrders = controlledOrders.filter((order) => selectedIds.includes(order.id));
   const pageAllSelected = pageOrders.length > 0 && pageOrders.every((order) => selectedIds.includes(order.id));
+  const pageSomeSelected = pageOrders.some((order) => selectedIds.includes(order.id));
+  const blockedDeletionOrders = selectedOrders.flatMap((order) => {
+    const reason = deletionBlockReason(order);
+    return reason ? [{ order, reason }] : [];
+  });
+  const deletionLimitExceeded = selectedOrders.length > 200;
+  const canConfirmBulkDelete = canDelete
+    && selectedOrders.length > 0
+    && blockedDeletionOrders.length === 0
+    && !deletionLimitExceeded;
+
+  useEffect(() => {
+    const existingIds = new Set(controlledOrders.map((order) => order.id));
+    setSelectedIds((current) => {
+      const next = current.filter((id) => existingIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [controlledOrders]);
 
   const eligibleAssignees = useMemo(() => {
     if (selectedOrders.length === 0) return people;
@@ -603,6 +628,30 @@ export default function WorkOrderControlPanel({
     if (bulkAction === 'shift') patch.scheduleShiftDays = Number(bulkValue);
     if (bulkAction === 'dueDate') patch.dueDate = bulkValue || null;
     await runPatch(ids, patch, 'Valitut työmääräykset päivitettiin');
+  };
+
+  const removeSelected = async () => {
+    if (!canConfirmBulkDelete) return;
+
+    setSaving(true);
+    setOperationError(null);
+    setOperationSuccess(null);
+    try {
+      const deletedCount = await deleteManagedWorkOrders({
+        organizationId,
+        workOrderIds: selectedOrders.map((order) => order.id),
+      });
+      const deletedIds = new Set(selectedOrders.map((order) => order.id));
+      setDetailOrderId((current) => current && deletedIds.has(current) ? null : current);
+      setDeleteConfirmOpen(false);
+      setSelectedIds([]);
+      await onRefresh();
+      setOperationSuccess(`${deletedCount} työmääräystä poistettiin.`);
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Työmääräysten poistaminen epäonnistui.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveMetadata = async () => {
@@ -808,7 +857,6 @@ export default function WorkOrderControlPanel({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={exportCsv} className="gap-2"><Download size={15} /> Vie CSV</Button>
-              {canCreate && <Button size="sm" onClick={onCreate} className="gap-2 bg-orange-600 hover:bg-orange-700"><Plus size={15} /> Uusi työmääräys</Button>}
             </div>
           </div>
 
@@ -880,6 +928,11 @@ export default function WorkOrderControlPanel({
             <Button size="sm" variant="secondary" onClick={() => setBulkAction('shift')}>Siirrä aikataulua</Button>
             <Button size="sm" variant="secondary" onClick={() => setBulkAction('billing')}>Laskutuksen tila</Button>
             <Button size="sm" variant="secondary" onClick={() => setBulkAction('dueDate')}>Määräpäivä</Button>
+            {canDelete && (
+              <Button size="sm" variant="destructive" className="gap-2" onClick={() => setDeleteConfirmOpen(true)}>
+                <Trash2 size={14} /> Poista valitut
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -902,9 +955,9 @@ export default function WorkOrderControlPanel({
         {!loading && !controlQuery.isLoading && pageOrders.length > 0 && (
           <>
             <div className="divide-y divide-slate-100">
-              <div className="hidden items-center gap-3 bg-slate-100 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 lg:grid lg:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)_7.5rem_6.5rem_7rem_auto]">
+              <div className={cn('hidden items-center gap-3 bg-slate-100 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 lg:grid', WORK_ORDER_GRID_COLUMNS)}>
                 <Checkbox
-                  checked={pageAllSelected}
+                  checked={pageAllSelected ? true : pageSomeSelected ? 'indeterminate' : false}
                   onCheckedChange={() => setSelectedIds((current) => (
                     pageAllSelected
                       ? current.filter((id) => !pageOrders.some((order) => order.id === id))
@@ -935,12 +988,12 @@ export default function WorkOrderControlPanel({
                     )}
                     <div
                       className={cn(
-                        'grid gap-3 px-4 py-4 hover:bg-orange-50/30 lg:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)_7.5rem_6.5rem_7rem_auto] lg:items-start',
+                        'grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-3 px-4 py-4 hover:bg-orange-50/30 lg:items-start lg:gap-3',
+                        WORK_ORDER_GRID_COLUMNS,
                         selectedIds.includes(order.id) && 'bg-blue-50/50',
                         order.activeSessionCount > 0 && 'border-l-4 border-l-orange-500',
                       )}
                     >
-                      <div className="flex items-start gap-3 lg:contents">
                         <Checkbox
                           checked={selectedIds.includes(order.id)}
                           onCheckedChange={() => setSelectedIds((current) => toggleValue(current, order.id))}
@@ -1002,9 +1055,8 @@ export default function WorkOrderControlPanel({
                             ))}
                           </div>
                         </div>
-                      </div>
 
-                      <div className="min-w-0 space-y-1 text-sm">
+                      <div className="col-span-2 min-w-0 space-y-1 text-sm lg:col-span-1">
                         <p className="break-words font-medium text-slate-900">{order.project}</p>
                         <p className="break-words text-slate-600">{order.customerName}</p>
                         <p className="flex items-start gap-1 break-words text-xs text-slate-500">
@@ -1016,7 +1068,7 @@ export default function WorkOrderControlPanel({
                         )}
                       </div>
 
-                      <div className="min-w-0 space-y-1 text-sm">
+                      <div className="col-span-2 min-w-0 space-y-1 text-sm lg:col-span-1">
                         {order.assignmentScope === 'project_team' ? (
                           <Badge variant="outline" className="whitespace-normal">
                             <UsersRound size={12} className="mr-1 shrink-0" /> Koko projektitiimi
@@ -1062,7 +1114,7 @@ export default function WorkOrderControlPanel({
                         </Select>
                       </div>
 
-                      <div className="min-w-0 space-y-1 text-sm">
+                      <div className="col-span-2 min-w-0 space-y-1 text-sm lg:col-span-1">
                         <p className="break-words font-medium text-slate-800">{formatDate(order.dueDate, 'Ei määräpäivää')}</p>
                         <p className="break-words text-xs text-slate-500">
                           {order.plannedStartDate
@@ -1079,25 +1131,27 @@ export default function WorkOrderControlPanel({
                         )}
                       </div>
 
-                      <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <div className="col-span-2 flex flex-wrap gap-2 lg:col-span-1 lg:justify-end">
                         <Button variant="outline" size="sm" onClick={() => openDetail(order)}>
                           <Eye size={14} className="mr-1" /> Avaa
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => onEdit(order)}>
                           <Pencil size={14} className="mr-1" /> Muokkaa
                         </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-9 w-9 p-0" aria-label="Lisää toimintoja">
-                              <MoreHorizontal size={16} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => onDelete(order)}>
-                              <Trash2 size={14} className="mr-2" /> Poista
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {canDelete && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-9 w-9 p-0" aria-label="Lisää toimintoja">
+                                <MoreHorizontal size={16} />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => onDelete(order)}>
+                                <Trash2 size={14} className="mr-2" /> Poista
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1115,6 +1169,57 @@ export default function WorkOrderControlPanel({
 
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
         <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Tallenna nykyinen näkymä</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label htmlFor="view-name">Näkymän nimi *</Label><Input id="view-name" value={viewName} onChange={(event) => setViewName(event.target.value)} maxLength={80} placeholder="Esimerkiksi viikon kiireelliset työt" /></div><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><Checkbox checked={viewDefault} onCheckedChange={(checked) => setViewDefault(checked === true)} className="mt-0.5" /><span><span className="block text-sm font-medium">Avaa tämä oletuksena</span><span className="text-xs text-slate-500">Rajaukset, lajittelu ja sivukoko palautetaan automaattisesti.</span></span></label></div><DialogFooter><Button variant="outline" onClick={() => setSaveViewOpen(false)} disabled={saving}>Peruuta</Button><Button onClick={() => void saveCurrentView()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna näkymä'}</Button></DialogFooter></DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={(open) => !saving && setDeleteConfirmOpen(open)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Trash2 size={18} /> Poista valitut työmääräykset</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-950">
+              <p className="font-semibold">Poistetaanko {selectedOrders.length} työmääräystä?</p>
+              <p className="mt-1 leading-5">Toimintoa ei voi perua. Kalenterivaraukset ja vastuuhenkilölinkit poistetaan. Historialliset tuntikirjaukset säilyvät ilman työmääräyslinkkiä.</p>
+            </div>
+
+            {deletionLimitExceeded && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                Yhdellä kertaa voidaan poistaa enintään 200 työmääräystä. Pienennä valintaa.
+              </div>
+            )}
+
+            {blockedDeletionOrders.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                <p className="font-semibold">Poisto ei ole mahdollinen ennen seuraavien töiden päättämistä:</p>
+                <ul className="mt-2 space-y-1">
+                  {blockedDeletionOrders.slice(0, 10).map(({ order, reason }) => (
+                    <li key={order.id}>• {order.title}: {reason}</li>
+                  ))}
+                </ul>
+                {blockedDeletionOrders.length > 10 && <p className="mt-2">+ {blockedDeletionOrders.length - 10} muuta estettyä työmääräystä</p>}
+              </div>
+            )}
+
+            <div className="rounded-xl border border-slate-200">
+              <div className="border-b bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Poistettava valinta</div>
+              <div className="divide-y">
+                {selectedOrders.slice(0, 10).map((order) => (
+                  <div key={order.id} className="px-3 py-2.5">
+                    <p className="font-medium text-slate-900">{order.title}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{order.project} · {order.location || order.projectLocation || 'Ei sijaintia'}</p>
+                  </div>
+                ))}
+              </div>
+              {selectedOrders.length > 10 && <p className="border-t px-3 py-2 text-xs text-slate-500">+ {selectedOrders.length - 10} muuta työmääräystä</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={saving}>Peruuta</Button>
+            <Button variant="destructive" onClick={() => void removeSelected()} disabled={!canConfirmBulkDelete || saving}>
+              {saving ? <><Loader2 size={15} className="mr-2 animate-spin" />Poistetaan…</> : `Poista ${selectedOrders.length} työmääräystä`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(bulkAction)} onOpenChange={(open) => { if (!open && !saving) { setBulkAction(null); setBulkValue(''); setBulkAssignees([]); } }}>
@@ -1140,7 +1245,7 @@ export default function WorkOrderControlPanel({
                 {detailOrder.attentionFlags.length > 0 && <Card className="border-amber-200 bg-amber-50"><CardContent className="p-4"><p className="flex items-center gap-2 font-semibold text-amber-950"><AlertTriangle size={17} /> Vaatii huomiota</p><div className="mt-3 flex flex-wrap gap-2">{detailOrder.attentionFlags.map((flag) => <Badge key={flag} variant="outline" className="border-amber-300 bg-white text-amber-900">{ATTENTION_LABELS[flag]}</Badge>)}</div></CardContent></Card>}
                 {detailOrder.completionRequestedAt && !detailOrder.completionApproved && <Card className="border-violet-200 bg-violet-50"><CardContent className="space-y-3 p-5"><p className="font-semibold text-violet-950">Valmistumispyyntö</p><p className="text-xs text-violet-700">{detailOrder.completionRequesterName ?? 'Työntekijä'} · {formatDateTime(detailOrder.completionRequestedAt)}</p><p className="whitespace-pre-wrap text-sm leading-6 text-violet-950">{detailOrder.completionRequestNote}</p><div className="flex flex-wrap gap-2"><Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onReview(detailOrder, true)}><CheckCircle2 size={15} className="mr-2" /> Hyväksy valmiiksi</Button><Button variant="outline" onClick={() => onReview(detailOrder, false)}>Palauta jatkettavaksi</Button></div></CardContent></Card>}
                 <Card><CardContent className="space-y-4 p-5"><div><p className="font-semibold text-slate-950">Ohjaus- ja laskentatiedot</p><p className="text-xs text-slate-500">Tiedot vaikuttavat tuntipoikkeamiin, määrälaskentaan ja laskutusvalmiuden seurantaan.</p></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="metadata-estimate">Tuntiarvio</Label><Input id="metadata-estimate" inputMode="decimal" value={metadataEstimate} onChange={(event) => setMetadataEstimate(event.target.value)} placeholder="Esimerkiksi 8" /></div><div className="grid grid-cols-[1fr_7rem] gap-2"><div className="space-y-2"><Label htmlFor="metadata-quantity">Määrä</Label><Input id="metadata-quantity" inputMode="decimal" value={metadataQuantity} onChange={(event) => setMetadataQuantity(event.target.value)} placeholder="Esimerkiksi 45" /></div><div className="space-y-2"><Label htmlFor="metadata-unit">Yksikkö</Label><Input id="metadata-unit" value={metadataUnit} onChange={(event) => setMetadataUnit(event.target.value)} placeholder="m²" maxLength={24} /></div></div></div><label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3"><Checkbox checked={metadataBillable} onCheckedChange={(checked) => setMetadataBillable(checked === true)} /><span><span className="block text-sm font-medium">Työ on laskutettava</span><span className="text-xs text-slate-500">Valmis työ nostetaan laskutusvalmiiden seurantaan.</span></span></label><Button onClick={() => void saveMetadata()} disabled={saving} className="w-full gap-2"><Save size={15} /> {saving ? 'Tallennetaan…' : 'Tallenna ohjaustiedot'}</Button></CardContent></Card>
-                <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onEdit(detailOrder)}><Pencil size={15} className="mr-2" /> Muokkaa työmääräystä</Button><Button variant="outline" className="text-red-600" onClick={() => onDelete(detailOrder)}><Trash2 size={15} className="mr-2" /> Poista</Button></div>
+                <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => onEdit(detailOrder)}><Pencil size={15} className="mr-2" /> Muokkaa työmääräystä</Button>{canDelete && <Button variant="outline" className="text-red-600" onClick={() => onDelete(detailOrder)}><Trash2 size={15} className="mr-2" /> Poista</Button>}</div>
               </>}
 
               {detailTab === 'time' && <Card><CardContent className="p-0"><div className="border-b p-5"><p className="font-semibold text-slate-950">Tunnit ja työselosteet</p><p className="mt-1 text-sm text-slate-500">Yhteensä {formatMinutes(detailOrder.totalMinutes)}, hyväksytty {formatMinutes(detailOrder.approvedMinutes)} ja odottaa {formatMinutes(detailOrder.pendingMinutes)}.</p></div>{insightsQuery.isLoading ? <div className="p-8 text-center text-slate-500">Ladataan…</div> : (insightsQuery.data?.timeLines ?? []).length === 0 ? <div className="p-8 text-center text-sm text-slate-500">Työmääräykselle ei ole vielä tuntikirjauksia.</div> : <div className="divide-y">{insightsQuery.data?.timeLines.map((line) => <div key={line.id} className="p-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium text-slate-900">{line.employee}</p><div className="flex gap-2"><Badge variant="outline">{line.status}</Badge><Badge variant="outline" className={billingClass(line.billingStatus)}>{BILLING_LABELS[line.billingStatus]}</Badge></div></div><p className="mt-1 text-xs text-slate-500">{formatDate(line.date)} · {line.hours.toLocaleString('fi-FI')} h{line.overtime > 0 ? ` · ylityö ${line.overtime.toLocaleString('fi-FI')} h` : ''}</p><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{line.description || 'Ei työselostetta'}</p></div>)}</div>}</CardContent></Card>}
