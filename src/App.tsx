@@ -21,6 +21,7 @@ const Aikataulutus = lazy(() => import('./pages/Aikataulutus'));
 const Paivakirjat = lazy(() => import('./pages/Paivakirjat'));
 const Kuittaukset = lazy(() => import('./pages/Kuittaukset'));
 const Tarjoukset = lazy(() => import('./pages/Tarjoukset'));
+const Maaralaskenta = lazy(() => import('./pages/Maaralaskenta'));
 const Jatehuolto = lazy(() => import('./pages/Jatehuolto'));
 const Tyomaaraykset = lazy(() => import('./pages/Tyomaaraykset'));
 const Tyovuorokalenteri = lazy(() => import('./pages/Tyovuorokalenteri'));
@@ -165,7 +166,7 @@ function AppRoutes() {
         <Route path="/kuittaukset" element={<RoleGuard allowedRoles={rolesForRoute('/kuittaukset')}><Kuittaukset /></RoleGuard>} />
         <Route path="/tarjoukset" element={<RoleGuard allowedRoles={rolesForRoute('/tarjoukset')}><Tarjoukset /></RoleGuard>} />
         <Route path="/laskenta" element={<RoleGuard allowedRoles={rolesForRoute('/laskenta')}><Tarjoukset /></RoleGuard>} />
-        <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={rolesForRoute('/maaralaskenta')}><Tarjoukset /></RoleGuard>} />
+        <Route path="/maaralaskenta" element={<RoleGuard allowedRoles={rolesForRoute('/maaralaskenta')}><Maaralaskenta /></RoleGuard>} />
         <Route path="/jatehuolto" element={<RoleGuard allowedRoles={rolesForRoute('/jatehuolto')}><Jatehuolto /></RoleGuard>} />
         <Route path="/tyomaaraykset" element={<RoleGuard allowedRoles={rolesForRoute('/tyomaaraykset')}><Tyomaaraykset /></RoleGuard>} />
         <Route path="/tilaukset" element={<RoleGuard allowedRoles={rolesForRoute('/tilaukset')}><Tilaukset /></RoleGuard>} />

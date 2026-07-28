@@ -367,6 +367,24 @@ export async function addOfferSection(
   if (error) throw new Error(`Tarjousosion tallennus epäonnistui: ${error.message}`);
 }
 
+export async function updateOfferSection(
+  organizationId: string,
+  sectionId: string,
+  values: Partial<Pick<OfferSection, 'title' | 'description' | 'sortOrder' | 'customerVisible'>>,
+): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (values.title !== undefined) payload.title = values.title;
+  if (values.description !== undefined) payload.description = values.description || null;
+  if (values.sortOrder !== undefined) payload.sort_order = values.sortOrder;
+  if (values.customerVisible !== undefined) payload.customer_visible = values.customerVisible;
+  const { error } = await supabase
+    .from('offer_sections')
+    .update(payload)
+    .eq('id', sectionId)
+    .eq('organization_id', organizationId);
+  if (error) throw new Error(`Tarjousosion päivitys epäonnistui: ${error.message}`);
+}
+
 export async function deleteOfferSection(organizationId: string, sectionId: string): Promise<void> {
   const { error } = await supabase.from('offer_sections').delete().eq('id', sectionId).eq('organization_id', organizationId);
   if (error) throw new Error(`Tarjousosion poistaminen epäonnistui: ${error.message}`);
