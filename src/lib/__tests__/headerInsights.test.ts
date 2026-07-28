@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildHeaderAlerts, filterHeaderRoutes } from '@/lib/headerInsights';
+import { buildHeaderAlerts, filterHeaderRoutes, notificationPathAllowed } from '@/lib/headerInsights';
 
 describe('buildHeaderAlerts', () => {
   it('creates alerts only from actionable live records', () => {
@@ -75,5 +75,18 @@ describe('filterHeaderRoutes', () => {
 
   it('returns an empty list for blank searches', () => {
     expect(filterHeaderRoutes(routes, routes.map((route) => route.path), '  ')).toEqual([]);
+  });
+});
+
+describe('notificationPathAllowed', () => {
+  it('allows exact routes and nested project discussion deep links', () => {
+    expect(notificationPathAllowed('/projektikeskustelut', ['/projektikeskustelut'])).toBe(true);
+    expect(
+      notificationPathAllowed(
+        '/projektikeskustelut/32c26dcb-6e86-464a-896d-1f09e93d80d0',
+        ['/projektikeskustelut', '/dashboard'],
+      ),
+    ).toBe(true);
+    expect(notificationPathAllowed('/tyonjohto', ['/projektikeskustelut'])).toBe(false);
   });
 });

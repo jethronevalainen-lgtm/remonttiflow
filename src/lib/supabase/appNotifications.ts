@@ -10,6 +10,10 @@ export type AppNotificationType =
   | 'late_check_in'
   | 'work_order_due_soon'
   | 'work_order_overdue'
+  | 'work_order_completion_requested'
+  | 'work_order_completion_approved'
+  | 'work_order_completion_rejected'
+  | 'project_message_new'
   | string;
 
 export interface AppNotification {

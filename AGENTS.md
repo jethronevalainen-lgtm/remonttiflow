@@ -48,3 +48,13 @@ be on `project_members`.
 `project-documents` storage via `uploadProjectDocument`. Customer contacts come
 from `customer_contacts` when the project has `customerId`. Deep-link
 `/projektit/:id/tyotila?tab=documents` opens the full documents tab.
+
+### Project message alerts for supervisors
+
+New `project_messages` rows create `app_notifications` of type
+`project_message_new` for the project's `responsible_supervisor_id` and any
+`supervisor` on `project_members` (see migration
+`20260728114500_project_message_supervisor_notifications.sql`). Opening the
+conversation marks the matching notification resolved via
+`mark_project_messages_read`. Header path matching allows nested routes like
+`/projektikeskustelut/:id`.

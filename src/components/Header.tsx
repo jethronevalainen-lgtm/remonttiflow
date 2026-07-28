@@ -28,6 +28,7 @@ import { BRAND } from '@/config/brand';
 import {
   buildHeaderAlerts,
   filterHeaderRoutes,
+  notificationPathAllowed,
   type HeaderAlert,
   type HeaderRoute,
 } from '@/lib/headerInsights';
@@ -122,19 +123,19 @@ export default function Header({ onMenuClick }: HeaderProps) {
   );
 
   const alerts = useMemo(() => {
-    const allowed = new Set(allowedPaths);
+    const allowed = allowedPaths;
     return buildHeaderAlerts({
       workOrders,
       timeEntries,
       safetyItems,
       projects,
-    }).filter((alert) => allowed.has(alert.path));
+    }).filter((alert) => notificationPathAllowed(alert.path, allowed));
   }, [allowedPaths, projects, safetyItems, timeEntries, workOrders]);
 
-  const visibleNotifications = useMemo(() => {
-    const allowed = new Set(allowedPaths);
-    return notifications.filter((notification) => allowed.has(notification.path));
-  }, [allowedPaths, notifications]);
+  const visibleNotifications = useMemo(
+    () => notifications.filter((notification) => notificationPathAllowed(notification.path, allowedPaths)),
+    [allowedPaths, notifications],
+  );
 
   const badgeCount = alerts.length + visibleNotifications.filter((notification) => !notification.readAt).length;
 

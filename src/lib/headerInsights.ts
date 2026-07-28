@@ -44,6 +44,12 @@ function localIsoDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+export function notificationPathAllowed(path: string, allowedPaths: readonly string[]): boolean {
+  return allowedPaths.some(
+    (allowed) => path === allowed || path.startsWith(`${allowed}/`),
+  );
+}
+
 export function buildHeaderAlerts(
   source: HeaderInsightSource,
   today: Date = new Date(),
