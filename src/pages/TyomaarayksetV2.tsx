@@ -90,6 +90,47 @@ export default function TyomaarayksetV2() {
     navigate(`/tyomaaraykset?project=${encodeURIComponent(projectId)}`, { replace: true });
   }, [canManage, location.search, navigate, projects]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const editId = params.get('edit');
+    if (!canManage || !editId) return;
+    const order = workOrders.find((item) => item.id === editId);
+    if (!order) return;
+
+    setEditing(order);
+    setForm({
+      title: order.title,
+      projectId: order.projectId ?? '',
+      location: order.location,
+      dueDate: order.dueDate,
+      plannedStartDate: order.plannedStartDate,
+      plannedEndDate: order.plannedEndDate,
+      plannedStartTime: order.plannedStartTime,
+      plannedEndTime: order.plannedEndTime,
+      plannedWeekdays: order.plannedWeekdays,
+      calendarSyncEnabled: order.calendarSyncEnabled,
+      occupancyStatus: order.occupancyStatus,
+      workReference: order.workReference,
+      startConstraints: order.startConstraints,
+      accessNotes: order.accessNotes,
+      residentNotificationRequired: order.residentNotificationRequired,
+      priority: order.priority,
+      status: order.status,
+      type: order.type,
+      description: order.description,
+      assignmentScope: order.projectId ? order.assignmentScope : 'people',
+      assigneeUserIds: order.assigneeUserIds,
+    });
+    setFormErrors([]);
+    setOperationError(null);
+    setDialogOpen(true);
+
+    const next = new URLSearchParams(location.search);
+    next.delete('edit');
+    const query = next.toString();
+    navigate(query ? `/tyomaaraykset?${query}` : '/tyomaaraykset', { replace: true });
+  }, [canManage, location.search, navigate, workOrders]);
+
   if (!canManage) return <LegacyWorkOrders />;
 
   const refreshEverything = async () => {

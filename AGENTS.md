@@ -29,3 +29,13 @@ when work-order status changes.
 Teams come from `supervisor_team_members` bridged to calendar rows via
 `employees.user_id` (`src/lib/calendarTeamFilter.ts`). Do not use `project_members`
 for this filter.
+
+### Resurssikalenteri → työmääräykset
+
+Calendar create dialog can (1) assign an installer to an existing open work order,
+(2) create a new work order for that day, or (3) add a manual shift. Work-order
+paths go through `saveManagedWorkOrder` / `save_work_order_v2` so
+`private.sync_work_order_calendar` owns the blue calendar cards. Pure helpers live
+in `src/lib/calendarWorkOrderBooking.ts`. Clicking a work-order card opens
+`/tyomaaraykset?edit=<id>`. Project-linked assignment still requires the person to
+be on `project_members`.
