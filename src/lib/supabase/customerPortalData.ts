@@ -8,12 +8,15 @@ import {
 } from '@/lib/supabase/customerCollaboration';
 import {
   loadCustomerProjectSummaries,
-  loadProjectRequests,
   loadProjectConversationContext,
   type CustomerProjectSummary,
   type ProjectConversationContext,
-  type ProjectRequest,
 } from '@/lib/supabase/projectCollaboration';
+import {
+  loadProjectRequests,
+  mapProjectRequestRow,
+  type ProjectRequest,
+} from '@/lib/supabase/projectRequests';
 import {
   loadCustomerWorkRequests,
   type CustomerRequestStatus,
@@ -62,28 +65,6 @@ function mapProject(row: Row): CustomerProjectSummary {
     description: nullableText(row, 'description'),
     supervisorName: nullableText(row, 'supervisor_name'),
     supervisorEmail: nullableText(row, 'supervisor_email'),
-  };
-}
-
-function mapRequest(row: Row): ProjectRequest {
-  return {
-    id: text(row, 'id'),
-    organizationId: text(row, 'organization_id'),
-    customerId: text(row, 'customer_id'),
-    customerName: text(row, 'customer_name'),
-    createdBy: text(row, 'created_by'),
-    projectName: text(row, 'project_name'),
-    location: text(row, 'location'),
-    description: text(row, 'description'),
-    desiredStartDate: text(row, 'desired_start_date'),
-    desiredEndDate: text(row, 'desired_end_date'),
-    contactName: text(row, 'contact_name'),
-    contactPhone: text(row, 'contact_phone'),
-    status: text(row, 'status') as ProjectRequest['status'],
-    managementNote: text(row, 'management_note'),
-    convertedProjectId: text(row, 'converted_project_id'),
-    createdAt: text(row, 'created_at'),
-    reviewedAt: text(row, 'reviewed_at'),
   };
 }
 
@@ -190,8 +171,8 @@ export async function loadPortalProjectRequests(
     p_organization_id: organizationId,
     ...customerPreviewRpcArgs(preview),
   });
-  if (error) throw new Error(`Projektipyyntöjen haku epäonnistui: ${error.message}`);
-  return rows(data).map(mapRequest).filter((item) => item.id);
+  if (error) throw new Error(`Työpyyntöjen haku epäonnistui: ${error.message}`);
+  return rows(data).map(mapProjectRequestRow).filter((item) => item.id);
 }
 
 export async function loadPortalProjectContext(
