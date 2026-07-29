@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import logger from '@/lib/logger';
+import { deriveProjectStatus, isRunningProjectStatus } from '@/lib/projectLifecycle';
 import {
   createCrmLeadRecord,
   createCustomerRecord,
@@ -57,6 +58,17 @@ export function useSupabaseAppData() {
   });
 
   const data: DomainData = query.data ?? EMPTY_DOMAIN_DATA;
+  const projects = useMemo(
+    () => data.projects.map((project) => ({
+      ...project,
+      status: deriveProjectStatus({
+        status: project.status,
+        startDate: project.startDate,
+        endDate: project.endDate,
+      }),
+    })),
+    [data.projects],
+  );
 
   const refresh = useCallback(async () => {
     if (!organizationId) return;
@@ -206,10 +218,10 @@ export function useSupabaseAppData() {
 
   const stats = useMemo(
     () => ({
-      totalProjects: data.projects.length,
-      activeProjects: data.projects.filter((project) => project.status === 'Aktiivinen').length,
-      completedProjects: data.projects.filter((project) => project.status === 'Valmis').length,
-      totalRevenue: data.projects.reduce((sum, project) => sum + project.budget, 0),
+      totalProjects: projects.length,
+      activeProjects: projects.filter((project) => isRunningProjectStatus(project.status)).length,
+      completedProjects: projects.filter((project) => project.status === 'Valmis').length,
+      totalRevenue: projects.reduce((sum, project) => sum + project.budget, 0),
       openWorkOrders: data.workOrders.filter((order) => order.status === 'Avoin').length,
       inProgressWorkOrders: data.workOrders.filter((order) => order.status === 'Käynnissä').length,
       totalEmployees: data.employees.length,
@@ -218,11 +230,12 @@ export function useSupabaseAppData() {
       openLeads: data.crmLeads.filter((lead) => lead.stage === 'Uusi').length,
       totalEquipment: data.equipment.length,
     }),
-    [data],
+    [data, projects],
   );
 
   return {
     ...data,
+    projects,
     stats,
     loading: query.isLoading,
     refreshing: query.isFetching,
