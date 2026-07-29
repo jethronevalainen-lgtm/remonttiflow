@@ -40,6 +40,7 @@ interface ViewAsContextValue {
   isImpersonating: boolean;
   switching: boolean;
   startPreview: (target: ViewAsTarget) => Promise<void>;
+  switchPreview: (target: ViewAsTarget) => Promise<void>;
   stopPreview: () => Promise<void>;
 }
 
@@ -66,11 +67,16 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     }
   }, [authLoading, impersonation, user]);
 
-  const startPreview = useCallback(async (target: ViewAsTarget) => {
+  const assertAdministrator = useCallback(() => {
     const organizationId = currentOrg?.id;
     if (organizationRole !== 'admin' || !organizationId) {
       throw new Error('Vain organisaation ylläpitäjä voi toimia toisena käyttäjänä.');
     }
+    return organizationId;
+  }, [currentOrg?.id, organizationRole]);
+
+  const startPreview = useCallback(async (target: ViewAsTarget) => {
+    const organizationId = assertAdministrator();
     if (impersonation || isImpersonationClientActive()) {
       throw new Error('Lopeta nykyinen käyttäjänä toimiminen ennen uuden käyttäjän valintaa.');
     }
@@ -87,7 +93,33 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     } finally {
       setSwitching(false);
     }
-  }, [currentOrg?.id, impersonation, organizationRole]);
+  }, [assertAdministrator, impersonation]);
+
+  const switchPreview = useCallback(async (target: ViewAsTarget) => {
+    const organizationId = assertAdministrator();
+    if (impersonation?.target.userId === target.userId) return;
+
+    setSwitching(true);
+    queryClient.clear();
+    try {
+      if (impersonation) {
+        await stopAdministratorImpersonation(impersonation);
+        setImpersonation(null);
+        queryClient.clear();
+      } else if (isImpersonationClientActive()) {
+        throw new Error('Nykyisen käyttäjänä toimimisen tietoja ei voitu palauttaa turvallista roolinvaihtoa varten.');
+      }
+
+      const next = await startAdministratorImpersonation({
+        organizationId,
+        targetUserId: target.userId,
+      });
+      setImpersonation(next);
+      queryClient.clear();
+    } finally {
+      setSwitching(false);
+    }
+  }, [assertAdministrator, impersonation]);
 
   const stopPreview = useCallback(async () => {
     if (!impersonation) return;
@@ -106,9 +138,6 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     const signedInDisplayName = profile?.full_name ?? user?.email ?? '';
     const target = impersonation?.target ?? null;
     return {
-      // Real impersonation can only be started by an administrator. Keep that
-      // actor role available for the guarded return/admin-control routes while
-      // every normal application route uses the selected user's effective role.
       actualRole: target ? 'admin' : organizationRole,
       effectiveRole: target?.role ?? organizationRole,
       effectiveUserId: target?.userId ?? user?.id ?? null,
@@ -126,9 +155,10 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
       isImpersonating: Boolean(target),
       switching,
       startPreview,
+      switchPreview,
       stopPreview,
     };
-  }, [impersonation?.target, organizationRole, profile?.full_name, startPreview, stopPreview, switching, user?.email, user?.id]);
+  }, [impersonation?.target, organizationRole, profile?.full_name, startPreview, stopPreview, switchPreview, switching, user?.email, user?.id]);
 
   return <ViewAsContext.Provider value={value}>{children}</ViewAsContext.Provider>;
 }
