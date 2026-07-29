@@ -1,0 +1,64 @@
+name: Fix HR center type errors
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ github.head_ref == 'feature/hr-management-center' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: feature/hr-management-center
+          fetch-depth: 0
+
+      - name: Apply targeted fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+          path = Path('src/pages/hr/HrCenter.tsx')
+          source = path.read_text()
+          source = source.replace('History, IdCard, Loader2', 'History, CreditCard, Loader2')
+          source = source.replace("icon: IdCard", "icon: CreditCard")
+          source = source.replace("<EmptyState icon={IdCard}", "<EmptyState icon={CreditCard}")
+          source = source.replace('file: documentForm.file,', 'file: documentForm.file as File,')
+          path.write_text(source)
+          PY
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify complete quality gate
+        env:
+          VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
+          CF_PAGES: "1"
+          CF_PAGES_BRANCH: feature/hr-management-center
+          CF_PAGES_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run ship:check
+
+      - name: Commit fixes
+        shell: bash
+        run: |
+          rm .github/workflows/fix-hr-center.yml
+          git config user.name "VaKantti automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Korjaa HR-keskuksen tyyppivirheet"
+          git push origin HEAD:feature/hr-management-center
