@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -52,18 +52,23 @@ export function useVisibleAnnouncements(values: {
       .catch(() => undefined);
   }, [query.data, queryClient, queryKey]);
 
-  const record = async (announcementId: string, event: AnnouncementEvent) => {
+  const record = useCallback(async (announcementId: string, event: AnnouncementEvent) => {
     await recordAnnouncementEvent(announcementId, event);
     await queryClient.invalidateQueries({ queryKey: ['announcements'] });
     await queryClient.invalidateQueries({ queryKey: ['app-notifications'] });
-  };
+  }, [queryClient]);
+
+  const refresh = useCallback(
+    () => queryClient.invalidateQueries({ queryKey }),
+    [queryClient, queryKey],
+  );
 
   return {
     announcements: query.data ?? [],
     loading: query.isLoading,
     refreshing: query.isFetching,
     error: query.error instanceof Error ? query.error.message : null,
-    refresh: () => queryClient.invalidateQueries({ queryKey }),
+    refresh,
     record,
   };
 }
