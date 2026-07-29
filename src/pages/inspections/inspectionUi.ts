@@ -16,23 +16,55 @@ export const RESULT_OPTIONS: Array<{
   value: InspectionResultStatus;
   label: string;
   shortLabel: string;
+  description: string;
   className: string;
   secondary?: boolean;
 }> = [
-  { value: 'Kunnossa', label: 'Kunnossa', shortLabel: 'Kunnossa', className: 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' },
-  { value: 'Puute', label: 'Puutteita', shortLabel: 'Puutteita', className: 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100' },
-  { value: 'Ei voitu tarkastaa', label: 'Ei tehty', shortLabel: 'Ei tehty', className: 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100' },
-  { value: 'Tarkastettava myöhemmin', label: 'Jälkitoimituksena', shortLabel: 'Jälkitoimituksena', className: 'border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100' },
-  { value: 'Ei koske kohdetta', label: 'Ei tarkisteta', shortLabel: 'Ei tarkisteta', className: 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100', secondary: true },
+  {
+    value: 'Kunnossa',
+    label: 'Kunnossa',
+    shortLabel: 'Kunnossa',
+    description: 'Työ täyttää tarkastuskohdan vaatimukset.',
+    className: 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
+  },
+  {
+    value: 'Puute',
+    label: 'Kirjaa puute',
+    shortLabel: 'Kirjaa puute',
+    description: 'Työssä on korjattava tai dokumentoitava poikkeama.',
+    className: 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100',
+  },
+  {
+    value: 'Ei voitu tarkastaa',
+    label: 'Ei voitu tarkastaa',
+    shortLabel: 'Ei voitu tarkastaa',
+    description: 'Kohtaan ei ollut pääsyä tai tarkastus ei ollut mahdollinen.',
+    className: 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100',
+  },
+  {
+    value: 'Tarkastettava myöhemmin',
+    label: 'Tarkista myöhemmin',
+    shortLabel: 'Tarkista myöhemmin',
+    description: 'Työ on kesken tai kohta tarkastetaan jälkitoimituksen jälkeen.',
+    className: 'border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100',
+  },
+  {
+    value: 'Ei koske kohdetta',
+    label: 'Ei koske kohdetta',
+    shortLabel: 'Ei koske kohdetta',
+    description: 'Tarkastuskohta ei kuulu tämän kohteen laajuuteen.',
+    className: 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100',
+    secondary: true,
+  },
 ];
 
 const RESULT_STATUS_LABELS: Record<InspectionResultStatus, string> = {
   Tarkastamatta: 'Ei valintaa',
   Kunnossa: 'Kunnossa',
-  Puute: 'Puutteita',
-  'Ei koske kohdetta': 'Ei tarkisteta',
-  'Ei voitu tarkastaa': 'Ei tehty',
-  'Tarkastettava myöhemmin': 'Jälkitoimituksena',
+  Puute: 'Puute kirjattu',
+  'Ei koske kohdetta': 'Ei koske kohdetta',
+  'Ei voitu tarkastaa': 'Ei voitu tarkastaa',
+  'Tarkastettava myöhemmin': 'Tarkistetaan myöhemmin',
 };
 
 const RESULT_STATUS_BADGE_CLASSES: Record<InspectionResultStatus, string> = {
