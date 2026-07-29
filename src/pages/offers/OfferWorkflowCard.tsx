@@ -5,6 +5,7 @@ import {
   Copy,
   FolderKanban,
   ReceiptText,
+  RefreshCw,
   Send,
   Trash2,
   XCircle,
@@ -66,7 +67,9 @@ function euroFromCents(value: number): string {
 
 function finnishDate(value: string): string {
   if (!value) return '—';
-  return new Intl.DateTimeFormat('fi-FI', { dateStyle: 'medium' }).format(new Date(value));
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return new Intl.DateTimeFormat('fi-FI', { dateStyle: 'medium' }).format(parsed);
 }
 
 async function loadSalesOrder(offerId: string): Promise<SalesOrderSummary | null> {
@@ -108,6 +111,7 @@ export function OfferWorkflowCard({
   const step = hasConvertedProject ? 3 : workflowStep(offer.status);
   const locked = selectedVersion.status !== 'Luonnos';
   const shouldLoadOrder = offer.status === 'Hyväksytty' || hasConvertedProject;
+  const awaitingProject = offer.status === 'Hyväksytty' && !hasConvertedProject;
   const orderQuery = useQuery({
     queryKey: ['offer-sales-order', offer.id],
     queryFn: () => loadSalesOrder(offer.id),
@@ -119,7 +123,7 @@ export function OfferWorkflowCard({
   const orderError = orderQuery.error instanceof Error
     ? orderQuery.error.message
     : shouldLoadOrder && !orderQuery.isLoading && !salesOrder
-      ? 'Hyväksytty tarjous ei ole vielä muodostanut tilausta. Päivitä näkymä.'
+      ? 'Vahvistettua tilausta ei löytynyt. Tietoja ei muutettu; yritä haku uudelleen.'
       : null;
 
   return (
@@ -180,9 +184,24 @@ export function OfferWorkflowCard({
         </div>
 
         {shouldLoadOrder && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4" aria-live="polite">
             {orderQuery.isLoading && <p className="text-sm text-emerald-900">Haetaan vahvistettua tilausta…</p>}
-            {orderError && !orderQuery.isLoading && <p className="break-words text-sm text-red-700">{orderError}</p>}
+            {orderError && !orderQuery.isLoading && (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="break-words text-sm text-red-700">{orderError}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => void orderQuery.refetch()}
+                  disabled={orderQuery.isFetching}
+                >
+                  <RefreshCw size={14} className={cn('mr-2', orderQuery.isFetching && 'animate-spin')} />
+                  Yritä uudelleen
+                </Button>
+              </div>
+            )}
             {salesOrder && !orderQuery.isLoading && (
               <div className="space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -223,6 +242,12 @@ export function OfferWorkflowCard({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {awaitingProject && salesOrder && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Tilaus on vahvistettu. Luo tai liitä projekti ennen tarjouksen arkistointia, jotta tilaus ei jää ilman tuotantokohdetta.
           </div>
         )}
 
@@ -268,7 +293,7 @@ export function OfferWorkflowCard({
               <FolderKanban size={15} className="mr-2" /> Avaa projekti
             </Button>
           )}
-          {offer.status !== 'Arkistoitu' && (
+          {offer.status !== 'Arkistoitu' && !awaitingProject && (
             <Button variant="ghost" disabled={saving} onClick={() => onTransition('Arkistoitu')}>
               <Archive size={15} className="mr-2" /> Arkistoi
             </Button>
