@@ -112,17 +112,37 @@ function statusBadge(status: ProjectStatus) {
   return <Badge variant="outline" className={styles[status]}>{status}</Badge>;
 }
 
+function statusIndicator(status: ProjectStatus) {
+  const dotStyles: Record<ProjectStatus, string> = {
+    Aktiivinen: 'bg-emerald-500',
+    Suunniteltu: 'bg-blue-500',
+    Valmis: 'bg-slate-500',
+    Myöhässä: 'bg-red-500',
+  };
+
+  return (
+    <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-900">
+      <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dotStyles[status]}`} />
+      {status}
+    </span>
+  );
+}
+
 function statusSummary(status: ProjectStatus, startDate: string, endDate: string) {
-  if (status === 'Valmis') return 'Projekti on valmis.';
+  if (status === 'Valmis') return null;
   if (status === 'Myöhässä') {
     return endDate
-      ? `Tavoiteaika ${formatDate(endDate)} on ylitetty.`
-      : 'Tavoiteaika on ylitetty.';
+      ? `Tavoite ${formatDate(endDate)} ylitetty`
+      : 'Tavoiteaika ylitetty';
   }
-  if (status === 'Aktiivinen') return 'Projekti on käynnissä.';
+  if (status === 'Aktiivinen') {
+    return endDate
+      ? `Tavoite ${formatDate(endDate)}`
+      : 'Tavoitepäivä puuttuu';
+  }
   return startDate
-    ? `Alkaa ${formatDate(startDate)}.`
-    : 'Aloituspäivää ei ole määritetty.';
+    ? `Alkaa ${formatDate(startDate)}`
+    : 'Aloituspäivä puuttuu';
 }
 
 export default function Projektit() {
@@ -162,6 +182,16 @@ export default function Projektit() {
     startDate: form.startDate,
     endDate: form.endDate,
   });
+  const formStatusSummary = statusSummary(formStatus, form.startDate, form.endDate);
+  const saveProjectLabel = savingProject
+    ? 'Tallennetaan…'
+    : !editingProject
+      ? 'Luo projekti'
+      : editingProject.status !== 'Valmis' && form.status === 'Valmis'
+        ? 'Tallenna ja merkitse valmiiksi'
+        : editingProject.status === 'Valmis' && form.status !== 'Valmis'
+          ? 'Tallenna ja avaa uudelleen'
+          : 'Tallenna muutokset';
 
   const runningProjects = projects.filter((project) => isRunningProjectStatus(project.status));
   const lateProjects = projects.filter((project) => project.status === 'Myöhässä');
@@ -437,16 +467,21 @@ export default function Projektit() {
             <div className="space-y-2"><Label htmlFor="project-end">Tavoitevalmistuminen</Label><Input id="project-end" type="date" min={form.startDate || undefined} value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div>
 
             <div className="space-y-2 sm:col-span-2">
-              <Label>Tila</Label>
-              <div aria-live="polite" className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 sm:min-h-14 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  {statusBadge(formStatus)}
-                  <span className="text-sm text-slate-600">{statusSummary(formStatus, form.startDate, form.endDate)}</span>
+              <p className="text-sm font-medium leading-none text-slate-900">Tila</p>
+              <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5 sm:min-h-12 sm:flex-row sm:items-center sm:justify-between">
+                <div role="status" aria-live="polite" aria-atomic="true" className="flex min-w-0 flex-wrap items-center gap-2.5">
+                  {statusIndicator(formStatus)}
+                  {formStatusSummary && (
+                    <>
+                      <span aria-hidden="true" className="hidden h-4 w-px bg-slate-300 sm:block" />
+                      <span className="text-sm text-slate-600">{formStatusSummary}</span>
+                    </>
+                  )}
                 </div>
                 {editingProject && (
                   formStatus === 'Valmis'
-                    ? <Button type="button" variant="outline" onClick={reopenProject} className="w-full shrink-0 gap-2 bg-white sm:w-auto"><RotateCcw size={15} /> Avaa uudelleen</Button>
-                    : <Button type="button" onClick={markCompleted} className="w-full shrink-0 gap-2 sm:w-auto"><CheckCircle2 size={15} /> Merkitse valmiiksi</Button>
+                    ? <Button type="button" variant="outline" size="sm" onClick={reopenProject} className="w-full shrink-0 gap-2 bg-white sm:w-auto"><RotateCcw size={15} /> Avaa uudelleen</Button>
+                    : <Button type="button" variant="outline" size="sm" onClick={markCompleted} className="w-full shrink-0 gap-2 border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 sm:w-auto"><CheckCircle2 size={15} /> Merkitse valmiiksi</Button>
                 )}
               </div>
             </div>
@@ -456,7 +491,7 @@ export default function Projektit() {
             {editingProject && <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-spent">Toteutunut €</Label><Input id="project-spent" type="number" min="0" step="0.01" value={form.spent} onChange={(event) => setForm((previous) => ({ ...previous, spent: event.target.value }))} /></div>}
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-description">Kuvaus</Label><Textarea id="project-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} rows={4} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={savingProject}>Peruuta</Button><Button onClick={() => void saveProject()} disabled={savingProject}>{savingProject ? 'Tallennetaan…' : editingProject ? 'Tallenna muutokset' : 'Luo projekti'}</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={savingProject}>Peruuta</Button><Button onClick={() => void saveProject()} disabled={savingProject}>{saveProjectLabel}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
