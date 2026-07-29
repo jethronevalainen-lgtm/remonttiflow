@@ -10,12 +10,14 @@ import {
   Home,
   Loader2,
   MessageCircle,
+  Megaphone,
   ShieldCheck,
   X,
 } from 'lucide-react';
 
 import Header from './Header';
 import Navbar from './Navbar';
+import GlobalAnnouncementBanner from './announcements/GlobalAnnouncementBanner';
 import { ROLE_LABELS } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -31,6 +33,7 @@ const workerBottomItems = [
 const customerBottomItems = [
   { path: '/tilaajan-tyot', label: 'Projektit', icon: FolderKanban },
   { path: '/projektikeskustelut', label: 'Keskustelut', icon: MessageCircle },
+  { path: '/viestinta', label: 'Tiedotteet', icon: Megaphone },
   { path: '/tyoturvallisuus', label: 'Turvallisuus', icon: ShieldCheck },
 ];
 
@@ -93,6 +96,7 @@ export default function Layout() {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onMenuClick={() => setMobileOpen(true)} />
+        <GlobalAnnouncementBanner />
 
         {isImpersonating && previewTarget && (
           <div className="flex flex-col gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 sm:flex-row sm:items-center sm:px-4">
@@ -146,7 +150,7 @@ export default function Layout() {
             const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
             return (
               <button key={item.path} type="button" aria-current={active ? 'page' : undefined} aria-label={item.label} onClick={() => navigate(item.path)} className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium transition-colors ${active ? 'bg-orange-50 text-orange-600' : 'text-slate-500'}`}>
-                <item.icon size={20} /><span className="max-w-full truncate">{item.label}</span>
+                <item.icon size={20} /><span className="max-w-full break-words text-center leading-3">{item.label}</span>
               </button>
             );
           })}
