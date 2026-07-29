@@ -29,12 +29,14 @@ const lines: ChangeOrderDraftLineInput[] = [
 
 describe('change order commercial workflow', () => {
   it('calculates sale, cost and margin from line-level prices', () => {
-    expect(calculateChangeOrderTotals(lines)).toEqual({
+    const totals = calculateChangeOrderTotals(lines);
+
+    expect(totals).toMatchObject({
       saleCents: 88000,
       costCents: 45600,
       marginCents: 42400,
-      marginPercent: expect.closeTo(48.1818, 3),
     });
+    expect(totals.marginPercent).toBeCloseTo(48.1818, 3);
   });
 
   it('uses the exact quantity when prices produce fractional cent totals', () => {
@@ -50,6 +52,25 @@ describe('change order commercial workflow', () => {
       saleCents: 498,
       costCents: 278,
       marginCents: 220,
+    });
+  });
+
+  it('keeps hidden lines out of the customer-approved sale total', () => {
+    expect(calculateChangeOrderTotals([
+      ...lines,
+      {
+        category: 'Muu',
+        description: 'Sisäinen kustannusvaraus',
+        quantity: 1,
+        unit: 'kpl',
+        costUnitPriceCents: 5000,
+        saleUnitPriceCents: 25000,
+        customerVisible: false,
+      },
+    ])).toMatchObject({
+      saleCents: 88000,
+      costCents: 50600,
+      marginCents: 37400,
     });
   });
 
