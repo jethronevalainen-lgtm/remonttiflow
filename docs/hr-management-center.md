@@ -6,7 +6,7 @@ HR-keskus kokoaa työntekijän työsuhteen, palkkatiedot, osaamisen, koulutukset
 
 - **Admin** hallitsee koko organisaation HR-tietoja ja näkee `Vain HR` -dokumentit.
 - **Työnjohtaja** hallitsee oman HR-tiiminsä tietoja ja näkee tiimille sallitut dokumentit.
-- **Työntekijä** näkee omat RLS-politiikkojen sallimat tiedot ja työntekijälle jaetut dokumentit.
+- **Työntekijä** näkee omat RLS-politiikkojen sallimat tiedot ja työntekijälle jaetut dokumentit. Esihenkilön luottamukselliset HR-merkinnät ovat erillisessä manager-only-taulussa.
 - HR-tapahtumahistoria on sovelluskäyttäjille vain luettavissa.
 
 ## Tietojen lähteet

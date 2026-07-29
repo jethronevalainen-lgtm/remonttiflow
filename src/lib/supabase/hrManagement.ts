@@ -205,7 +205,6 @@ function employmentProfile(row: Row): EmploymentProfile {
     noticePeriod: optionalText(row, 'notice_period'),
     workingTimeModel: optionalText(row, 'working_time_model'),
     remoteWorkPolicy: optionalText(row, 'remote_work_policy'),
-    managerNotes: optionalText(row, 'manager_notes'),
     updatedAt: text(row, 'updated_at'),
   };
 }
@@ -304,8 +303,9 @@ async function tableRows(table: string, organizationId: string, orderColumn: str
 }
 
 export async function loadHrWorkspace(organizationId: string): Promise<HrWorkspaceData> {
-  const [profiles, skills, trainings, goals, conversations, tasks, documents, events] = await Promise.all([
+  const [profiles, managerNotes, skills, trainings, goals, conversations, tasks, documents, events] = await Promise.all([
     tableRows('employee_employment_profiles', organizationId, 'updated_at'),
+    tableRows('employee_manager_notes', organizationId, 'updated_at'),
     tableRows('employee_skills', organizationId, 'updated_at'),
     tableRows('employee_training_records', organizationId, 'start_date'),
     tableRows('employee_goals', organizationId, 'target_date', true),
@@ -314,8 +314,15 @@ export async function loadHrWorkspace(organizationId: string): Promise<HrWorkspa
     tableRows('employee_documents', organizationId, 'created_at'),
     tableRows('employee_hr_events', organizationId, 'event_date'),
   ]);
+  const managerNotesByEmployee = new Map(
+    managerNotes.map((row) => [text(row, 'employee_id'), optionalText(row, 'notes')]),
+  );
   return {
-    employmentProfiles: profiles.map(employmentProfile), skills: skills.map(skill), trainings: trainings.map(training),
+    employmentProfiles: profiles.map((row) => ({
+      ...employmentProfile(row),
+      managerNotes: managerNotesByEmployee.get(text(row, 'employee_id')),
+    })),
+    skills: skills.map(skill), trainings: trainings.map(training),
     goals: goals.map(goal), conversations: conversations.map(conversation), tasks: tasks.map(task),
     documents: documents.map(document), events: events.slice(0, 1000).map(event),
   };
@@ -325,23 +332,23 @@ export async function saveEmploymentProfile(values: {
   organizationId: string; employeeId: string; userId: string; input: EmploymentProfileInput;
 }): Promise<void> {
   const { input } = values;
-  const { error } = await supabase.from('employee_employment_profiles').upsert({
-    organization_id: values.organizationId, employee_id: values.employeeId,
-    employee_number: input.employeeNumber?.trim() || null,
-    personal_email: input.personalEmail?.trim().toLowerCase() || null,
-    work_location: input.workLocation?.trim() || null,
-    cost_center: input.costCenter?.trim() || null,
-    job_level: input.jobLevel?.trim() || null,
-    contract_type: input.contractType?.trim() || null,
-    contract_start_date: input.contractStartDate || null,
-    contract_end_date: input.contractEndDate || null,
-    probation_end_date: input.probationEndDate || null,
-    notice_period: input.noticePeriod?.trim() || null,
-    working_time_model: input.workingTimeModel?.trim() || null,
-    remote_work_policy: input.remoteWorkPolicy?.trim() || null,
-    manager_notes: input.managerNotes?.trim() || null,
-    updated_by: values.userId,
-  }, { onConflict: 'employee_id' });
+  const { error } = await supabase.rpc('save_employee_employment_profile', {
+    p_organization_id: values.organizationId,
+    p_employee_id: values.employeeId,
+    p_employee_number: input.employeeNumber?.trim() || '',
+    p_personal_email: input.personalEmail?.trim().toLowerCase() || '',
+    p_work_location: input.workLocation?.trim() || '',
+    p_cost_center: input.costCenter?.trim() || '',
+    p_job_level: input.jobLevel?.trim() || '',
+    p_contract_type: input.contractType?.trim() || '',
+    p_contract_start_date: input.contractStartDate || null,
+    p_contract_end_date: input.contractEndDate || null,
+    p_probation_end_date: input.probationEndDate || null,
+    p_notice_period: input.noticePeriod?.trim() || '',
+    p_working_time_model: input.workingTimeModel?.trim() || '',
+    p_remote_work_policy: input.remoteWorkPolicy?.trim() || '',
+    p_manager_notes: input.managerNotes?.trim() || '',
+  });
   if (error) throw new Error(`Työsuhdetietojen tallennus epäonnistui: ${error.message}`);
 }
 
