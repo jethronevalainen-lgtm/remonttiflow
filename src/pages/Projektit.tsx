@@ -438,7 +438,7 @@ export default function Projektit() {
             </Card>
           );
         })}
-        {!workspaceLoading && filteredProjects.length === 0 && <Card className="lg:col-span-2 xl:grid-cols-3"><CardContent className="p-12 text-center"><FolderKanban size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei projekteja</p><p className="mt-1 text-sm text-slate-500">Luo ensimmäinen projekti tai muuta hakuehtoja.</p><Button className="mt-5" onClick={openCreate}><Plus size={16} className="mr-2" /> Uusi projekti</Button></CardContent></Card>}
+        {!workspaceLoading && filteredProjects.length === 0 && <Card className="lg:col-span-2 xl:col-span-3"><CardContent className="p-12 text-center"><FolderKanban size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei projekteja</p><p className="mt-1 text-sm text-slate-500">Luo ensimmäinen projekti tai muuta hakuehtoja.</p><Button className="mt-5" onClick={openCreate}><Plus size={16} className="mr-2" /> Uusi projekti</Button></CardContent></Card>}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => !savingProject && setDialogOpen(open)}>
