@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase/client';
 import {
   loadCustomerProjectChangeOrders,
   loadCustomerProjectDocuments,
+  type CustomerChangeOrderLine,
   type CustomerProjectChangeOrder,
   type CustomerProjectDocument,
 } from '@/lib/supabase/customerCollaboration';
@@ -111,6 +112,19 @@ function mapDocument(row: Row): CustomerProjectDocument {
   };
 }
 
+function mapChangeOrderLine(value: unknown): CustomerChangeOrderLine {
+  const row = value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
+  return {
+    lineNumber: numberValue(row, 'lineNumber'),
+    category: text(row, 'category'),
+    description: text(row, 'description'),
+    quantity: numberValue(row, 'quantity'),
+    unit: text(row, 'unit'),
+    saleUnitPriceCents: numberValue(row, 'saleUnitPriceCents'),
+    saleTotalCents: numberValue(row, 'saleTotalCents'),
+  };
+}
+
 function mapChangeOrder(row: Row): CustomerProjectChangeOrder {
   return {
     id: text(row, 'id'),
@@ -125,6 +139,10 @@ function mapChangeOrder(row: Row): CustomerProjectChangeOrder {
     customerDecisionNote: nullableText(row, 'customer_decision_note'),
     submittedToCustomerAt: nullableText(row, 'submitted_to_customer_at'),
     customerDecidedAt: nullableText(row, 'customer_decided_at'),
+    customerVersion: numberValue(row, 'customer_version'),
+    vatRate: numberValue(row, 'vat_rate'),
+    scheduleEffectDays: numberValue(row, 'schedule_effect_days'),
+    lines: Array.isArray(row.lines) ? row.lines.map(mapChangeOrderLine) : [],
   };
 }
 
@@ -237,7 +255,7 @@ export async function loadPortalChangeOrders(
   preview?: CustomerPreviewScope | null,
 ): Promise<CustomerProjectChangeOrder[]> {
   if (!preview) return loadCustomerProjectChangeOrders(projectId);
-  const { data, error } = await supabase.rpc('admin_preview_customer_change_orders', {
+  const { data, error } = await supabase.rpc('admin_preview_customer_change_orders_v3', {
     p_organization_id: organizationId,
     p_project_id: projectId,
     ...customerPreviewRpcArgs(preview),
