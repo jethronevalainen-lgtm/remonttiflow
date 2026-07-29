@@ -68,6 +68,8 @@ begin
 end;
 $$;
 
+drop function if exists public.list_work_site_qr_tokens(uuid);
+
 create or replace function public.list_work_site_qr_tokens(p_organization_id uuid)
 returns table (
   id uuid,
@@ -79,29 +81,17 @@ returns table (
   is_active boolean,
   created_at timestamptz,
   last_used_at timestamptz,
-  use_count integer
+  use_count bigint
 )
-language plpgsql
+language sql
 security definer
 set search_path = ''
 as $$
-begin
-  if auth.uid() is null then
-    raise exception 'Kirjautuminen vaaditaan.' using errcode = '42501';
-  end if;
-  if not private.has_org_role(
-    p_organization_id,
-    array['admin', 'supervisor', 'project_coordinator']::text[]
-  ) then
-    raise exception 'QR-koodien lukemiseen ei ole oikeutta.' using errcode = '42501';
-  end if;
-
-  return query
   select
     t.id,
     t.project_id,
-    p.name,
-    t.label,
+    p.name::text,
+    coalesce(t.label, ''::text),
     t.require_geofence,
     t.expires_at,
     t.is_active,
@@ -112,8 +102,12 @@ begin
   join public.projects p on p.id = t.project_id
   where t.organization_id = p_organization_id
     and t.is_active = true
+    and private.has_org_role(
+      p_organization_id,
+      array['admin', 'supervisor', 'project_coordinator']::text[]
+    )
+    and auth.uid() is not null
   order by t.created_at desc;
-end;
 $$;
 
 revoke all on function public.list_work_site_qr_tokens(uuid) from public, anon;
@@ -162,3 +156,5 @@ $$;
 
 revoke all on function public.deactivate_work_site_qr_token(uuid) from public, anon;
 grant execute on function public.deactivate_work_site_qr_token(uuid) to authenticated;
+
+grant execute on function private.is_announcement_manager(uuid, uuid) to authenticated;
