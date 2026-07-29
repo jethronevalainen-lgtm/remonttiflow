@@ -39,6 +39,8 @@ export interface VisibleAnnouncement {
   dismissible: boolean;
   pinned: boolean;
   linkPath?: string;
+  relatedProjectId?: string;
+  relatedWorkOrderId?: string;
   recipientCount: number;
   seenCount: number;
   acknowledgedCount: number;
@@ -60,6 +62,16 @@ export interface AnnouncementDirectoryPerson {
   displayName: string;
   email: string;
   role: UserRole;
+}
+
+export interface AnnouncementReceipt extends AnnouncementDirectoryPerson {
+  matchedBy: Array<Record<string, unknown>>;
+  deliveredAt?: string;
+  firstShownAt?: string;
+  openedAt?: string;
+  readAt?: string;
+  acknowledgedAt?: string;
+  dismissedAt?: string;
 }
 
 export interface CreateAnnouncementInput {
@@ -111,12 +123,28 @@ function stringArray(row: Row, key: string): string[] {
     : [];
 }
 
+function objectArray(row: Row, key: string): Array<Record<string, unknown>> {
+  return Array.isArray(row[key])
+    ? (row[key] as unknown[]).map(object)
+    : [];
+}
+
 function priority(value: unknown): AnnouncementPriorityV2 {
   return value === 'Kriittinen' || value === 'Tärkeä' || value === 'Info' ? value : 'Normaali';
 }
 
 function status(value: unknown): AnnouncementStatusV2 {
   return value === 'draft' || value === 'scheduled' || value === 'expired' ? value : 'published';
+}
+
+function mapDirectoryPerson(value: unknown): AnnouncementDirectoryPerson {
+  const row = object(value);
+  return {
+    userId: text(row, 'user_id'),
+    displayName: text(row, 'display_name') || 'Nimetön käyttäjä',
+    email: text(row, 'email'),
+    role: text(row, 'role') as UserRole,
+  };
 }
 
 function mapVisible(value: unknown): VisibleAnnouncement {
@@ -135,6 +163,8 @@ function mapVisible(value: unknown): VisibleAnnouncement {
     dismissible: bool(row, 'dismissible'),
     pinned: bool(row, 'pinned'),
     linkPath: optionalText(row, 'link_path'),
+    relatedProjectId: optionalText(row, 'related_project_id'),
+    relatedWorkOrderId: optionalText(row, 'related_work_order_id'),
     recipientCount: numberValue(row, 'recipient_count'),
     seenCount: numberValue(row, 'seen_count'),
     acknowledgedCount: numberValue(row, 'acknowledged_count'),
@@ -152,7 +182,7 @@ export async function listVisibleAnnouncements(values: {
   projectId?: string;
   workOrderId?: string;
 }): Promise<VisibleAnnouncement[]> {
-  const { data, error } = await supabase.rpc('list_visible_announcements', {
+  const { data, error } = await supabase.rpc('list_visible_announcements_v2', {
     p_organization_id: values.organizationId,
     p_placement: values.placement,
     p_project_id: values.projectId || null,
@@ -187,13 +217,41 @@ export async function listAnnouncementDirectory(
     p_organization_id: organizationId,
   });
   if (error) throw new Error(`Vastaanottajahakemiston haku epäonnistui: ${error.message}`);
-  return rows(data).map((value): AnnouncementDirectoryPerson => {
+  return rows(data).map(mapDirectoryPerson).filter((item) => item.userId);
+}
+
+export async function previewAnnouncementRecipients(
+  organizationId: string,
+  targets: AnnouncementTargetInput[],
+): Promise<AnnouncementDirectoryPerson[]> {
+  const { data, error } = await supabase.rpc('preview_announcement_recipients', {
+    p_organization_id: organizationId,
+    p_targets: targets,
+  });
+  if (error) throw new Error(`Vastaanottajien esikatselu epäonnistui: ${error.message}`);
+  return rows(data).map(mapDirectoryPerson).filter((item) => item.userId);
+}
+
+export async function listAnnouncementReceipts(
+  organizationId: string,
+  announcementId: string,
+): Promise<AnnouncementReceipt[]> {
+  const { data, error } = await supabase.rpc('list_announcement_receipts', {
+    p_organization_id: organizationId,
+    p_announcement_id: announcementId,
+  });
+  if (error) throw new Error(`Toimitusraportin haku epäonnistui: ${error.message}`);
+  return rows(data).map((value): AnnouncementReceipt => {
     const row = object(value);
     return {
-      userId: text(row, 'user_id'),
-      displayName: text(row, 'display_name') || 'Nimetön käyttäjä',
-      email: text(row, 'email'),
-      role: text(row, 'role') as UserRole,
+      ...mapDirectoryPerson(row),
+      matchedBy: objectArray(row, 'matched_by'),
+      deliveredAt: optionalText(row, 'delivered_at'),
+      firstShownAt: optionalText(row, 'first_shown_at'),
+      openedAt: optionalText(row, 'opened_at'),
+      readAt: optionalText(row, 'read_at'),
+      acknowledgedAt: optionalText(row, 'acknowledged_at'),
+      dismissedAt: optionalText(row, 'dismissed_at'),
     };
   }).filter((item) => item.userId);
 }
