@@ -58,3 +58,11 @@ New `project_messages` rows create `app_notifications` of type
 conversation marks the matching notification resolved via
 `mark_project_messages_read`. Header path matching allows nested routes like
 `/projektikeskustelut/:id`.
+
+### QR-kirjautumisen hallinta (`/qr-hallinta`)
+
+One active QR token per project (`rotate_work_site_qr_token`). The management
+page lists active tokens via `list_work_site_qr_tokens` (metadata only — raw
+token/SVG exist only in the create session). Geofence fields on `projects`
+(`site_latitude/longitude/radius_m`) are mapped in `mapProject` and can be
+edited inline on this page. Deactivate with `deactivate_work_site_qr_token`.

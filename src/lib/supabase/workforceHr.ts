@@ -98,11 +98,26 @@ export interface SupervisorTeamMember {
 }
 
 export interface GeneratedWorkSiteQr {
+  projectId: string;
   projectName: string;
+  label?: string;
   expiresAt?: string;
   requireGeofence: boolean;
   checkInUrl: string;
   svg: string;
+}
+
+export interface WorkSiteQrTokenSummary {
+  id: string;
+  projectId: string;
+  projectName: string;
+  label: string;
+  requireGeofence: boolean;
+  expiresAt?: string;
+  isActive: boolean;
+  createdAt: string;
+  lastUsedAt?: string;
+  useCount: number;
 }
 
 export interface QrCheckInResult {
@@ -345,12 +360,40 @@ export async function generateWorkSiteQr(values: {
     throw new Error(data?.error || 'QR-palvelu palautti virheellisen vastauksen.');
   }
   return {
+    projectId: values.projectId,
     projectName: String(data.projectName ?? ''),
+    label: values.label?.trim() || undefined,
     expiresAt: data.expiresAt ? String(data.expiresAt) : undefined,
     requireGeofence: Boolean(data.requireGeofence),
     checkInUrl: data.checkInUrl,
     svg: data.svg,
   };
+}
+
+export async function listWorkSiteQrTokens(organizationId: string): Promise<WorkSiteQrTokenSummary[]> {
+  const { data, error } = await supabase.rpc('list_work_site_qr_tokens', {
+    p_organization_id: organizationId,
+  });
+  if (error) throw new Error(error.message);
+  return rows(data).map((row): WorkSiteQrTokenSummary => ({
+    id: text(row, 'id'),
+    projectId: text(row, 'project_id'),
+    projectName: text(row, 'project_name'),
+    label: text(row, 'label'),
+    requireGeofence: row.require_geofence === true,
+    expiresAt: text(row, 'expires_at') || undefined,
+    isActive: row.is_active !== false,
+    createdAt: text(row, 'created_at'),
+    lastUsedAt: text(row, 'last_used_at') || undefined,
+    useCount: typeof row.use_count === 'number' ? row.use_count : Number(row.use_count ?? 0) || 0,
+  }));
+}
+
+export async function deactivateWorkSiteQrToken(tokenId: string): Promise<void> {
+  const { error } = await supabase.rpc('deactivate_work_site_qr_token', {
+    p_token_id: tokenId,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function consumeWorkSiteQr(values: {

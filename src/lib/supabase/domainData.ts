@@ -95,6 +95,10 @@ function numberValue(row: Row, key: string, fallback = 0): number {
   return fallback;
 }
 
+function optionalNumber(row: Row, key: string): number | undefined {
+  return row[key] == null ? undefined : numberValue(row, key);
+}
+
 function booleanValue(row: Row, key: string, fallback = false): boolean {
   return typeof row[key] === 'boolean' ? row[key] : fallback;
 }
@@ -205,6 +209,9 @@ export function mapProject(row: Row): Project {
     id: text(row, 'id'),
     name: text(row, 'name'),
     customer: text(row, 'customer'),
+    customerId: optionalText(row, 'customer_id'),
+    customerSiteId: optionalText(row, 'customer_site_id'),
+    projectNumber: optionalText(row, 'project_number'),
     status: enumValue<ProjectStatus>(row, 'status', PROJECT_STATUSES, 'Suunniteltu'),
     startDate: text(row, 'start_date'),
     endDate: text(row, 'end_date'),
@@ -213,6 +220,13 @@ export function mapProject(row: Row): Project {
     spent: numberValue(row, 'spent'),
     description: optionalText(row, 'description'),
     location: optionalText(row, 'location'),
+    responsibleSupervisorId: optionalText(row, 'responsible_supervisor_id'),
+    projectManagerId: optionalText(row, 'project_manager_id'),
+    costCenter: optionalText(row, 'cost_center'),
+    siteLatitude: optionalNumber(row, 'site_latitude'),
+    siteLongitude: optionalNumber(row, 'site_longitude'),
+    siteRadiusM: optionalNumber(row, 'site_radius_m'),
+    archivedAt: optionalText(row, 'archived_at'),
   };
 }
 
@@ -478,6 +492,9 @@ export async function patchProject(
   if (updates.spent !== undefined) payload.spent = updates.spent;
   if (updates.description !== undefined) payload.description = updates.description || null;
   if (updates.location !== undefined) payload.location = updates.location || null;
+  if (updates.siteLatitude !== undefined) payload.site_latitude = updates.siteLatitude ?? null;
+  if (updates.siteLongitude !== undefined) payload.site_longitude = updates.siteLongitude ?? null;
+  if (updates.siteRadiusM !== undefined) payload.site_radius_m = updates.siteRadiusM ?? null;
   return mapProject(await updateRow('projects', organizationId, id, payload));
 }
 

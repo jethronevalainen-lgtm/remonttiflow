@@ -82,11 +82,21 @@ describe('Supabase domain row mappings', () => {
       progress: null,
       budget: null,
       spent: null,
+      site_latitude: 60.17,
+      site_longitude: 24.94,
+      site_radius_m: 120,
+      project_number: 'P-100',
+      archived_at: null,
     });
 
     expect(project.status).toBe('Suunniteltu');
     expect(project.progress).toBe(0);
     expect(project.budget).toBe(0);
+    expect(project.siteLatitude).toBe(60.17);
+    expect(project.siteLongitude).toBe(24.94);
+    expect(project.siteRadiusM).toBe(120);
+    expect(project.projectNumber).toBe('P-100');
+    expect(project.archivedAt).toBeUndefined();
   });
 
   it('uses expected_date as the CRM business date', () => {
