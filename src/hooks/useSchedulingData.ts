@@ -22,6 +22,9 @@ export interface ProjectPhase {
   workOrderCount: number;
   completedWorkOrderCount: number;
   activeWorkOrderCount: number;
+  scheduledWorkOrderCount: number;
+  unassignedWorkOrderCount: number;
+  blockedWorkOrderCount: number;
 }
 
 export interface Shift {
@@ -77,32 +80,108 @@ interface WorkOrderPhaseStats {
   total: number;
   completed: number;
   active: number;
+  scheduled: number;
+  unassigned: number;
+  blocked: number;
 }
+
+interface PhaseWorkOrder {
+  id: string;
+  projectPhaseId: string;
+  projectId?: string;
+  status: string;
+  assignmentScope: string;
+  plannedStartDate?: string;
+  plannedEndDate?: string;
+  predecessorWorkOrderId?: string;
+}
+
+const EMPTY_PHASE_STATS: WorkOrderPhaseStats = {
+  total: 0,
+  completed: 0,
+  active: 0,
+  scheduled: 0,
+  unassigned: 0,
+  blocked: 0,
+};
 
 async function loadWorkOrderPhaseStats(
   organizationId: string,
 ): Promise<Map<string, WorkOrderPhaseStats>> {
-  const { data, error } = await supabase
-    .from('work_orders')
-    .select('project_phase_id, status')
-    .eq('organization_id', organizationId)
-    .not('project_phase_id', 'is', null);
+  const [ordersResponse, assigneesResponse, membersResponse] = await Promise.all([
+    supabase
+      .from('work_orders')
+      .select('id, project_phase_id, project_id, status, assignment_scope, planned_start_date, planned_end_date, predecessor_work_order_id')
+      .eq('organization_id', organizationId)
+      .not('project_phase_id', 'is', null),
+    supabase
+      .from('work_order_assignees')
+      .select('work_order_id')
+      .eq('organization_id', organizationId),
+    supabase
+      .from('project_members')
+      .select('project_id')
+      .eq('organization_id', organizationId),
+  ]);
 
-  if (error) {
-    throw new Error(`Työmääräysten vaihetilastojen haku epäonnistui: ${error.message}`);
+  if (ordersResponse.error) {
+    throw new Error(`Työmääräysten vaihetilastojen haku epäonnistui: ${ordersResponse.error.message}`);
+  }
+  if (assigneesResponse.error) {
+    throw new Error(`Työmääräysten tekijätietojen haku epäonnistui: ${assigneesResponse.error.message}`);
+  }
+  if (membersResponse.error) {
+    throw new Error(`Projektitiimien haku epäonnistui: ${membersResponse.error.message}`);
   }
 
+  const assigneeOrderIds = new Set(
+    (Array.isArray(assigneesResponse.data) ? assigneesResponse.data : [])
+      .map(row)
+      .map((item) => text(item, 'work_order_id'))
+      .filter(Boolean),
+  );
+  const projectIdsWithMembers = new Set(
+    (Array.isArray(membersResponse.data) ? membersResponse.data : [])
+      .map(row)
+      .map((item) => text(item, 'project_id'))
+      .filter(Boolean),
+  );
+  const orders: PhaseWorkOrder[] = (Array.isArray(ordersResponse.data) ? ordersResponse.data : [])
+    .map(row)
+    .map((item) => ({
+      id: text(item, 'id'),
+      projectPhaseId: text(item, 'project_phase_id'),
+      projectId: optionalText(item, 'project_id'),
+      status: text(item, 'status'),
+      assignmentScope: text(item, 'assignment_scope'),
+      plannedStartDate: optionalText(item, 'planned_start_date'),
+      plannedEndDate: optionalText(item, 'planned_end_date'),
+      predecessorWorkOrderId: optionalText(item, 'predecessor_work_order_id'),
+    }));
+  const statusByOrderId = new Map(orders.map((item) => [item.id, item.status]));
   const stats = new Map<string, WorkOrderPhaseStats>();
-  for (const item of Array.isArray(data) ? data : []) {
-    const record = row(item);
-    const phaseId = text(record, 'project_phase_id');
-    if (!phaseId) continue;
-    const current = stats.get(phaseId) ?? { total: 0, completed: 0, active: 0 };
+
+  for (const item of orders) {
+    if (!item.projectPhaseId) continue;
+    const current = { ...(stats.get(item.projectPhaseId) ?? EMPTY_PHASE_STATS) };
+    const completed = item.status === 'Valmis' || item.status === 'Peruttu';
     current.total += 1;
-    const status = text(record, 'status');
-    if (status === 'Valmis' || status === 'Peruttu') current.completed += 1;
-    if (status === 'Käynnissä') current.active += 1;
-    stats.set(phaseId, current);
+    if (completed) current.completed += 1;
+    if (item.status === 'Käynnissä') current.active += 1;
+    if (item.plannedStartDate && item.plannedEndDate) current.scheduled += 1;
+
+    const hasAssignment = item.assignmentScope === 'project_team'
+      ? Boolean(item.projectId && projectIdsWithMembers.has(item.projectId))
+      : assigneeOrderIds.has(item.id);
+    if (!hasAssignment) current.unassigned += 1;
+
+    const predecessorStatus = item.predecessorWorkOrderId
+      ? statusByOrderId.get(item.predecessorWorkOrderId)
+      : undefined;
+    if (!completed && item.predecessorWorkOrderId && !['Valmis', 'Peruttu'].includes(predecessorStatus ?? '')) {
+      current.blocked += 1;
+    }
+    stats.set(item.projectPhaseId, current);
   }
   return stats;
 }
@@ -137,7 +216,7 @@ async function loadScheduling(organizationId: string) {
         ? rawStatus as PhaseStatus
         : 'Suunniteltu';
       const phaseId = text(item, 'id');
-      const counts = phaseStats.get(phaseId) ?? { total: 0, completed: 0, active: 0 };
+      const counts = phaseStats.get(phaseId) ?? EMPTY_PHASE_STATS;
       return {
         id: phaseId,
         projectId: optionalText(item, 'project_id'),
@@ -152,6 +231,9 @@ async function loadScheduling(organizationId: string) {
         workOrderCount: counts.total,
         completedWorkOrderCount: counts.completed,
         activeWorkOrderCount: counts.active,
+        scheduledWorkOrderCount: counts.scheduled,
+        unassignedWorkOrderCount: counts.unassigned,
+        blockedWorkOrderCount: counts.blocked,
       };
     });
 

@@ -75,6 +75,31 @@ export async function updateProjectPhase(
   await update('project_phases', organizationId, id, phasePayload(phase));
 }
 
+export interface RescheduleProjectPhaseInput {
+  organizationId: string;
+  projectPhaseId: string;
+  startDate: string;
+  endDate: string;
+  notes: string;
+}
+
+/**
+ * Reschedules the project phase and every unfinished linked work order in one
+ * database transaction. The database function also rebuilds work-order based
+ * resource-calendar rows, so the production plan and personnel calendar cannot
+ * drift apart.
+ */
+export async function rescheduleProjectPhase(input: RescheduleProjectPhaseInput) {
+  const { error } = await supabase.rpc('reschedule_project_phase', {
+    p_organization_id: input.organizationId,
+    p_project_phase_id: input.projectPhaseId,
+    p_start_date: input.startDate,
+    p_end_date: input.endDate,
+    p_notes: input.notes || null,
+  });
+  if (error) throw new Error(`Työvaiheen aikataulun päivittäminen epäonnistui: ${error.message}`);
+}
+
 export const deleteProjectPhase = (organizationId: string, id: string) =>
   remove('project_phases', organizationId, id);
 
