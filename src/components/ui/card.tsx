@@ -8,8 +8,9 @@ const Card = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
+    data-slot="card"
     className={cn(
-      "rounded-xl border bg-card text-card-foreground shadow",
+      "flex h-full min-w-0 flex-col rounded-xl border bg-card text-card-foreground shadow",
       className
     )}
     {...props}
@@ -23,7 +24,8 @@ const CardHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-col space-y-1.5 p-6", className)}
+    data-slot="card-header"
+    className={cn("flex min-w-0 shrink-0 flex-col space-y-1.5 p-6", className)}
     {...props}
   />
 ))
@@ -35,7 +37,8 @@ const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("font-semibold leading-none tracking-tight", className)}
+    data-slot="card-title"
+    className={cn("break-words font-semibold leading-none tracking-tight", className)}
     {...props}
   />
 ))
@@ -47,7 +50,8 @@ const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
+    data-slot="card-description"
+    className={cn("break-words text-sm text-muted-foreground", className)}
     {...props}
   />
 ))
@@ -57,7 +61,12 @@ const CardContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
+  <div
+    ref={ref}
+    data-slot="card-content"
+    className={cn("min-w-0 flex-1 p-6 pt-0", className)}
+    {...props}
+  />
 ))
 CardContent.displayName = "CardContent"
 
@@ -67,7 +76,8 @@ const CardFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex items-center p-6 pt-0", className)}
+    data-slot="card-footer"
+    className={cn("mt-auto flex min-w-0 shrink-0 flex-wrap items-center gap-2 p-6 pt-0", className)}
     {...props}
   />
 ))
