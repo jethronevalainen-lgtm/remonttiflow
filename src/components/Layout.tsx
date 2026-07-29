@@ -17,6 +17,7 @@ import {
 
 import Header from './Header';
 import Navbar from './Navbar';
+import ContextAnnouncementSection from './announcements/ContextAnnouncementSection';
 import GlobalAnnouncementBanner from './announcements/GlobalAnnouncementBanner';
 import { ROLE_LABELS } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
@@ -129,6 +130,7 @@ export default function Layout() {
         )}
 
         <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 pb-24 sm:px-4 sm:py-5 md:px-6 md:py-6 md:pb-8">
+          <ContextAnnouncementSection pathname={location.pathname} />
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
