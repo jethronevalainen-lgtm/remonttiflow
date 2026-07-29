@@ -17,12 +17,9 @@ import {
   List,
   Search,
   UsersRound,
+  type LucideIcon,
 } from 'lucide-react';
 
-import { useAppDataContext } from '@/contexts/AppDataContext';
-import { useOrganization } from '@/contexts/OrganizationContext';
-import { useSchedulingData, type PhaseStatus, type ProjectPhase } from '@/hooks/useSchedulingData';
-import { derivePhaseProgress } from '@/lib/phaseProgress';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,13 +29,26 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useOrganization } from '@/contexts/OrganizationContext';
+import { useSchedulingData, type PhaseStatus, type ProjectPhase } from '@/hooks/useSchedulingData';
 import logger from '@/lib/logger';
+import { derivePhaseProgress } from '@/lib/phaseProgress';
 import { rescheduleProjectPhase, updateProjectPhase } from '@/lib/supabase/schedulingEntities';
 import { cn } from '@/lib/utils';
 
 const ALL_PROJECTS = '__all_projects__';
 const ALL_HEALTH = '__all_health__';
 const TIMELINE_DAYS = 42;
+
+const ATTENTION_HEALTHS = new Set<ScheduleHealth>([
+  'overdue',
+  'blocked',
+  'at-risk',
+  'unassigned',
+  'unscheduled',
+  'untracked',
+]);
 
 type ViewMode = 'overview' | 'timeline';
 type ScheduleHealth = 'overdue' | 'blocked' | 'at-risk' | 'unscheduled' | 'unassigned' | 'untracked' | 'running' | 'planned' | 'done';
@@ -57,6 +67,13 @@ interface PhaseOperationalView {
   detail: string;
   expectedPercent: number;
   actualPercent: number | null;
+}
+
+interface MetricDefinition {
+  label: string;
+  value: number;
+  detail: string;
+  icon: LucideIcon;
 }
 
 const emptyForm: PhaseForm = {
@@ -160,6 +177,7 @@ function operationalView(phase: ProjectPhase, today = todayIsoDate()): PhaseOper
       actualPercent,
     };
   }
+
   const unscheduledCount = phase.workOrderCount - phase.scheduledWorkOrderCount;
   if (unscheduledCount > 0) {
     return {
@@ -183,7 +201,9 @@ function operationalView(phase: ProjectPhase, today = todayIsoDate()): PhaseOper
     return {
       health: 'running',
       label: 'Käynnissä',
-      detail: actualPercent === null ? progress.detail : `Toteuma ${actualPercent} %, aikataulun tavoite noin ${expectedPercent} %.`,
+      detail: actualPercent === null
+        ? progress.detail
+        : `Toteuma ${actualPercent} %, aikataulun tavoite noin ${expectedPercent} %.`,
       expectedPercent,
       actualPercent,
     };
@@ -266,6 +286,23 @@ function healthPriority(health: ScheduleHealth): number {
   return priorities[health];
 }
 
+function MetricCard({ metric }: { metric: MetricDefinition }) {
+  return (
+    <Card className="min-h-36 border-slate-200 shadow-card">
+      <CardContent className="flex h-full flex-col p-5">
+        <div className="flex min-h-10 items-start justify-between gap-3">
+          <span className="break-words text-xs font-semibold uppercase tracking-wider text-text-secondary">
+            {metric.label}
+          </span>
+          <metric.icon size={18} className="shrink-0 text-primary" />
+        </div>
+        <p className="font-mono text-3xl font-bold leading-none text-text-primary">{metric.value}</p>
+        <p className="mt-auto break-words pt-3 text-xs text-text-secondary">{metric.detail}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Aikataulutus() {
   const navigate = useNavigate();
   const { currentOrg } = useOrganization();
@@ -322,19 +359,27 @@ export default function Aikataulutus() {
   }, [filteredPhases]);
 
   const summary = useMemo(() => {
-    const views = phases.map((phase) => ({ phase, view: operationalView(phase) }));
+    const views = phases.map((phase) => operationalView(phase));
     return {
-      running: views.filter((item) => item.view.health === 'running').length,
-      overdue: views.filter((item) => item.view.health === 'overdue').length,
-      atRisk: views.filter((item) => item.view.health === 'at-risk' || item.view.health === 'blocked').length,
-      missingResources: views.filter((item) => item.view.health === 'unassigned' || item.view.health === 'unscheduled').length,
-      done: views.filter((item) => item.view.health === 'done').length,
+      running: views.filter((item) => item.health === 'running').length,
+      overdue: views.filter((item) => item.health === 'overdue').length,
+      atRisk: views.filter((item) => item.health === 'at-risk' || item.health === 'blocked').length,
+      missingResources: views.filter((item) => item.health === 'unassigned' || item.health === 'unscheduled').length,
+      done: views.filter((item) => item.health === 'done').length,
     };
   }, [phases]);
 
+  const metrics: MetricDefinition[] = [
+    { label: 'Käynnissä', value: summary.running, detail: 'etenee ilman havaittua poikkeamaa', icon: Clock },
+    { label: 'Myöhässä', value: summary.overdue, detail: 'valmistumispäivä ylitetty', icon: AlertTriangle },
+    { label: 'Vaarassa tai estynyt', value: summary.atRisk, detail: 'vaatii työnjohdon toimenpiteen', icon: Layers3 },
+    { label: 'Resurssi puuttuu', value: summary.missingResources, detail: 'tekijä tai kalenterivaraus puuttuu', icon: UsersRound },
+    { label: 'Valmiina', value: summary.done, detail: 'kaikki työmääräykset päätetty', icon: CheckCircle2 },
+  ];
+
   const attentionPhases = useMemo(() => phases
     .map((phase) => ({ phase, view: operationalView(phase) }))
-    .filter(({ view }) => ['overdue', 'blocked', 'at-risk', 'unassigned', 'unscheduled', 'untracked'].includes(view.health))
+    .filter(({ view }) => ATTENTION_HEALTHS.has(view.health))
     .sort((a, b) => {
       const priority = healthPriority(a.view.health) - healthPriority(b.view.health);
       return priority || a.phase.endDate.localeCompare(b.phase.endDate);
@@ -356,6 +401,7 @@ export default function Aikataulutus() {
     };
   });
   const timelinePhases = filteredPhases.filter((phase) => timelinePosition(phase, timelineStart));
+  const hasProjectRows = groupedPhases.length > 0;
 
   const openEdit = (phase: ProjectPhase) => {
     setEditing(phase);
@@ -441,14 +487,16 @@ export default function Aikataulutus() {
       )}
 
       <Card className="border-blue-200 bg-blue-50/50 shadow-none">
-        <CardContent className="grid gap-4 p-4 md:grid-cols-3 md:p-5">
+        <CardContent className="grid auto-rows-fr gap-4 p-4 md:grid-cols-3 md:p-5">
           {[
             { number: '1', title: 'Rakenna projektiin työkokonaisuus', detail: 'Määritä kohteet, työvaiheet, tekijät ja päivämäärät.' },
             { number: '2', title: 'Työmääräykset ohjaavat toteumaa', detail: 'Valmistuneet työmääräykset päivittävät vaiheen etenemisen automaattisesti.' },
             { number: '3', title: 'Poikkeamat nousevat näkyviin', detail: 'Myöhästyminen, esteet sekä puuttuvat tekijät tai varaukset näkyvät ilman käsityötä.' },
           ].map((item) => (
-            <div key={item.number} className="flex items-start gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">{item.number}</span>
+            <div key={item.number} className="flex h-full min-h-16 items-start gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
+                {item.number}
+              </span>
               <div className="min-w-0">
                 <p className="break-words text-sm font-semibold text-blue-950">{item.title}</p>
                 <p className="mt-1 break-words text-xs text-blue-800">{item.detail}</p>
@@ -458,31 +506,14 @@ export default function Aikataulutus() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {[
-          { label: 'Käynnissä', value: summary.running, detail: 'etenee ilman havaittua poikkeamaa', icon: Clock },
-          { label: 'Myöhässä', value: summary.overdue, detail: 'valmistumispäivä ylitetty', icon: AlertTriangle },
-          { label: 'Vaarassa tai estynyt', value: summary.atRisk, detail: 'vaatii työnjohdon toimenpiteen', icon: Layers3 },
-          { label: 'Resurssi puuttuu', value: summary.missingResources, detail: 'tekijä tai kalenterivaraus puuttuu', icon: UsersRound },
-          { label: 'Valmiina', value: summary.done, detail: 'kaikki työmääräykset päätetty', icon: CheckCircle2 },
-        ].map((item) => (
-          <Card key={item.label} className="border-slate-200 shadow-card">
-            <CardContent className="p-5">
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <span className="break-words text-xs font-semibold uppercase tracking-wider text-text-secondary">{item.label}</span>
-                <item.icon size={18} className="shrink-0 text-primary" />
-              </div>
-              <p className="font-mono text-3xl font-bold text-text-primary">{item.value}</p>
-              <p className="mt-1 break-words text-xs text-text-secondary">{item.detail}</p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {metrics.map((metric) => <MetricCard key={metric.label} metric={metric} />)}
       </div>
 
       <Card>
         <CardContent className="space-y-4 p-4 sm:p-5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-            <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(14rem,1fr)_minmax(12rem,0.7fr)_minmax(12rem,0.7fr)]">
+            <div className="grid flex-1 items-end gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(14rem,1fr)_minmax(12rem,0.7fr)_minmax(12rem,0.7fr)]">
               <div className="space-y-2">
                 <Label htmlFor="schedule-search">Haku</Label>
                 <div className="relative">
@@ -502,7 +533,9 @@ export default function Aikataulutus() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value={ALL_PROJECTS}>Kaikki projektit</SelectItem>
-                    {projectOptions.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
+                    {projectOptions.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -526,10 +559,18 @@ export default function Aikataulutus() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:flex">
-              <Button variant={viewMode === 'overview' ? 'default' : 'outline'} onClick={() => setViewMode('overview')} className="gap-2">
+              <Button
+                variant={viewMode === 'overview' ? 'default' : 'outline'}
+                onClick={() => setViewMode('overview')}
+                className="gap-2"
+              >
                 <List size={16} /> Tilanne
               </Button>
-              <Button variant={viewMode === 'timeline' ? 'default' : 'outline'} onClick={() => setViewMode('timeline')} className="gap-2">
+              <Button
+                variant={viewMode === 'timeline' ? 'default' : 'outline'}
+                onClick={() => setViewMode('timeline')}
+                className="gap-2"
+              >
                 <CalendarDays size={16} /> 6 viikkoa
               </Button>
             </div>
@@ -541,18 +582,21 @@ export default function Aikataulutus() {
       </Card>
 
       {viewMode === 'overview' && (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.7fr)]">
-          <div className="space-y-5">
+        <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.7fr)]">
+          <div className="flex min-w-0 flex-col gap-5">
             {groupedPhases.map((group) => (
               <Card key={group.projectName} className="border-slate-200 shadow-card">
                 <CardHeader className="border-b bg-slate-50/80 py-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <CardTitle className="break-words text-lg">{group.projectName}</CardTitle>
+                      <CardTitle className="text-lg">{group.projectName}</CardTitle>
                       <p className="mt-1 break-words text-xs text-text-secondary">{group.items.length} työvaihetta</p>
                     </div>
                     {group.projectId && (
-                      <Link to={`/projektit/${group.projectId}`} className="inline-flex min-h-9 items-center gap-1 self-start rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                      <Link
+                        to={`/projektit/${group.projectId}`}
+                        className="inline-flex min-h-9 items-center gap-1 self-start rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                      >
                         Avaa projekti <ArrowRight size={15} />
                       </Link>
                     )}
@@ -563,7 +607,10 @@ export default function Aikataulutus() {
                     const progress = phaseProgress(phase);
                     const view = operationalView(phase);
                     return (
-                      <div key={phase.id} className="grid grid-cols-1 gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.85fr)_minmax(0,1fr)_auto] lg:items-start">
+                      <div
+                        key={phase.id}
+                        className="grid grid-cols-1 items-start gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.85fr)_minmax(0,1fr)_auto]"
+                      >
                         <div className="min-w-0 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="break-words font-semibold text-text-primary">{phase.name}</p>
@@ -573,9 +620,13 @@ export default function Aikataulutus() {
                           <p className="break-words text-xs font-medium text-text-secondary">{view.detail}</p>
                         </div>
                         <div className="min-w-0 text-sm text-text-secondary">
-                          <p className="break-words font-medium text-text-primary">{formatDate(phase.startDate)} – {formatDate(phase.endDate)}</p>
+                          <p className="break-words font-medium text-text-primary">
+                            {formatDate(phase.startDate)} – {formatDate(phase.endDate)}
+                          </p>
                           <p className="mt-1 text-xs">{durationDays(phase.startDate, phase.endDate)} kalenteripäivää</p>
-                          <p className="mt-1 break-words text-xs">{phase.scheduledWorkOrderCount}/{phase.workOrderCount} työmääräystä kalenterissa</p>
+                          <p className="mt-1 break-words text-xs">
+                            {phase.scheduledWorkOrderCount}/{phase.workOrderCount} työmääräystä kalenterissa
+                          </p>
                         </div>
                         <div className="min-w-0 space-y-2">
                           {progress.percent === null ? (
@@ -601,13 +652,15 @@ export default function Aikataulutus() {
                 </CardContent>
               </Card>
             ))}
-            {!loading && groupedPhases.length === 0 && (
-              <Card>
-                <CardContent className="p-10 text-center sm:p-12">
-                  <CalendarDays size={44} className="mx-auto mb-3 text-text-muted" />
+
+            {!loading && !hasProjectRows && (
+              <Card className="min-h-72">
+                <CardContent className="flex h-full flex-col items-center justify-center p-10 text-center sm:p-12">
+                  <CalendarDays size={44} className="mb-3 text-text-muted" />
                   <p className="font-semibold">Ei aikataulutettuja työvaiheita</p>
-                  <p className="mx-auto mt-1 max-w-xl break-words text-sm text-text-secondary">
-                    Työvaiheet luodaan projektin työkokonaisuudesta. Näin kohteet, työmääräykset, tekijät ja kalenterivaraukset pysyvät samassa rakenteessa.
+                  <p className="mt-1 max-w-xl break-words text-sm text-text-secondary">
+                    Työvaiheet luodaan projektin työkokonaisuudesta. Näin kohteet, työmääräykset,
+                    tekijät ja kalenterivaraukset pysyvät samassa rakenteessa.
                   </p>
                   <Button onClick={() => navigate('/projektit')} className="mt-4 gap-2">
                     <FolderKanban size={16} /> Avaa projektit
@@ -617,27 +670,45 @@ export default function Aikataulutus() {
             )}
           </div>
 
-          <Card className="h-fit xl:sticky xl:top-4">
+          <Card className={cn(
+            'min-h-72',
+            hasProjectRows && 'xl:h-fit xl:sticky xl:top-4',
+          )}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle size={18} className="text-amber-600" /> Huomiota vaativat</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <AlertTriangle size={18} className="shrink-0 text-amber-600" />
+                <span>Huomiota vaativat</span>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className={cn(
+              'space-y-3',
+              attentionPhases.length === 0 && 'flex h-full flex-col items-center justify-center text-center',
+            )}>
               {attentionPhases.map(({ phase, view }) => (
                 <div key={phase.id} className="rounded-xl border border-slate-200 p-3">
-                  <div className="flex flex-wrap items-center gap-2">{healthBadge(view)}<span className="break-words text-xs text-text-secondary">{phase.projectName}</span></div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {healthBadge(view)}
+                    <span className="break-words text-xs text-text-secondary">{phase.projectName}</span>
+                  </div>
                   <p className="mt-2 break-words text-sm font-semibold text-text-primary">{phase.name}</p>
                   <p className="mt-1 break-words text-xs text-text-secondary">{view.detail}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" onClick={() => openEdit(phase)}>Korjaa aikataulu</Button>
-                    {phase.projectId && <Button variant="ghost" size="sm" onClick={() => navigate(`/projektit/${phase.projectId}`)}>Avaa projekti <ArrowRight size={14} className="ml-1" /></Button>}
+                    {phase.projectId && (
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/projektit/${phase.projectId}`)}>
+                        Avaa projekti <ArrowRight size={14} className="ml-1" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
               {attentionPhases.length === 0 && (
-                <div className="py-8 text-center">
+                <div className="py-6">
                   <CheckCircle2 size={40} className="mx-auto mb-3 text-emerald-500" />
                   <p className="font-semibold">Ei havaittuja poikkeamia</p>
-                  <p className="mt-1 break-words text-sm text-text-secondary">Aikataulut, tekijät ja kalenterivaraukset ovat kunnossa.</p>
+                  <p className="mt-1 break-words text-sm text-text-secondary">
+                    Aikataulut, tekijät ja kalenterivaraukset ovat kunnossa.
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -650,18 +721,34 @@ export default function Aikataulutus() {
           <CardHeader className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <CardTitle className="break-words text-lg">Kuuden viikon tuotantosuunnitelma</CardTitle>
-                <p className="mt-1 break-words text-xs text-text-secondary">{format(timelineStart, 'd.M.yyyy', { locale: fi })} – {format(timelineEnd, 'd.M.yyyy', { locale: fi })}</p>
+                <CardTitle className="text-lg">Kuuden viikon tuotantosuunnitelma</CardTitle>
+                <p className="mt-1 break-words text-xs text-text-secondary">
+                  {format(timelineStart, 'd.M.yyyy', { locale: fi })} – {format(timelineEnd, 'd.M.yyyy', { locale: fi })}
+                </p>
               </div>
               <div className="grid grid-cols-3 gap-2">
-                <Button variant="outline" size="sm" onClick={() => setTimelineOffsetDays((value) => value - 14)} aria-label="Edelliset viikot"><ChevronLeft size={16} /></Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTimelineOffsetDays((value) => value - 14)}
+                  aria-label="Edelliset viikot"
+                >
+                  <ChevronLeft size={16} />
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => setTimelineOffsetDays(0)}>Tänään</Button>
-                <Button variant="outline" size="sm" onClick={() => setTimelineOffsetDays((value) => value + 14)} aria-label="Seuraavat viikot"><ChevronRight size={16} /></Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTimelineOffsetDays((value) => value + 14)}
+                  aria-label="Seuraavat viikot"
+                >
+                  <ChevronRight size={16} />
+                </Button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid auto-rows-fr grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {timelineWeeks.map((week) => (
-                <div key={week.key} className="rounded-lg bg-slate-50 px-3 py-2 text-center">
+                <div key={week.key} className="flex h-full flex-col justify-center rounded-lg bg-slate-50 px-3 py-2 text-center">
                   <p className="text-xs font-semibold text-text-primary">{week.label}</p>
                   <p className="break-words text-[11px] text-text-secondary">{week.detail}</p>
                 </div>
@@ -674,7 +761,10 @@ export default function Aikataulutus() {
               const view = operationalView(phase);
               if (!position) return null;
               return (
-                <div key={phase.id} className="grid gap-2 rounded-xl border border-slate-200 p-3 lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)] lg:items-center">
+                <div
+                  key={phase.id}
+                  className="grid items-center gap-2 rounded-xl border border-slate-200 p-3 lg:grid-cols-[minmax(12rem,16rem)_minmax(0,1fr)]"
+                >
                   <div className="min-w-0">
                     <p className="break-words text-xs text-text-secondary">{phase.projectName}</p>
                     <p className="break-words text-sm font-semibold text-text-primary">{phase.name}</p>
@@ -682,7 +772,9 @@ export default function Aikataulutus() {
                   </div>
                   <div className="relative h-12 rounded-lg border border-slate-200 bg-slate-50">
                     <div className="absolute inset-0 grid grid-cols-6">
-                      {timelineWeeks.map((week, index) => <div key={week.key} className={cn(index > 0 && 'border-l border-slate-200')} />)}
+                      {timelineWeeks.map((week, index) => (
+                        <div key={week.key} className={cn(index > 0 && 'border-l border-slate-200')} />
+                      ))}
                     </div>
                     <div
                       className={cn('absolute top-2 h-8 overflow-hidden rounded-md border shadow-sm', timelineTone(view.health))}
@@ -705,7 +797,9 @@ export default function Aikataulutus() {
               <div className="py-10 text-center">
                 <CalendarDays size={40} className="mx-auto mb-3 text-text-muted" />
                 <p className="font-semibold">Valitulla kuuden viikon jaksolla ei ole työvaiheita</p>
-                <p className="mt-1 break-words text-sm text-text-secondary">Siirry edellisiin tai seuraaviin viikkoihin tai muuta suodattimia.</p>
+                <p className="mt-1 break-words text-sm text-text-secondary">
+                  Siirry edellisiin tai seuraaviin viikkoihin tai muuta suodattimia.
+                </p>
               </div>
             )}
           </CardContent>
@@ -732,30 +826,50 @@ export default function Aikataulutus() {
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="phase-name">Työvaihe</Label>
               {editing && editing.workOrderCount > 0 ? (
-                <div id="phase-name" className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">{form.name}</div>
+                <div id="phase-name" className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+                  {form.name}
+                </div>
               ) : (
-                <Input id="phase-name" value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} />
+                <Input
+                  id="phase-name"
+                  value={form.name}
+                  onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))}
+                />
               )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="phase-start">Aloitus *</Label>
-              <Input id="phase-start" type="date" value={form.startDate} onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))} />
+              <Input
+                id="phase-start"
+                type="date"
+                value={form.startDate}
+                onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="phase-end">Valmistuminen *</Label>
-              <Input id="phase-end" type="date" value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} />
+              <Input
+                id="phase-end"
+                type="date"
+                value={form.endDate}
+                onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))}
+              />
             </div>
             {editing && editing.workOrderCount > 0 ? (
               <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 sm:col-span-2">
                 <p className="break-words font-medium">Muutos päivittää koko työvaiheen</p>
                 <p className="break-words text-xs text-blue-800">
-                  Uudet päivämäärät siirretään {editing.workOrderCount - editing.completedWorkOrderCount} keskeneräiselle työmääräykselle ja niiden resurssikalenterivarauksille. Valmiiden ja peruttujen töiden historiaa ei muuteta.
+                  Uudet päivämäärät siirretään {editing.workOrderCount - editing.completedWorkOrderCount} keskeneräiselle
+                  työmääräykselle ja niiden resurssikalenterivarauksille. Valmiiden ja peruttujen töiden historiaa ei muuteta.
                 </p>
               </div>
             ) : (
               <div className="space-y-2 sm:col-span-2">
                 <Label>Tila</Label>
-                <Select value={form.status} onValueChange={(value: PhaseStatus) => setForm((previous) => ({ ...previous, status: value }))}>
+                <Select
+                  value={form.status}
+                  onValueChange={(value: PhaseStatus) => setForm((previous) => ({ ...previous, status: value }))}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Suunniteltu">Suunniteltu</SelectItem>
@@ -768,12 +882,18 @@ export default function Aikataulutus() {
             )}
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="phase-notes">Lisätiedot</Label>
-              <Textarea id="phase-notes" value={form.notes} onChange={(event) => setForm((previous) => ({ ...previous, notes: event.target.value }))} />
+              <Textarea
+                id="phase-notes"
+                value={form.notes}
+                onChange={(event) => setForm((previous) => ({ ...previous, notes: event.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Peruuta</Button>
-            <Button onClick={() => void save()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna aikataulu'}</Button>
+            <Button onClick={() => void save()} disabled={saving}>
+              {saving ? 'Tallennetaan…' : 'Tallenna aikataulu'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
