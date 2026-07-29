@@ -1,0 +1,604 @@
+name: Implement employee pay onboarding
+
+on:
+  push:
+    branches:
+      - feature/employee-pay-onboarding
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: ${{ !contains(github.event.head_commit.message, '[employee-pay-generated]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: feature/employee-pay-onboarding
+          fetch-depth: 0
+
+      - name: Apply implementation
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}\n--- needle ---\n{old}')
+              file.write_text(text.replace(old, new, 1))
+
+          helper = Path('src/lib/employeeCompensationOnboarding.ts')
+          helper.write_text("""export type EmployeePayType = 'Kuukausipalkka' | 'Tuntipalkka';
+
+export function parseLocalizedDecimal(value: string): number | null {
+  const normalized = value.trim().replaceAll(' ', '').replace(',', '.');
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseLocalizedMoneyToCents(value: string): number | null {
+  const parsed = parseLocalizedDecimal(value);
+  return parsed == null ? null : Math.round(parsed * 100);
+}
+
+export function formatEmployeePay(
+  payType: EmployeePayType | '',
+  amountCents: number | null,
+): string {
+  if (!payType || amountCents == null) return 'Ei määritetty';
+  const amount = new Intl.NumberFormat('fi-FI', {
+    style: 'currency',
+    currency: 'EUR',
+  }).format(amountCents / 100);
+  return payType === 'Tuntipalkka' ? `${amount} / h` : `${amount} / kk`;
+}
+""")
+
+          test = Path('src/lib/__tests__/employeeCompensationOnboarding.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';
+
+import {
+  formatEmployeePay,
+  parseLocalizedDecimal,
+  parseLocalizedMoneyToCents,
+} from '@/lib/employeeCompensationOnboarding';
+
+describe('employee compensation onboarding', () => {
+  it('parses Finnish decimal values', () => {
+    expect(parseLocalizedDecimal('37,5')).toBe(37.5);
+    expect(parseLocalizedDecimal(' 18.25 ')).toBe(18.25);
+    expect(parseLocalizedDecimal('')).toBeNull();
+    expect(parseLocalizedDecimal('abc')).toBeNull();
+  });
+
+  it('stores money as integer cents', () => {
+    expect(parseLocalizedMoneyToCents('18,75')).toBe(1875);
+    expect(parseLocalizedMoneyToCents('3 250,40')).toBe(325040);
+  });
+
+  it('formats hourly and monthly pay unambiguously', () => {
+    expect(formatEmployeePay('Tuntipalkka', 1875)).toContain('/ h');
+    expect(formatEmployeePay('Kuukausipalkka', 325000)).toContain('/ kk');
+    expect(formatEmployeePay('', null)).toBe('Ei määritetty');
+  });
+});
+""")
+
+          page = 'src/pages/HenkilostoIntegrated.tsx'
+          replace_once(page, """import {
+  listEmployeeSupervisorAssignments,
+  setEmployeeSupervisor,
+  type EmployeeSupervisorAssignment,
+} from '@/lib/supabase/employeeSupervisors';
+import {
+  createEmployeeRecord,
+  deleteEmployeeRecord,
+  updateEmployeeRecord,
+} from '@/lib/supabase/organizationEntities';
+""", """import {
+  formatEmployeePay,
+  parseLocalizedDecimal,
+  parseLocalizedMoneyToCents,
+  type EmployeePayType,
+} from '@/lib/employeeCompensationOnboarding';
+import {
+  listEmployeeSupervisorAssignments,
+  setEmployeeSupervisor,
+  type EmployeeSupervisorAssignment,
+} from '@/lib/supabase/employeeSupervisors';
+import {
+  createEmployeeRecord,
+  deleteEmployeeRecord,
+  updateEmployeeRecord,
+} from '@/lib/supabase/organizationEntities';
+""")
+          replace_once(page, """import {
+  createEmployeeAbsence,
+  createEmployeeCertification,
+  deleteEmployeeAbsence,
+  deleteEmployeeCertification,
+  type EmployeeAbsence,
+  type EmployeeCertification,
+} from '@/lib/supabase/resourceManagement';
+""", """import {
+  createEmployeeAbsence,
+  createEmployeeCertification,
+  deleteEmployeeAbsence,
+  deleteEmployeeCertification,
+  type EmployeeAbsence,
+  type EmployeeCertification,
+} from '@/lib/supabase/resourceManagement';
+import {
+  saveEmployeeCompensation,
+  type CompensationInput,
+} from '@/lib/supabase/workforceHr';
+""")
+          replace_once(page, """  hourlyCost: string;
+  employmentType: string;
+  emergencyContactName: string;
+""", """  hourlyCost: string;
+  employmentType: string;
+  payType: EmployeePayType | '';
+  payAmount: string;
+  weeklyHours: string;
+  payPeriod: string;
+  emergencyContactName: string;
+""")
+          replace_once(page, """  hourlyCost: '',
+  employmentType: '',
+  emergencyContactName: '',
+""", """  hourlyCost: '',
+  employmentType: '',
+  payType: '',
+  payAmount: '',
+  weeklyHours: '37,5',
+  payPeriod: 'Kuukausi',
+  emergencyContactName: '',
+""")
+          replace_once(page, """      hourlyCost: employee.hourlyCostCents == null ? '' : String(employee.hourlyCostCents / 100),
+      employmentType: employee.employmentType ?? '',
+      emergencyContactName: employee.emergencyContactName ?? '',
+""", """      hourlyCost: employee.hourlyCostCents == null ? '' : String(employee.hourlyCostCents / 100),
+      employmentType: employee.employmentType ?? '',
+      payType: '',
+      payAmount: '',
+      weeklyHours: '37,5',
+      payPeriod: 'Kuukausi',
+      emergencyContactName: employee.emergencyContactName ?? '',
+""")
+          replace_once(page, """  const parsedHourlyCost = () => employeeForm.hourlyCost === ''
+    ? undefined
+    : Number(employeeForm.hourlyCost.replace(',', '.'));
+
+  const validateEmployee = () => {
+""", """  const parsedHourlyCost = () => employeeForm.hourlyCost === ''
+    ? undefined
+    : Number(employeeForm.hourlyCost.replace(',', '.'));
+
+  const buildCompensationInput = (): CompensationInput | null => {
+    if (editingEmployee || actualRole !== 'admin' || !employeeForm.payType) return null;
+    const amountCents = parseLocalizedMoneyToCents(employeeForm.payAmount);
+    const weeklyHours = parseLocalizedDecimal(employeeForm.weeklyHours);
+    if (amountCents == null || weeklyHours == null) return null;
+    return {
+      validFrom: employeeForm.startDate || today,
+      payType: employeeForm.payType,
+      monthlySalaryCents: employeeForm.payType === 'Kuukausipalkka' ? amountCents : undefined,
+      hourlyWageCents: employeeForm.payType === 'Tuntipalkka' ? amountCents : undefined,
+      weeklyHours,
+      payPeriod: employeeForm.payPeriod.trim() || 'Kuukausi',
+      eveningAllowanceCents: 0,
+      nightAllowanceCents: 0,
+      saturdayAllowanceCents: 0,
+      sundayAllowanceCents: 0,
+      overtime50Multiplier: 1.5,
+      overtime100Multiplier: 2,
+      dailyAllowanceCents: 0,
+      mealAllowanceCents: 0,
+      travelTimeHourlyCents: 0,
+    };
+  };
+
+  const validateEmployee = () => {
+""")
+          replace_once(page, """    if (hourlyCost !== undefined && (!Number.isFinite(hourlyCost) || hourlyCost < 0)) {
+      nextErrors.push('Tuntikustannuksen pitää olla nolla tai positiivinen.');
+    }
+    setErrors(nextErrors);
+""", """    if (hourlyCost !== undefined && (!Number.isFinite(hourlyCost) || hourlyCost < 0)) {
+      nextErrors.push('Tuntikustannuksen pitää olla nolla tai positiivinen.');
+    }
+    if (!editingEmployee && actualRole === 'admin') {
+      const payAmountCents = parseLocalizedMoneyToCents(employeeForm.payAmount);
+      const weeklyHours = parseLocalizedDecimal(employeeForm.weeklyHours);
+      if (!employeeForm.payType) nextErrors.push('Valitse tuntipalkka tai kuukausipalkka.');
+      if (payAmountCents == null || payAmountCents <= 0) nextErrors.push('Anna palkaksi nollaa suurempi euromäärä.');
+      if (weeklyHours == null || weeklyHours <= 0 || weeklyHours > 168) nextErrors.push('Viikkotyöajan pitää olla 0–168 tuntia.');
+      if (!employeeForm.payPeriod.trim()) nextErrors.push('Palkkakausi on pakollinen.');
+    }
+    setErrors(nextErrors);
+""")
+          replace_once(page, """  const saveEmployee = async () => {
+    if (!validateEmployee() || !currentOrg) return;
+    const hourlyCost = parsedHourlyCost();
+    const payload: Omit<Employee, 'id'> = {
+""", """  const saveEmployee = async () => {
+    if (!validateEmployee() || !currentOrg || !user) return;
+    const hourlyCost = parsedHourlyCost();
+    const compensation = buildCompensationInput();
+    const payload: Omit<Employee, 'id'> = {
+""")
+          replace_once(page, """          emergencyContactName: payload.emergencyContactName ?? '',
+          emergencyContactPhone: payload.emergencyContactPhone ?? '',
+          supervisorUserId: selectedSupervisorUserId === NONE ? null : selectedSupervisorUserId,
+        };
+""", """          emergencyContactName: payload.emergencyContactName ?? '',
+          emergencyContactPhone: payload.emergencyContactPhone ?? '',
+          supervisorUserId: selectedSupervisorUserId === NONE ? null : selectedSupervisorUserId,
+          compensation: compensation ? {
+            validFrom: compensation.validFrom,
+            payType: compensation.payType,
+            monthlySalaryCents: compensation.monthlySalaryCents ?? null,
+            hourlyWageCents: compensation.hourlyWageCents ?? null,
+            weeklyHours: compensation.weeklyHours,
+            payPeriod: compensation.payPeriod,
+          } : null,
+        };
+""")
+          replace_once(page, """      } else {
+        const employeeId = await createEmployeeRecord(currentOrg.id, user?.id, payload);
+        if (canManageSupervisors && selectedSupervisorUserId !== NONE) {
+          await setEmployeeSupervisor({
+            organizationId: currentOrg.id,
+            employeeId,
+            supervisorUserId: selectedSupervisorUserId,
+          });
+        }
+        setSuccessMessage('Henkilöstökortti luotiin ilman sovellustunnusta.');
+      }
+""", """      } else {
+        const employeeId = await createEmployeeRecord(currentOrg.id, user.id, payload);
+        try {
+          if (compensation) {
+            await saveEmployeeCompensation({
+              organizationId: currentOrg.id,
+              employeeId,
+              userId: user.id,
+              input: compensation,
+            });
+          }
+        } catch (compensationError) {
+          try {
+            await deleteEmployeeRecord(currentOrg.id, employeeId);
+          } catch (rollbackError) {
+            logger.error('Palkkatietojen tallennuksen peruutus epäonnistui', {
+              compensationError,
+              rollbackError,
+              employeeId,
+            });
+          }
+          throw compensationError;
+        }
+        if (canManageSupervisors && selectedSupervisorUserId !== NONE) {
+          await setEmployeeSupervisor({
+            organizationId: currentOrg.id,
+            employeeId,
+            supervisorUserId: selectedSupervisorUserId,
+          });
+        }
+        setSuccessMessage(compensation
+          ? 'Henkilöstökortti ja palkkaehdot luotiin ilman sovellustunnusta.'
+          : 'Henkilöstökortti luotiin ilman sovellustunnusta.');
+      }
+""")
+          replace_once(page, """                <div><dt className=\"text-xs font-medium text-text-secondary\">Tiimi / esihenkilö</dt><dd className=\"mt-1 break-words\">{selectedSupervisorUserId === NONE ? 'Ei nimettyä esihenkilöä' : supervisorNameByUserId.get(selectedSupervisorUserId) ?? 'Valittu työnjohtaja'}</dd></div>
+              </dl>
+""", """                <div><dt className=\"text-xs font-medium text-text-secondary\">Tiimi / esihenkilö</dt><dd className=\"mt-1 break-words\">{selectedSupervisorUserId === NONE ? 'Ei nimettyä esihenkilöä' : supervisorNameByUserId.get(selectedSupervisorUserId) ?? 'Valittu työnjohtaja'}</dd></div>
+                {actualRole === 'admin' && <div><dt className=\"text-xs font-medium text-text-secondary\">Palkka</dt><dd className=\"mt-1 break-words\">{formatEmployeePay(employeeForm.payType, parseLocalizedMoneyToCents(employeeForm.payAmount))} · {employeeForm.weeklyHours} h/viikko · {employeeForm.payPeriod}</dd></div>}
+              </dl>
+""")
+          replace_once(page, """              <div className=\"space-y-2\"><Label>Työsuhdetyyppi</Label><Input value={employeeForm.employmentType} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, employmentType: event.target.value }))} placeholder=\"Esimerkiksi vakituinen\" /></div>
+              <div className=\"space-y-2\"><Label>Tuntikustannus €</Label><Input inputMode=\"decimal\" value={employeeForm.hourlyCost} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, hourlyCost: event.target.value }))} /></div>
+              <div className=\"space-y-2\"><Label>Hätäyhteyshenkilö</Label><Input value={employeeForm.emergencyContactName} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactName: event.target.value }))} /></div>
+""", """              <div className=\"space-y-2\"><Label>Työsuhdetyyppi</Label><Input value={employeeForm.employmentType} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, employmentType: event.target.value }))} placeholder=\"Esimerkiksi vakituinen\" /></div>
+              <div className=\"space-y-2\"><Label>Sisäinen tuntikustannus €/h</Label><Input inputMode=\"decimal\" value={employeeForm.hourlyCost} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, hourlyCost: event.target.value }))} /><p className=\"text-xs leading-5 text-text-secondary\">Projektien kustannuslaskentaa varten. Tämä ei ole työntekijän tuntipalkka.</p></div>
+
+              {!editingEmployee && (
+                <div className=\"space-y-4 rounded-xl border border-orange-200 bg-orange-50/60 p-4 sm:col-span-2\">
+                  <div>
+                    <div className=\"flex items-center gap-2 font-semibold text-slate-950\">Palkka</div>
+                    <p className=\"mt-1 text-sm leading-6 text-slate-700\">Valitse palkkatapa. Palkka tallennetaan suoraan henkilön voimassa oleviin palkkaehtoihin.</p>
+                  </div>
+                  {actualRole === 'admin' ? (
+                    <div className=\"grid gap-4 sm:grid-cols-2\">
+                      <div className=\"space-y-2\"><Label>Palkkatapa *</Label><Select value={employeeForm.payType} onValueChange={(payType: EmployeePayType) => setEmployeeForm((previous) => ({ ...previous, payType }))}><SelectTrigger><SelectValue placeholder=\"Valitse palkkatapa\" /></SelectTrigger><SelectContent><SelectItem value=\"Tuntipalkka\">Tuntipalkka</SelectItem><SelectItem value=\"Kuukausipalkka\">Kuukausipalkka</SelectItem></SelectContent></Select></div>
+                      <div className=\"space-y-2\"><Label>{employeeForm.payType === 'Tuntipalkka' ? 'Tuntipalkka €/h *' : employeeForm.payType === 'Kuukausipalkka' ? 'Kuukausipalkka €/kk *' : 'Palkan määrä € *'}</Label><Input inputMode=\"decimal\" disabled={!employeeForm.payType} value={employeeForm.payAmount} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, payAmount: event.target.value }))} placeholder={employeeForm.payType === 'Tuntipalkka' ? 'Esimerkiksi 18,75' : 'Esimerkiksi 3250'} /></div>
+                      <div className=\"space-y-2\"><Label>Viikkotyöaika *</Label><Input inputMode=\"decimal\" value={employeeForm.weeklyHours} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, weeklyHours: event.target.value }))} /></div>
+                      <div className=\"space-y-2\"><Label>Palkkakausi *</Label><Input value={employeeForm.payPeriod} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, payPeriod: event.target.value }))} placeholder=\"Esimerkiksi Kuukausi tai 2 viikkoa\" /></div>
+                    </div>
+                  ) : (
+                    <p className=\"text-sm leading-6 text-slate-700\">Palkkatiedot ovat luottamuksellisia. Organisaation ylläpitäjä määrittää ne henkilökortille.</p>
+                  )}
+                </div>
+              )}
+
+              <div className=\"space-y-2\"><Label>Hätäyhteyshenkilö</Label><Input value={employeeForm.emergencyContactName} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactName: event.target.value }))} /></div>
+""")
+
+          admin = 'src/lib/supabase/organizationAdmin.ts'
+          replace_once(admin, """export interface EmployeeOnboardingInput {
+  jobTitle: string;
+  department: string;
+  phone: string;
+  startDate: string;
+  status: 'Aktiivinen' | 'Lomalla' | 'Sairas' | 'Koulutuksessa' | 'Eroonnut';
+  hourlyCostCents: number | null;
+  employmentType: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  supervisorUserId: string | null;
+}
+""", """export interface EmployeeCompensationOnboardingInput {
+  validFrom: string;
+  payType: 'Kuukausipalkka' | 'Tuntipalkka';
+  monthlySalaryCents: number | null;
+  hourlyWageCents: number | null;
+  weeklyHours: number;
+  payPeriod: string;
+}
+
+export interface EmployeeOnboardingInput {
+  jobTitle: string;
+  department: string;
+  phone: string;
+  startDate: string;
+  status: 'Aktiivinen' | 'Lomalla' | 'Sairas' | 'Koulutuksessa' | 'Eroonnut';
+  hourlyCostCents: number | null;
+  employmentType: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  supervisorUserId: string | null;
+  compensation: EmployeeCompensationOnboardingInput | null;
+}
+""")
+
+          edge = 'supabase/functions/invite-organization-member/index.ts'
+          replace_once(edge, """type EmployeeStatus = 'Aktiivinen' | 'Lomalla' | 'Sairas' | 'Koulutuksessa' | 'Eroonnut';
+type CustomerAccessScope = 'all_projects' | 'selected_projects';
+""", """type EmployeeStatus = 'Aktiivinen' | 'Lomalla' | 'Sairas' | 'Koulutuksessa' | 'Eroonnut';
+type EmployeePayType = 'Kuukausipalkka' | 'Tuntipalkka';
+type CustomerAccessScope = 'all_projects' | 'selected_projects';
+""")
+          replace_once(edge, """interface EmployeeInput {
+  jobTitle: string;
+  department: string;
+  phone: string;
+  startDate: string;
+  status: EmployeeStatus;
+  hourlyCostCents: number | null;
+  employmentType: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  supervisorUserId: string | null;
+}
+""", """interface EmployeeCompensationInput {
+  validFrom: string;
+  payType: EmployeePayType;
+  monthlySalaryCents: number | null;
+  hourlyWageCents: number | null;
+  weeklyHours: number;
+  payPeriod: string;
+}
+
+interface EmployeeInput {
+  jobTitle: string;
+  department: string;
+  phone: string;
+  startDate: string;
+  status: EmployeeStatus;
+  hourlyCostCents: number | null;
+  employmentType: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  supervisorUserId: string | null;
+  compensation: EmployeeCompensationInput | null;
+}
+""")
+          replace_once(edge, """function parseEmployee(value: unknown): EmployeeInput | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Row;
+  const hourlyCost = row.hourlyCostCents;
+  const supervisorUserId = cleanText(row.supervisorUserId, 80);
+  return {
+""", """function parseEmployeeCompensation(value: unknown): EmployeeCompensationInput | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Row;
+  const payType = row.payType === 'Kuukausipalkka' || row.payType === 'Tuntipalkka'
+    ? row.payType
+    : null;
+  const monthlySalaryCents = typeof row.monthlySalaryCents === 'number' && Number.isInteger(row.monthlySalaryCents)
+    ? row.monthlySalaryCents
+    : null;
+  const hourlyWageCents = typeof row.hourlyWageCents === 'number' && Number.isInteger(row.hourlyWageCents)
+    ? row.hourlyWageCents
+    : null;
+  const weeklyHours = typeof row.weeklyHours === 'number' && Number.isFinite(row.weeklyHours)
+    ? row.weeklyHours
+    : 0;
+  const validFrom = cleanText(row.validFrom, 10);
+  const payPeriod = cleanText(row.payPeriod, 80);
+  if (!payType || !/^\d{4}-\d{2}-\d{2}$/.test(validFrom) || !payPeriod || weeklyHours <= 0 || weeklyHours > 168) return null;
+  if (payType === 'Kuukausipalkka' && (monthlySalaryCents == null || monthlySalaryCents <= 0)) return null;
+  if (payType === 'Tuntipalkka' && (hourlyWageCents == null || hourlyWageCents <= 0)) return null;
+  return {
+    validFrom,
+    payType,
+    monthlySalaryCents: payType === 'Kuukausipalkka' ? monthlySalaryCents : null,
+    hourlyWageCents: payType === 'Tuntipalkka' ? hourlyWageCents : null,
+    weeklyHours,
+    payPeriod,
+  };
+}
+
+function parseEmployee(value: unknown): EmployeeInput | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Row;
+  const hourlyCost = row.hourlyCostCents;
+  const supervisorUserId = cleanText(row.supervisorUserId, 80);
+  return {
+""")
+          replace_once(edge, """    emergencyContactName: cleanText(row.emergencyContactName, 120),
+    emergencyContactPhone: cleanText(row.emergencyContactPhone, 40),
+    supervisorUserId: supervisorUserId || null,
+  };
+}
+""", """    emergencyContactName: cleanText(row.emergencyContactName, 120),
+    emergencyContactPhone: cleanText(row.emergencyContactPhone, 40),
+    supervisorUserId: supervisorUserId || null,
+    compensation: parseEmployeeCompensation(row.compensation),
+  };
+}
+""")
+          replace_once(edge, """  if (role !== 'customer' && (!employee?.jobTitle || !employee.department)) {
+    return json({ error: 'Tehtävänimike ja osasto ovat pakollisia ennen kutsun lähettämistä.' }, 400);
+  }
+""", """  if (role !== 'customer' && (!employee?.jobTitle || !employee.department)) {
+    return json({ error: 'Tehtävänimike ja osasto ovat pakollisia ennen kutsun lähettämistä.' }, 400);
+  }
+  if (role !== 'customer' && !employee?.compensation) {
+    return json({ error: 'Valitse työntekijälle tuntipalkka tai kuukausipalkka ja anna kelvollinen palkka.' }, 400);
+  }
+""")
+          replace_once(edge, """  let employeeId: string | null = existingEmployee?.id ?? null;
+  let createdEmployee = false;
+  const previousEmployee = existingEmployee ? { ...existingEmployee } : null;
+
+  const rollback = async () => {
+""", """  let employeeId: string | null = existingEmployee?.id ?? null;
+  let createdEmployee = false;
+  let createdCompensationId: string | null = null;
+  const previousEmployee = existingEmployee ? { ...existingEmployee } : null;
+
+  const rollback = async () => {
+""")
+          replace_once(edge, """    await adminClient.from('customer_user_projects').delete().eq('organization_id', organizationId).eq('user_id', targetUserId);
+    await adminClient.from('customer_users').delete().eq('organization_id', organizationId).eq('user_id', targetUserId);
+    await adminClient.from('supervisor_team_members').delete().eq('organization_id', organizationId).eq('employee_id', employeeId);
+""", """    await adminClient.from('customer_user_projects').delete().eq('organization_id', organizationId).eq('user_id', targetUserId);
+    await adminClient.from('customer_users').delete().eq('organization_id', organizationId).eq('user_id', targetUserId);
+    if (createdCompensationId) {
+      await adminClient.from('employee_compensation_terms').delete().eq('id', createdCompensationId);
+    }
+    await adminClient.from('supervisor_team_members').delete().eq('organization_id', organizationId).eq('employee_id', employeeId);
+""")
+          replace_once(edge, """    if (employee.supervisorUserId && employeeId) {
+      const { error: teamError } = await adminClient.from('supervisor_team_members').upsert({
+""", """    if (employee.compensation && employeeId) {
+      const compensation = employee.compensation;
+      const { data: overlappingCompensation, error: overlapError } = await adminClient
+        .from('employee_compensation_terms')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('employee_id', employeeId)
+        .lte('valid_from', compensation.validFrom)
+        .or(`valid_to.is.null,valid_to.gte.${compensation.validFrom}`)
+        .limit(1)
+        .maybeSingle();
+      if (overlapError) {
+        await rollback();
+        return json({ error: `Palkkaehtojen tarkistus epäonnistui: ${overlapError.message}` }, 400);
+      }
+      if (overlappingCompensation) {
+        await rollback();
+        return json({ error: 'Henkilöstökortilla on jo samalle ajalle voimassa olevat palkkaehdot.' }, 409);
+      }
+      const { data: insertedCompensation, error: compensationError } = await adminClient
+        .from('employee_compensation_terms')
+        .insert({
+          organization_id: organizationId,
+          employee_id: employeeId,
+          valid_from: compensation.validFrom,
+          pay_type: compensation.payType,
+          monthly_salary_cents: compensation.monthlySalaryCents,
+          hourly_wage_cents: compensation.hourlyWageCents,
+          weekly_hours: compensation.weeklyHours,
+          pay_period: compensation.payPeriod,
+          evening_allowance_cents: 0,
+          night_allowance_cents: 0,
+          saturday_allowance_cents: 0,
+          sunday_allowance_cents: 0,
+          overtime_50_multiplier: 1.5,
+          overtime_100_multiplier: 2,
+          daily_allowance_cents: 0,
+          meal_allowance_cents: 0,
+          travel_time_hourly_cents: 0,
+          created_by: actor.id,
+          updated_by: actor.id,
+        })
+        .select('id')
+        .single();
+      if (compensationError || !insertedCompensation) {
+        await rollback();
+        return json({ error: `Palkkaehtojen tallennus epäonnistui: ${compensationError?.message ?? 'Tunniste puuttuu.'}` }, 400);
+      }
+      createdCompensationId = insertedCompensation.id;
+    }
+
+    if (employee.supervisorUserId && employeeId) {
+      const { error: teamError } = await adminClient.from('supervisor_team_members').upsert({
+""")
+          replace_once(edge, """      supervisor_user_id: employee?.supervisorUserId ?? null,
+      customer_access: role === 'customer' ? customerAccess : [],
+""", """      supervisor_user_id: employee?.supervisorUserId ?? null,
+      pay_type: employee?.compensation?.payType ?? null,
+      customer_access: role === 'customer' ? customerAccess : [],
+""")
+          replace_once(edge, """    message: invited
+      ? 'Henkilö luotiin ja sähköpostikutsu lähetettiin. Viestin otsikko on “Sinut on kutsuttu käyttämään VaKanttia”.'
+      : 'Olemassa oleva käyttäjä liitettiin organisaatioon ja henkilöstökorttiin.',
+""", """    message: invited
+      ? 'Henkilö, palkkaehdot ja käyttäjätili luotiin. Sähköpostikutsu lähetettiin otsikolla “Sinut on kutsuttu käyttämään VaKanttia”.'
+      : 'Olemassa oleva käyttäjä liitettiin organisaatioon, henkilöstökorttiin ja palkkaehtoihin.',
+""")
+          PY
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run quality gate
+        env:
+          VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
+          CF_PAGES: "1"
+          CF_PAGES_BRANCH: feature/employee-pay-onboarding
+          CF_PAGES_COMMIT_SHA: ${{ github.sha }}
+        run: npm run ship:check
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          rm .github/workflows/implement-employee-pay-onboarding.yml
+          git config user.name "VaKantti automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/pages/HenkilostoIntegrated.tsx \
+            src/lib/supabase/organizationAdmin.ts \
+            src/lib/employeeCompensationOnboarding.ts \
+            src/lib/__tests__/employeeCompensationOnboarding.test.ts \
+            supabase/functions/invite-organization-member/index.ts \
+            .github/workflows/implement-employee-pay-onboarding.yml
+          git commit -m "Lisää palkkatapa työntekijän luonnin yhteyteen [employee-pay-generated]"
+          git push origin HEAD:feature/employee-pay-onboarding
