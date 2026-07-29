@@ -7,8 +7,8 @@ export const INSPECTION_TABS = [
   { value: 'overview', label: 'Tilannekuva' },
   { value: 'inspections', label: 'Tarkastukset' },
   { value: 'findings', label: 'Puutteet' },
-  { value: 'units', label: 'Huoneistot' },
-  { value: 'templates', label: 'Tarkastuspohjat' },
+  { value: 'units', label: 'Kohderekisteri' },
+  { value: 'templates', label: 'Pohja-asetukset' },
   { value: 'reports', label: 'Raportit' },
 ] as const;
 

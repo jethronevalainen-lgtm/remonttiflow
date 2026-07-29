@@ -411,7 +411,7 @@ export default function PayrollCorrectionsPanel() {
               <CardContent className="p-0">
                 {requests.map((request) => (
                   <button key={request.id} type="button" onClick={() => setSelectedRequestId(request.id)} className={`w-full border-t p-4 text-left first:border-t-0 ${selectedRequestId === request.id ? 'bg-primary-light/40' : 'hover:bg-slate-50'}`}>
-                    <div className="flex items-start justify-between gap-3"><div><p className="font-medium">{request.requesterName}</p><p className="mt-1 line-clamp-2 text-xs text-text-secondary">{request.reason}</p></div>{statusBadge(request.status)}</div>
+                    <div className="flex items-start justify-between gap-3"><div className="min-w-0 break-words"><p className="font-medium">{request.requesterName}</p><p className="mt-1 whitespace-pre-wrap text-xs text-text-secondary">{request.reason}</p></div>{statusBadge(request.status)}</div>
                     <div className="mt-3 flex items-center justify-between text-xs"><span>{request.lineCount} riviä</span><span className={`font-mono font-semibold ${request.adjustmentTotalCents < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{request.adjustmentTotalCents > 0 ? '+' : ''}{euro(request.adjustmentTotalCents)}</span></div>
                   </button>
                 ))}

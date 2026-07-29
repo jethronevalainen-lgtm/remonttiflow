@@ -67,10 +67,10 @@ export default function ProjectDiscussions() {
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700"><MessageCircle size={21} /></div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="min-w-0 flex-1 truncate text-lg font-semibold text-slate-950">{project.projectName}</h2>
+                      <h2 className="min-w-0 flex-1 break-words text-lg font-semibold text-slate-950">{project.projectName}</h2>
                       {project.unreadCount > 0 && <Badge className="bg-indigo-600 text-white">{project.unreadCount} uutta</Badge>}
                     </div>
-                    <p className="mt-1 truncate text-sm text-slate-500">{project.location || 'Sijaintia ei ole määritetty'} · {project.status}</p>
+                    <p className="mt-1 break-words text-sm text-slate-500">{project.location || 'Sijaintia ei ole määritetty'} · {project.status}</p>
                     <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500">
                       <span>{dateTime(project.lastMessageAt)}</span>
                       <span className="flex items-center gap-1 font-medium text-indigo-700">Avaa keskustelu <ChevronRight size={15} /></span>

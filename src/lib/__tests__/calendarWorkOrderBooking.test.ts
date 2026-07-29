@@ -16,6 +16,7 @@ function order(overrides: Partial<ManagedWorkOrder> = {}): ManagedWorkOrder {
     id: 'wo-1',
     project: 'Yksittäinen työ',
     location: '',
+    locationDetail: '',
     title: 'Keittiöremontti',
     dueDate: '',
     plannedStartDate: '',

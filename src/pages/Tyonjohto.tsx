@@ -167,7 +167,7 @@ export default function Tyonjohto() {
 
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><BookOpen size={19} className="text-primary" />Viimeisimmät päiväkirjat</CardTitle></CardHeader>
-          <CardContent className="space-y-2">{latestDiaries.map((entry) => <div key={entry.id} className="rounded-lg border border-slate-200 p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-semibold">{entry.project}</p><span className="text-xs text-text-muted">{entry.date}</span></div><p className="mt-1 line-clamp-2 text-xs text-text-secondary">{entry.workDescription}</p></div>)}{latestDiaries.length === 0 && <p className="text-sm text-text-secondary">Ei päiväkirjamerkintöjä.</p>}<Button variant="ghost" className="w-full justify-between" onClick={() => navigate('/paivakirjat')}>Avaa päiväkirjat <ArrowRight size={15} /></Button></CardContent>
+          <CardContent className="space-y-2">{latestDiaries.map((entry) => <div key={entry.id} className="rounded-lg border border-slate-200 p-3"><div className="flex items-center justify-between gap-2"><p className="break-words text-sm font-semibold">{entry.project}</p><span className="text-xs text-text-muted">{entry.date}</span></div><p className="mt-1 whitespace-pre-wrap break-words text-xs text-text-secondary">{entry.workDescription}</p></div>)}{latestDiaries.length === 0 && <p className="text-sm text-text-secondary">Ei päiväkirjamerkintöjä.</p>}<Button variant="ghost" className="w-full justify-between" onClick={() => navigate('/paivakirjat')}>Avaa päiväkirjat <ArrowRight size={15} /></Button></CardContent>
         </Card>
 
         <Card>

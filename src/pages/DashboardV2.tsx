@@ -16,8 +16,7 @@ export default function DashboardV2() {
         compact
         limit={4}
       />
-      {effectiveRole !== 'worker' && <ManagementLiveOperations />}
-      <Dashboard />
+      {effectiveRole === 'worker' ? <Dashboard /> : <ManagementLiveOperations />}
     </div>
   );
 }

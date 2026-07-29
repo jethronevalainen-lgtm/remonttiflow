@@ -384,7 +384,7 @@ export default function Kuittaukset() {
                 <div className="flex min-w-0 gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-primary"><ReceiptTypeIcon type={receipt.type} /></div>
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-text-primary">{receipt.title}</p>
+                    <p className="break-words font-semibold text-text-primary">{receipt.title}</p>
                     <p className="text-sm text-text-secondary">{RECEIPT_TYPE_LABELS[receipt.type]}</p>
                   </div>
                 </div>
@@ -492,7 +492,7 @@ export default function Kuittaukset() {
                   {files.map(({ file, kind }, index) => (
                     <div key={`${file.name}-${file.size}-${index}`} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <div className="text-primary">{kind === 'photo' ? <ImageIcon size={18} /> : <FileText size={18} />}</div>
-                      <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.name}</p><p className="text-xs text-text-muted">{formatFileSize(file.size)}</p></div>
+                      <div className="min-w-0 flex-1 break-words"><p className="text-sm font-medium">{file.name}</p><p className="text-xs text-text-muted">{formatFileSize(file.size)}</p></div>
                       <button type="button" onClick={() => removeFile(index)} className="rounded-md p-1 text-text-muted hover:bg-white hover:text-danger" aria-label={`Poista ${file.name}`}><X size={16} /></button>
                     </div>
                   ))}
@@ -559,7 +559,7 @@ export default function Kuittaukset() {
                       return (
                         <a key={attachment.id} href={url} target="_blank" rel="noreferrer" className={`group overflow-hidden rounded-lg border border-slate-200 bg-white ${url ? 'hover:border-orange-300' : 'pointer-events-none'}`}>
                           {attachment.kind === 'photo' && url ? <img src={url} alt={attachment.fileName} className="h-40 w-full object-cover" /> : <div className="flex h-28 items-center justify-center bg-slate-50 text-primary">{loadingAttachments ? <Loader2 size={24} className="animate-spin" /> : <FileText size={32} />}</div>}
-                          <div className="flex items-center gap-2 p-3"><Paperclip size={14} className="text-text-muted" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{attachment.fileName}</p><p className="text-xs text-text-muted">{formatFileSize(attachment.sizeBytes)}</p></div><ExternalLink size={14} className="text-text-muted group-hover:text-primary" /></div>
+                          <div className="flex items-center gap-2 p-3"><Paperclip size={14} className="text-text-muted" /><div className="min-w-0 flex-1 break-words"><p className="text-sm font-medium">{attachment.fileName}</p><p className="text-xs text-text-muted">{formatFileSize(attachment.sizeBytes)}</p></div><ExternalLink size={14} className="text-text-muted group-hover:text-primary" /></div>
                         </a>
                       );
                     })}

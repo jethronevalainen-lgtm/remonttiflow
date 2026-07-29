@@ -162,7 +162,7 @@ export default function KayttajaEsikatseluV2() {
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-light text-sm font-bold text-primary">{initials(name)}</div>
-                  <div className="min-w-0"><p className="truncate font-semibold">{name}</p><p className="truncate text-sm text-slate-500">{email || 'Ei sähköpostia'}</p></div>
+                  <div className="min-w-0 break-words"><p className="font-semibold">{name}</p><p className="text-sm text-slate-500">{email || 'Ei sähköpostia'}</p></div>
                 </div>
                 <div className="rounded-xl border bg-slate-50 p-3">
                   <Badge variant="outline" className={ROLE_BADGES[member.role]}>{ROLE_LABELS[member.role]}</Badge>

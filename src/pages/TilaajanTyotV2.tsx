@@ -233,7 +233,7 @@ export default function TilaajanTyotV2() {
           )}
 
           <Tabs defaultValue="orders" className="space-y-4">
-            <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border bg-white p-1">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl border bg-white p-1 sm:grid-cols-4">
               <TabsTrigger value="orders">Työtilaukset ({home.orders.length})</TabsTrigger>
               <TabsTrigger value="projects">Projektit ({home.projects.length})</TabsTrigger>
               <TabsTrigger value="activity">Tapahtumat</TabsTrigger>
@@ -253,8 +253,8 @@ export default function TilaajanTyotV2() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{order.orderNumber}</Badge><Badge variant="outline" className={statusTone(order.status)}>{order.status}</Badge>{order.unreadMessageCount > 0 && <Badge className="bg-teal-700"><MessageCircle size={12} className="mr-1" />{order.unreadMessageCount}</Badge>}</div>
-                          <h2 className="mt-3 truncate text-lg font-semibold">{order.title}</h2>
-                          <p className="mt-1 truncate text-sm text-slate-500">{order.projectName} · {order.category}</p>
+                          <h2 className="mt-3 break-words text-lg font-semibold">{order.title}</h2>
+                          <p className="mt-1 break-words text-sm text-slate-500">{order.projectName} · {order.category}</p>
                         </div>
                         <span className="text-xl font-bold">{order.progress}%</span>
                       </div>

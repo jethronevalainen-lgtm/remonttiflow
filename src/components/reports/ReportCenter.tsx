@@ -317,7 +317,7 @@ function BreakdownCard({ breakdown }: { breakdown: ReportCenterBreakdown }) {
           return (
             <div key={row.label}>
               <div className="flex items-start justify-between gap-4 text-sm">
-                <span className="min-w-0 truncate font-medium text-slate-700" title={row.label}>{row.label}</span>
+                <span className="min-w-0 break-words font-medium text-slate-700">{row.label}</span>
                 <span className="shrink-0 text-right font-mono font-semibold text-slate-950">
                   {formatMetric(row.value, breakdown.format)}
                   {row.secondaryValue !== undefined && (
@@ -656,7 +656,7 @@ export default function ReportCenter() {
                     {filteredUsers.map((user) => (
                       <label key={user.id} className={cn('flex cursor-pointer items-start gap-2 rounded-lg border p-3', userIds.includes(user.id) ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white')}>
                         <Checkbox checked={userIds.includes(user.id)} onCheckedChange={(checked: boolean | 'indeterminate') => toggleUser(user.id, checked === true)} />
-                        <span className="min-w-0"><span className="block truncate text-sm font-medium text-slate-900">{user.name}</span><span className="block truncate text-xs text-slate-500">{user.email || user.role}</span></span>
+                        <span className="min-w-0 break-words"><span className="block text-sm font-medium text-slate-900">{user.name}</span><span className="block text-xs text-slate-500">{user.email || user.role}</span></span>
                       </label>
                     ))}
                   </div>
@@ -759,8 +759,8 @@ export default function ReportCenter() {
                   )}
                   <div className="max-h-[620px] overflow-auto">
                     <table className="min-w-full border-collapse text-xs">
-                      <thead className="sticky top-0 z-10 bg-slate-100"><tr>{dataset.columns.map((column) => <th key={column.key} className="whitespace-nowrap border-b border-r border-slate-200 px-3 py-3 text-left font-semibold text-slate-700 last:border-r-0">{column.label}</th>)}</tr></thead>
-                      <tbody>{previewRows.slice(0, 200).map((row, rowIndex) => <tr key={rowIndex} className="odd:bg-white even:bg-slate-50/60">{dataset.columns.map((column) => <td key={column.key} className="max-w-xs border-b border-r border-slate-100 px-3 py-2 align-top text-slate-700 last:border-r-0"><span className="line-clamp-4 whitespace-pre-wrap">{displayValue(row[column.key], column)}</span></td>)}</tr>)}</tbody>
+                      <thead className="sticky top-0 z-10 bg-slate-100"><tr>{dataset.columns.map((column) => <th key={column.key} className="break-words border-b border-r border-slate-200 px-3 py-3 text-left font-semibold text-slate-700 last:border-r-0">{column.label}</th>)}</tr></thead>
+                      <tbody>{previewRows.slice(0, 200).map((row, rowIndex) => <tr key={rowIndex} className="odd:bg-white even:bg-slate-50/60">{dataset.columns.map((column) => <td key={column.key} className="max-w-xs break-words border-b border-r border-slate-100 px-3 py-2 align-top text-slate-700 last:border-r-0"><span className="whitespace-pre-wrap">{displayValue(row[column.key], column)}</span></td>)}</tr>)}</tbody>
                     </table>
                   </div>
                 </>

@@ -153,10 +153,10 @@ function WorkerDashboard() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <p className="min-w-0 flex-1 truncate font-semibold text-slate-900">{order.title}</p>
+                    <p className="min-w-0 flex-1 break-words font-semibold text-slate-900">{order.title}</p>
                     <Badge variant="outline">{order.status}</Badge>
                   </div>
-                  <p className="mt-1 truncate text-xs text-slate-500">{order.project} · {dateLabel(order.dueDate)}</p>
+                  <p className="mt-1 break-words text-xs text-slate-500">{order.project} · {dateLabel(order.dueDate)}</p>
                 </div>
                 <ArrowRight size={16} className="flex-shrink-0 text-slate-400" />
               </button>
@@ -199,7 +199,7 @@ function WorkerDashboard() {
           ].map((item) => (
             <Button key={item.path} variant="outline" className="h-auto min-h-16 justify-start gap-3 p-4" onClick={() => navigate(item.path)}>
               <item.icon size={19} className="flex-shrink-0 text-orange-600" />
-              <span className="min-w-0 text-left"><span className="block truncate font-semibold">{item.label}</span><span className="block text-xs font-normal text-slate-500">{item.detail}</span></span>
+              <span className="min-w-0 break-words text-left"><span className="block font-semibold">{item.label}</span><span className="block text-xs font-normal text-slate-500">{item.detail}</span></span>
             </Button>
           ))}
         </CardContent>
@@ -261,7 +261,7 @@ function ManagementDashboard() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card className="min-w-0 border-slate-200 shadow-sm"><CardHeader className="p-4 sm:p-6"><CardTitle className="flex items-center gap-2 text-base sm:text-lg"><CalendarDays size={19} className="text-blue-600" /> Tulevat määräajat</CardTitle></CardHeader><CardContent className="space-y-2 p-4 pt-0 sm:p-6 sm:pt-0">{deadlines.map((item) => <button key={item.id} type="button" onClick={() => navigate(item.path)} className="flex min-h-14 w-full min-w-0 items-center gap-3 rounded-lg p-2 text-left hover:bg-slate-50 sm:p-3"><div className="min-w-20 flex-shrink-0 rounded-lg bg-blue-50 px-2 py-2 text-center text-xs font-semibold text-blue-700 sm:min-w-24">{dateLabel(item.date)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-slate-900">{item.title}</p><p className="truncate text-xs text-slate-500">{item.context}</p></div><ArrowRight size={15} className="flex-shrink-0 text-slate-400" /></button>)}{deadlines.length === 0 && <div className="py-8 text-center text-sm text-slate-500">Ei tulevia määräaikoja.</div>}</CardContent></Card>
+        <Card className="min-w-0 border-slate-200 shadow-sm"><CardHeader className="p-4 sm:p-6"><CardTitle className="flex items-center gap-2 text-base sm:text-lg"><CalendarDays size={19} className="text-blue-600" /> Tulevat määräajat</CardTitle></CardHeader><CardContent className="space-y-2 p-4 pt-0 sm:p-6 sm:pt-0">{deadlines.map((item) => <button key={item.id} type="button" onClick={() => navigate(item.path)} className="flex min-h-14 w-full min-w-0 items-center gap-3 rounded-lg p-2 text-left hover:bg-slate-50 sm:p-3"><div className="min-w-20 flex-shrink-0 rounded-lg bg-blue-50 px-2 py-2 text-center text-xs font-semibold text-blue-700 sm:min-w-24">{dateLabel(item.date)}</div><div className="min-w-0 flex-1 break-words"><p className="text-sm font-medium text-slate-900">{item.title}</p><p className="text-xs text-slate-500">{item.context}</p></div><ArrowRight size={15} className="flex-shrink-0 text-slate-400" /></button>)}{deadlines.length === 0 && <div className="py-8 text-center text-sm text-slate-500">Ei tulevia määräaikoja.</div>}</CardContent></Card>
 
         <Card className="min-w-0 border-slate-200 shadow-sm"><CardHeader className="p-4 sm:p-6"><CardTitle className="flex items-center gap-2 text-base sm:text-lg"><Euro size={19} className="text-emerald-600" /> Budjetin käyttö</CardTitle></CardHeader><CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0"><div className="flex min-w-0 items-end justify-between gap-3"><div className="min-w-0"><p className="text-sm text-slate-500">Toteutunut</p><p className="break-words text-xl font-bold text-slate-950 sm:text-2xl">{currency(totalSpent)}</p></div><p className="flex-shrink-0 font-mono text-sm font-semibold">{budgetUsage.toFixed(1)} %</p></div><Progress value={budgetUsage} className="h-3" /><div className="flex min-w-0 justify-between gap-3 text-sm text-slate-500"><span>Kokonaisbudjetti</span><strong className="break-words text-right text-slate-800">{currency(stats.totalRevenue)}</strong></div><Button variant="ghost" className="w-full justify-between" onClick={() => navigate('/laskenta')}>Avaa kustannuslaskenta <ArrowRight size={15} /></Button></CardContent></Card>
       </div>

@@ -10,6 +10,10 @@ export interface WorkOrderFormValues {
   title: string;
   projectId: string;
   location: string;
+  buildingId: string;
+  stairwellId: string;
+  unitId: string;
+  locationDetail: string;
   dueDate: string;
   plannedStartDate: string;
   plannedEndDate: string;
@@ -34,6 +38,10 @@ export const EMPTY_WORK_ORDER_FORM: WorkOrderFormValues = {
   title: '',
   projectId: '',
   location: '',
+  buildingId: '',
+  stairwellId: '',
+  unitId: '',
+  locationDetail: '',
   dueDate: '',
   plannedStartDate: '',
   plannedEndDate: '',

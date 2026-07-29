@@ -15,7 +15,6 @@ const Dashboard = lazy(() => import('./pages/DashboardV2'));
 const Tyonjohto = lazy(() => import('./pages/Tyonjohto'));
 const Tarkastukset = lazy(() => import('./pages/Tarkastukset'));
 const Projektit = lazy(() => import('./pages/Projektit'));
-const ProjectWorks = lazy(() => import('./pages/ProjectWorks'));
 const ProjectWorkspace = lazy(() => import('./pages/ProjectWorkspace'));
 const Aikataulutus = lazy(() => import('./pages/Aikataulutus'));
 const Paivakirjat = lazy(() => import('./pages/Paivakirjat'));
@@ -154,7 +153,7 @@ function AppRoutes() {
         <Route path="/tyonjohto" element={<RoleGuard allowedRoles={rolesForRoute('/tyonjohto')}><Tyonjohto /></RoleGuard>} />
         <Route path="/tarkastukset" element={<RoleGuard allowedRoles={rolesForRoute('/tarkastukset')}><Tarkastukset /></RoleGuard>} />
         <Route path="/projektit" element={<RoleGuard allowedRoles={rolesForRoute('/projektit')}><Projektit /></RoleGuard>} />
-        <Route path="/projektit/:projectId" element={<RoleGuard allowedRoles={rolesForRoute('/projektit')}><ProjectWorks /></RoleGuard>} />
+        <Route path="/projektit/:projectId" element={<RoleGuard allowedRoles={rolesForRoute('/projektit')}><ProjectWorkspace /></RoleGuard>} />
         <Route path="/projektit/:projectId/tyotila" element={<RoleGuard allowedRoles={rolesForRoute('/projektit')}><ProjectWorkspace /></RoleGuard>} />
         <Route path="/projektit/:projectId/tilaajayhteistyo" element={<RoleGuard allowedRoles={rolesForRoute('/projektit')}><CustomerCollaborationManager /></RoleGuard>} />
         <Route path="/projektipyynnot" element={<RoleGuard allowedRoles={rolesForRoute('/projektipyynnot')}><ProjectRequests /></RoleGuard>} />

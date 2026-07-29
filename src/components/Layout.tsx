@@ -3,16 +3,19 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  CalendarClock,
   ClipboardCheck,
+  ClipboardList,
   Clock,
   Eye,
   FolderKanban,
   Home,
   Loader2,
+  Menu,
   MessageCircle,
   Megaphone,
-  ShieldCheck,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 
 import Header from './Header';
@@ -22,28 +25,36 @@ import GlobalAnnouncementBanner from './announcements/GlobalAnnouncementBanner';
 import { ROLE_LABELS } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
 
-const workerBottomItems = [
-  { path: '/dashboard', label: 'Etusivu', icon: Home },
-  { path: '/tyomaaraykset', label: 'Omat työt', icon: ClipboardCheck },
-  { path: '/tyoturvallisuus', label: 'Turvallisuus', icon: ShieldCheck },
-  { path: '/projektikeskustelut', label: 'Keskustelut', icon: MessageCircle },
-  { path: '/tuntikirjaukset', label: 'Tunnit', icon: Clock },
+interface BottomItem {
+  path?: string;
+  label: string;
+  icon: LucideIcon;
+  menu?: boolean;
+}
+
+const workerBottomItems: BottomItem[] = [
+  { path: '/dashboard', label: 'Tänään', icon: Home },
+  { path: '/tyomaaraykset', label: 'Työni', icon: ClipboardCheck },
+  { path: '/tuntikirjaukset', label: 'Työaika', icon: Clock },
+  { path: '/tarkastukset', label: 'Puutteet', icon: ClipboardList },
+  { label: 'Lisää', icon: Menu, menu: true },
 ];
 
-const customerBottomItems = [
-  { path: '/tilaajan-tyot', label: 'Projektit', icon: FolderKanban },
-  { path: '/projektikeskustelut', label: 'Keskustelut', icon: MessageCircle },
+const customerBottomItems: BottomItem[] = [
+  { path: '/tilaajan-tyot', label: 'Yhteenveto', icon: Home },
+  { path: '/projektikeskustelut', label: 'Viestit', icon: MessageCircle },
   { path: '/viestinta', label: 'Tiedotteet', icon: Megaphone },
-  { path: '/tyoturvallisuus', label: 'Turvallisuus', icon: ShieldCheck },
+  { label: 'Lisää', icon: Menu, menu: true },
 ];
 
-const managementBottomItems = [
-  { path: '/dashboard', label: 'Etusivu', icon: Home },
+const managementBottomItems: BottomItem[] = [
+  { path: '/dashboard', label: 'Tänään', icon: Home },
   { path: '/projektit', label: 'Projektit', icon: FolderKanban },
   { path: '/tyomaaraykset', label: 'Työt', icon: ClipboardCheck },
-  { path: '/tyoturvallisuus', label: 'Turvallisuus', icon: ShieldCheck },
-  { path: '/projektikeskustelut', label: 'Keskustelut', icon: MessageCircle },
+  { path: '/aikataulutus', label: 'Aikataulu', icon: CalendarClock },
+  { label: 'Lisää', icon: Menu, menu: true },
 ];
 
 function RouteLoadingState() {
@@ -72,6 +83,7 @@ export default function Layout() {
     switching,
   } = useViewAs();
   const { loading, refreshing, error, operationError, refresh } = useAppDataContext();
+  const { online, pendingCount, syncing, sync } = useOfflineSync();
   const visibleError = operationError ?? error;
   const bottomItems = effectiveRole === 'customer'
     ? customerBottomItems
@@ -98,6 +110,26 @@ export default function Layout() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onMenuClick={() => setMobileOpen(true)} />
         <GlobalAnnouncementBanner />
+
+        {(!online || pendingCount > 0) && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-950">
+            <span className="min-w-0 flex-1">
+              {!online
+                ? `Offline-tila – muutokset säilyvät laitteella${pendingCount ? ` (${pendingCount} jonossa)` : ''}.`
+                : `${pendingCount} muutosta odottaa synkronointia.`}
+            </span>
+            {online && pendingCount > 0 && (
+              <button
+                type="button"
+                onClick={() => void sync()}
+                disabled={syncing}
+                className="min-h-10 rounded-lg border border-amber-300 bg-white px-3 py-2 font-semibold"
+              >
+                {syncing ? 'Synkronoidaan…' : 'Synkronoi nyt'}
+              </button>
+            )}
+          </div>
+        )}
 
         {isImpersonating && previewTarget && (
           <div className="flex flex-col gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 sm:flex-row sm:items-center sm:px-4">
@@ -149,9 +181,18 @@ export default function Layout() {
 
         <nav className="fixed bottom-0 left-0 right-0 z-30 flex min-h-16 items-center justify-around border-t border-slate-200 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_25px_rgba(15,23,42,0.06)] backdrop-blur md:hidden">
           {bottomItems.map((item) => {
-            const active = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+            const active = Boolean(item.path && (
+              location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+            ));
             return (
-              <button key={item.path} type="button" aria-current={active ? 'page' : undefined} aria-label={item.label} onClick={() => navigate(item.path)} className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium transition-colors ${active ? 'bg-orange-50 text-orange-600' : 'text-slate-500'}`}>
+              <button
+                key={item.path ?? item.label}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+                aria-label={item.label}
+                onClick={() => item.menu ? setMobileOpen(true) : item.path && navigate(item.path)}
+                className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium transition-colors ${active ? 'bg-orange-50 text-orange-600' : 'text-slate-500'}`}
+              >
                 <item.icon size={20} /><span className="max-w-full break-words text-center leading-3">{item.label}</span>
               </button>
             );

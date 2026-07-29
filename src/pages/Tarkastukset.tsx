@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, Building2, ClipboardCheck, ClipboardList, Clock3,
   FileCheck2, FileText, ListChecks, Loader2, Plus, Printer, RefreshCw, Search,
@@ -35,11 +36,14 @@ const INSPECTION_STATUSES: InspectionStatus[] = [
 ];
 
 export default function Tarkastukset() {
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { currentOrg, currentRole } = useOrganization();
   const { projects } = useAppDataContext();
   const workspace = useInspectionWorkspace();
   const canManage = ['admin', 'supervisor', 'project_coordinator'].includes(currentRole ?? '');
+  const projectFilterId = searchParams.get('project') ?? '';
+  const projectFilter = projects.find((project) => project.id === projectFilterId);
   const canEditTemplates = currentRole === 'admin';
   const [tab, setTab] = useState(canManage ? 'overview' : 'findings');
   const [selectedInspectionId, setSelectedInspectionId] = useState<string | null>(null);
@@ -82,12 +86,19 @@ export default function Tarkastukset() {
     );
   }
 
-  const activeFindings = workspace.findings.filter(isFindingOpen);
+  const activeFindings = workspace.findings.filter((finding) => (
+    isFindingOpen(finding) && (!projectFilterId || finding.projectId === projectFilterId)
+  ));
   const overdueFindings = activeFindings.filter((finding) => finding.dueDate && finding.dueDate < todayIso());
   const criticalFindings = activeFindings.filter((finding) => finding.severity === 'Kriittinen');
-  const pendingInspections = workspace.inspections.filter((inspection) => !['Hyväksytty', 'Mitätöity'].includes(inspection.status));
-  const readyUnits = workspace.units.filter((unit) => unit.status === 'Luovutuskelpoinen');
+  const pendingInspections = workspace.inspections.filter((inspection) => (
+    !['Hyväksytty', 'Mitätöity'].includes(inspection.status)
+    && (!projectFilterId || inspection.projectId === projectFilterId)
+  ));
+  const scopedUnits = workspace.units.filter((unit) => !projectFilterId || unit.projectId === projectFilterId);
+  const readyUnits = scopedUnits.filter((unit) => unit.status === 'Luovutuskelpoinen');
   const upcomingInspections = workspace.inspections.filter((inspection) => {
+    if (projectFilterId && inspection.projectId !== projectFilterId) return false;
     if (!inspection.scheduledDate) return false;
     const date = new Date(`${inspection.scheduledDate}T12:00:00`);
     const today = new Date(`${todayIso()}T00:00:00`);
@@ -98,6 +109,7 @@ export default function Tarkastukset() {
 
   const inspectionQuery = search.trim().toLocaleLowerCase('fi');
   const filteredInspections = workspace.inspections.filter((inspection) => {
+    if (projectFilterId && inspection.projectId !== projectFilterId) return false;
     if (statusFilter !== 'all' && inspection.status !== statusFilter) return false;
     const text = `${inspection.title} ${inspection.inspectionType} ${projectName(projects, inspection.projectId)} ${unitLabel(workspace.units, inspection.unitId)} ${personName(workspace.people, inspection.inspectorId)}`.toLocaleLowerCase('fi');
     return !inspectionQuery || text.includes(inspectionQuery);
@@ -105,6 +117,7 @@ export default function Tarkastukset() {
 
   const findingQuery = search.trim().toLocaleLowerCase('fi');
   const filteredFindings = workspace.findings.filter((finding) => {
+    if (projectFilterId && finding.projectId !== projectFilterId) return false;
     if (statusFilter !== 'all' && finding.status !== statusFilter) return false;
     const text = `${finding.title} ${finding.description} ${finding.location} ${projectName(projects, finding.projectId)} ${unitLabel(workspace.units, finding.unitId)}`.toLocaleLowerCase('fi');
     return !findingQuery || text.includes(findingQuery);
@@ -114,7 +127,7 @@ export default function Tarkastukset() {
     { label: 'Avoimet tarkastukset', value: pendingInspections.length, detail: `${upcomingInspections.length} seuraavan 7 päivän aikana`, icon: ClipboardList, tab: 'inspections' },
     { label: 'Avoimet puutteet', value: activeFindings.length, detail: `${criticalFindings.length} kriittistä`, icon: AlertTriangle, tab: 'findings' },
     { label: 'Myöhässä', value: overdueFindings.length, detail: 'korjauksen määräaika ylitetty', icon: Clock3, tab: 'findings' },
-    { label: 'Luovutuskelpoiset', value: readyUnits.length, detail: `${workspace.units.length} huoneistoa rekisterissä`, icon: FileCheck2, tab: 'units' },
+    { label: 'Luovutuskelpoiset', value: readyUnits.length, detail: `${scopedUnits.length} huoneistoa rekisterissä`, icon: FileCheck2, tab: 'units' },
   ];
 
   return (
@@ -123,6 +136,11 @@ export default function Tarkastukset() {
         <div>
           <h1 className="text-hero text-text-primary">Tarkastukset ja itselleluovutukset</h1>
           <p className="mt-1 max-w-3xl text-body-sm text-text-secondary">Tarkasta työ, kirjaa puutteet, dokumentoi luovutus ja hyväksy raportti samassa prosessissa.</p>
+          {projectFilter && (
+            <Badge variant="outline" className="mt-3 whitespace-normal">
+              Projekti: {projectFilter.name}
+            </Badge>
+          )}
         </div>
         {canManage && <Button onClick={() => setInspectionOpen(true)} className="w-full sm:w-auto"><Plus size={17} className="mr-2" />Uusi tarkastus</Button>}
       </div>
@@ -131,8 +149,8 @@ export default function Tarkastukset() {
       {(workspace.loading || workspace.refreshing) && <div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800"><Loader2 size={16} className="animate-spin" />{workspace.loading ? 'Ladataan tarkastuksia…' : 'Päivitetään tarkastuksia…'}</div>}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
-          {INSPECTION_TABS.filter((item) => canManage || item.value === 'findings').map((item) => <TabsTrigger key={item.value} value={item.value} className="whitespace-nowrap px-4 py-2">{item.label}</TabsTrigger>)}
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 sm:grid-cols-3 lg:grid-cols-6">
+          {INSPECTION_TABS.filter((item) => canManage || item.value === 'findings').map((item) => <TabsTrigger key={item.value} value={item.value} className="whitespace-normal px-4 py-2">{item.label}</TabsTrigger>)}
         </TabsList>
 
         <TabsContent value="overview" className="mt-5 space-y-6">
@@ -147,14 +165,14 @@ export default function Tarkastukset() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between"><CardTitle className="flex items-center gap-2 text-lg"><ClipboardCheck size={18} />Seuraavat tarkastukset</CardTitle><Button variant="ghost" size="sm" onClick={() => setTab('inspections')}>Kaikki <ArrowRight size={14} className="ml-1" /></Button></CardHeader>
               <CardContent className="space-y-2">
-                {upcomingInspections.slice(0, 6).map((inspection) => <button key={inspection.id} type="button" onClick={() => setSelectedInspectionId(inspection.id)} className="w-full rounded-xl border p-3 text-left hover:bg-slate-50"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold">{inspection.title}</p><p className="mt-1 text-xs text-text-secondary">{projectName(projects, inspection.projectId)} · {unitLabel(workspace.units, inspection.unitId)}</p></div><div className="text-right"><Badge className={cn('border-0', inspectionStatusClasses(inspection.status))}>{inspection.status}</Badge><p className="mt-1 text-xs">{formatDate(inspection.scheduledDate)}</p></div></div><Progress value={inspection.progress} className="mt-3 h-1.5" /></button>)}
+                {upcomingInspections.slice(0, 6).map((inspection) => <button key={inspection.id} type="button" onClick={() => setSelectedInspectionId(inspection.id)} className="w-full rounded-xl border p-3 text-left hover:bg-slate-50"><div className="flex items-center justify-between gap-3"><div className="min-w-0 break-words"><p className="font-semibold">{inspection.title}</p><p className="mt-1 text-xs text-text-secondary">{projectName(projects, inspection.projectId)} · {unitLabel(workspace.units, inspection.unitId)}</p></div><div className="text-right"><Badge className={cn('border-0', inspectionStatusClasses(inspection.status))}>{inspection.status}</Badge><p className="mt-1 text-xs">{formatDate(inspection.scheduledDate)}</p></div></div><Progress value={inspection.progress} className="mt-3 h-1.5" /></button>)}
                 {upcomingInspections.length === 0 && <p className="py-8 text-center text-sm text-text-secondary">Ei tarkastuksia seuraavan seitsemän päivän aikana.</p>}
               </CardContent>
             </Card>
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle size={18} />Kiireelliset puutteet</CardTitle></CardHeader>
               <CardContent className="space-y-2">
-                {[...criticalFindings, ...overdueFindings.filter((item) => item.severity !== 'Kriittinen')].slice(0, 7).map((finding) => <button key={finding.id} type="button" onClick={() => setSelectedInspectionId(finding.inspectionId)} className="flex w-full items-start gap-3 rounded-xl border p-3 text-left hover:bg-slate-50"><span className={cn('mt-1 h-2.5 w-2.5 shrink-0 rounded-full', finding.severity === 'Kriittinen' ? 'bg-red-500' : 'bg-amber-500')} /><div className="min-w-0"><p className="truncate font-semibold">{finding.title}</p><p className="mt-1 text-xs text-text-secondary">{projectName(projects, finding.projectId)} · {unitLabel(workspace.units, finding.unitId)} · {formatDate(finding.dueDate)}</p></div></button>)}
+                {[...criticalFindings, ...overdueFindings.filter((item) => item.severity !== 'Kriittinen')].slice(0, 7).map((finding) => <button key={finding.id} type="button" onClick={() => setSelectedInspectionId(finding.inspectionId)} className="flex w-full items-start gap-3 rounded-xl border p-3 text-left hover:bg-slate-50"><span className={cn('mt-1 h-2.5 w-2.5 shrink-0 rounded-full', finding.severity === 'Kriittinen' ? 'bg-red-500' : 'bg-amber-500')} /><div className="min-w-0 break-words"><p className="font-semibold">{finding.title}</p><p className="mt-1 text-xs text-text-secondary">{projectName(projects, finding.projectId)} · {unitLabel(workspace.units, finding.unitId)} · {formatDate(finding.dueDate)}</p></div></button>)}
                 {criticalFindings.length + overdueFindings.length === 0 && <p className="py-8 text-center text-sm text-text-secondary">Ei kiireellisiä tarkastuspuutteita.</p>}
               </CardContent>
             </Card>
@@ -177,11 +195,11 @@ export default function Tarkastukset() {
                     <CardContent className="p-5 pr-14">
                       <div className="flex items-start gap-3">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-light"><ClipboardList size={18} className="text-primary" /></div>
-                        <div className="min-w-0 flex-1"><Badge className={cn('border-0', inspectionStatusClasses(inspection.status))}>{inspection.status}</Badge><h3 className="mt-3 truncate font-semibold">{inspection.title}</h3><p className="mt-1 truncate text-sm text-text-secondary">{projectName(projects, inspection.projectId)} · {unitLabel(workspace.units, inspection.unitId)}</p></div>
+                        <div className="min-w-0 flex-1 break-words"><Badge className={cn('border-0', inspectionStatusClasses(inspection.status))}>{inspection.status}</Badge><h3 className="mt-3 font-semibold">{inspection.title}</h3><p className="mt-1 text-sm text-text-secondary">{projectName(projects, inspection.projectId)} · {unitLabel(workspace.units, inspection.unitId)}</p></div>
                       </div>
                       <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-text-secondary">
                         <div><p className="text-text-muted">Päivä</p><p className="mt-0.5 font-medium text-text-primary">{formatDate(inspection.scheduledDate)}</p></div>
-                        <div><p className="text-text-muted">Tarkastaja</p><p className="mt-0.5 truncate font-medium text-text-primary">{personName(workspace.people, inspection.inspectorId)}</p></div>
+                        <div><p className="text-text-muted">Tarkastaja</p><p className="mt-0.5 break-words font-medium text-text-primary">{personName(workspace.people, inspection.inspectorId)}</p></div>
                       </div>
                       <div className="mt-4 flex items-center justify-between text-xs"><span>{inspection.progress === 100 ? 'Kaikki kohdat käsitelty' : 'Tarkastuskohdat'}</span><strong>{inspection.progress}%</strong></div>
                       <Progress value={inspection.progress} className="mt-1.5 h-2" />
@@ -205,7 +223,7 @@ export default function Tarkastukset() {
 
         <TabsContent value="units" className="mt-5 space-y-4">
           <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setBuildingOpen(true)}><Building2 size={16} className="mr-2" />Lisää rakennus</Button><Button variant="outline" onClick={() => setStairwellOpen(true)}>Lisää rappu</Button><Button onClick={() => setUnitOpen(true)}><Plus size={16} className="mr-2" />Lisää huoneisto</Button></div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{workspace.units.map((unit) => { const openCount = activeFindings.filter((finding) => finding.unitId === unit.id).length; return <Card key={unit.id}><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-bold">{unit.unitCode}</h3><p className="text-sm text-text-secondary">{projectName(projects, unit.projectId)}</p></div><Badge variant="outline">{unit.status}</Badge></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-text-muted">Tyyppi</p><p className="font-medium">{unit.unitType || '—'}</p></div><div><p className="text-text-muted">Pinta-ala</p><p className="font-medium">{unit.areaM2 ? `${unit.areaM2} m²` : '—'}</p></div><div><p className="text-text-muted">Avoimet puutteet</p><p className="font-medium">{openCount}</p></div><div><p className="text-text-muted">Valmistuminen</p><p className="font-medium">{formatDate(unit.plannedCompletionDate)}</p></div></div></CardContent></Card>; })}{workspace.units.length === 0 && <Card className="sm:col-span-2 xl:col-span-4"><CardContent className="p-10 text-center text-sm text-text-secondary">Huoneistorekisteri on tyhjä.</CardContent></Card>}</div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{scopedUnits.map((unit) => { const openCount = activeFindings.filter((finding) => finding.unitId === unit.id).length; return <Card key={unit.id}><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-bold">{unit.unitCode}</h3><p className="text-sm text-text-secondary">{projectName(projects, unit.projectId)}</p></div><Badge variant="outline">{unit.status}</Badge></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-text-muted">Tyyppi</p><p className="font-medium">{unit.unitType || '—'}</p></div><div><p className="text-text-muted">Pinta-ala</p><p className="font-medium">{unit.areaM2 ? `${unit.areaM2} m²` : '—'}</p></div><div><p className="text-text-muted">Avoimet puutteet</p><p className="font-medium">{openCount}</p></div><div><p className="text-text-muted">Valmistuminen</p><p className="font-medium">{formatDate(unit.plannedCompletionDate)}</p></div></div></CardContent></Card>; })}{scopedUnits.length === 0 && <Card className="sm:col-span-2 xl:col-span-4"><CardContent className="p-10 text-center text-sm text-text-secondary">Huoneistorekisteri on tyhjä.</CardContent></Card>}</div>
         </TabsContent>
 
         <TabsContent value="templates" className="mt-5 space-y-4">

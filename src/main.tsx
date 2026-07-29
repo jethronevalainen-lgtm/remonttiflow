@@ -13,6 +13,17 @@ import './mobile-header-panels.css';
 
 const isAuthCallback = window.location.pathname === '/auth/callback';
 
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').then((registration) => {
+      const syncRegistration = registration as ServiceWorkerRegistration & {
+        sync?: { register: (tag: string) => Promise<void> };
+      };
+      return syncRegistration.sync?.register('vakantti-sync');
+    }).catch(() => undefined);
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>

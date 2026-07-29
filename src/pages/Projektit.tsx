@@ -323,7 +323,7 @@ export default function Projektit() {
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="relative w-full lg:max-w-md"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Hae projektia, asiakasta tai sijaintia…" /></div>
-        <div className="flex gap-2 overflow-x-auto pb-1">{statusFilters.map((filter) => <Button key={filter.key} variant={activeFilter === filter.key ? 'default' : 'outline'} size="sm" className="shrink-0 gap-2" onClick={() => setActiveFilter(filter.key)}><filter.icon size={14} />{filter.key}<Badge variant="secondary" className="ml-1">{filter.count}</Badge></Button>)}</div>
+        <div className="flex flex-wrap gap-2 pb-1">{statusFilters.map((filter) => <Button key={filter.key} variant={activeFilter === filter.key ? 'default' : 'outline'} size="sm" className="gap-2" onClick={() => setActiveFilter(filter.key)}><filter.icon size={14} />{filter.key}<Badge variant="secondary" className="ml-1">{filter.count}</Badge></Button>)}</div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">

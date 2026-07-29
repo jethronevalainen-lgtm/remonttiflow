@@ -206,6 +206,16 @@ test.describe('smoke: public authentication shell', () => {
   });
 
   test('invalid credentials show a Finnish error alert and stay on /login', async ({ page }) => {
+    await page.route('**/auth/v1/token?grant_type=password', async (route) => {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 'invalid_credentials',
+          msg: 'Invalid login credentials',
+        }),
+      });
+    });
     await page.goto('/#/login');
     await page.getByLabel('Sähköposti').fill('not-a-user@vakantti.invalid');
     await page.getByLabel('Salasana').fill('invalid-password');

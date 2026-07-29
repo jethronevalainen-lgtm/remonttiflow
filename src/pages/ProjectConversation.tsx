@@ -76,7 +76,7 @@ function AttachmentView({ attachment, own }: { attachment: ProjectMessageAttachm
       <a href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-black/10 bg-black/5">
         <img src={url} alt={attachment.fileName} className="max-h-64 w-full object-cover" />
         <span className={`flex items-center justify-between gap-3 px-3 py-2 text-xs ${own ? 'text-indigo-100' : 'text-slate-600'}`}>
-          <span className="min-w-0 truncate">{attachment.fileName}</span><span>{fileSize(attachment.sizeBytes)}</span>
+          <span className="min-w-0 break-words">{attachment.fileName}</span><span>{fileSize(attachment.sizeBytes)}</span>
         </span>
       </a>
     );
@@ -91,7 +91,7 @@ function AttachmentView({ attachment, own }: { attachment: ProjectMessageAttachm
       className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-sm ${own ? 'border-indigo-400 bg-indigo-500/40 text-white' : 'border-slate-200 bg-slate-50 text-slate-800'} ${!url ? 'pointer-events-none opacity-70' : ''}`}
     >
       {image ? <ImageIcon size={18} /> : <FileText size={18} />}
-      <span className="min-w-0 flex-1 truncate">{attachment.fileName}</span>
+      <span className="min-w-0 flex-1 break-words">{attachment.fileName}</span>
       <span className="shrink-0 text-xs">{failed ? 'Ei saatavilla' : fileSize(attachment.sizeBytes)}</span>
     </a>
   );
@@ -307,7 +307,7 @@ export default function ProjectConversation() {
                     {message.replyToId && message.replyBody && (
                       <div className={`mb-2 rounded-lg border-l-4 px-3 py-2 text-xs ${own ? 'border-indigo-200 bg-indigo-500/40 text-indigo-50' : 'border-indigo-400 bg-indigo-50 text-slate-700'}`}>
                         <p className="font-semibold">Vastaus käyttäjälle {message.replyAuthorName || 'Käyttäjä'}</p>
-                        <p className="mt-1 line-clamp-2">{message.replyBody}</p>
+                        <p className="mt-1 whitespace-pre-wrap break-words">{message.replyBody}</p>
                       </div>
                     )}
                     <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.body}</p>
@@ -338,7 +338,7 @@ export default function ProjectConversation() {
               </div>
             ) : (
               <>
-                {replyingTo && <div className="mb-3 flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm"><Reply size={16} className="mt-0.5 text-indigo-600" /><div className="min-w-0 flex-1"><p className="font-semibold text-indigo-950">Vastaat käyttäjälle {replyingTo.authorName}</p><p className="mt-1 line-clamp-2 text-indigo-800">{replyingTo.body}</p></div><Button size="sm" variant="ghost" onClick={() => setReplyingTo(null)}><X size={15} /></Button></div>}
+                {replyingTo && <div className="mb-3 flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm"><Reply size={16} className="mt-0.5 text-indigo-600" /><div className="min-w-0 flex-1"><p className="font-semibold text-indigo-950">Vastaat käyttäjälle {replyingTo.authorName}</p><p className="mt-1 whitespace-pre-wrap break-words text-indigo-800">{replyingTo.body}</p></div><Button size="sm" variant="ghost" onClick={() => setReplyingTo(null)}><X size={15} /></Button></div>}
                 <Textarea value={body} onChange={(event) => setBody(event.target.value)} rows={3} maxLength={4000} placeholder={channel === 'shared' ? 'Kirjoita viesti projektin osallistujille…' : 'Kirjoita sisäinen viesti projektiryhmälle…'} onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) void send(); }} />
                 <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex flex-wrap items-center gap-2">

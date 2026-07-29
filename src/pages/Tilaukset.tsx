@@ -330,7 +330,7 @@ export default function Tilaukset() {
           </div>
 
           <Tabs defaultValue="orders" className="space-y-4">
-            <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border bg-white p-1">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl border bg-white p-1 sm:grid-cols-4">
               <TabsTrigger value="orders">Työtilaukset ({dashboard.orders.length})</TabsTrigger>
               <TabsTrigger value="users">Tilaajakäyttäjät ({dashboard.users.length})</TabsTrigger>
               <TabsTrigger value="inspections">Tarkastusten julkaisu ({dashboard.inspections.length})</TabsTrigger>
@@ -351,8 +351,8 @@ export default function Tilaukset() {
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap gap-2"><Badge variant="outline">{order.orderNumber}</Badge><Badge variant="outline" className={statusTone(order.status)}>{order.status}</Badge>{order.messageCount ? <Badge className="bg-teal-700"><MessageCircle size={12} className="mr-1" />{order.messageCount}</Badge> : null}</div>
-                          <h2 className="mt-3 truncate text-lg font-semibold">{order.title}</h2>
-                          <p className="mt-1 truncate text-sm text-slate-500">{order.customerName} · {order.projectName} · {order.category}</p>
+                          <h2 className="mt-3 break-words text-lg font-semibold">{order.title}</h2>
+                          <p className="mt-1 break-words text-sm text-slate-500">{order.customerName} · {order.projectName} · {order.category}</p>
                           <Progress value={order.progress} className="mt-4 h-2" />
                           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500"><span>Eteneminen {order.progress} %</span><span>Aloitus {dateLabel(order.plannedStartDate || order.requestedDate)}</span><span>Valmistuminen {dateLabel(order.plannedEndDate || order.desiredCompletionDate)}</span></div>
                         </div>

@@ -98,7 +98,7 @@ function packageProgress(orders: ManagedWorkOrder[]): number {
   return Math.round((completed / orders.length) * 100);
 }
 
-export default function ProjectWorks() {
+export default function ProjectWorks({ embedded = false }: { embedded?: boolean }) {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -222,8 +222,8 @@ export default function ProjectWorks() {
   const targetCount = new Set(projectOrders.filter((order) => order.workPackageKey).map((order) => `${order.workPlanId}:${order.workPackageKey}`)).size;
 
   return (
-    <div className="mx-auto max-w-[1700px] space-y-5 sm:space-y-6">
-      <div className="overflow-hidden rounded-2xl bg-gradient-to-r from-slate-950 to-slate-800 text-white shadow-lg">
+    <div className={embedded ? 'space-y-5' : 'mx-auto max-w-[1700px] space-y-5 sm:space-y-6'}>
+      {!embedded && <div className="overflow-hidden rounded-2xl bg-gradient-to-r from-slate-950 to-slate-800 text-white shadow-lg">
         <div className="p-5 sm:p-8">
           <Button variant="ghost" className="mb-4 gap-2 text-slate-200 hover:bg-white/10 hover:text-white" onClick={() => navigate('/projektit')}>
             <ArrowLeft size={16} /> Projektit
@@ -242,7 +242,7 @@ export default function ProjectWorks() {
               <Button
                 variant="outline"
                 className="border-slate-600 bg-white/5 text-white hover:bg-white/10"
-                onClick={() => navigate(`/projektit/${projectId}/tyotila?tab=documents`)}
+                onClick={() => navigate(`/projektit/${projectId}?tab=documents`)}
               >
                 <FileText size={16} className="mr-2" /> Tilannekuva ja dokumentit
               </Button>
@@ -255,7 +255,24 @@ export default function ProjectWorks() {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
+
+      {embedded && (
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-950">Työvaiheet ja tekijät</h2>
+            <p className="mt-1 text-sm text-slate-600">Työkokonaisuudet, kohteet, työjärjestys ja vastuuhenkilöt.</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => navigate(`/tyomaaraykset?project=${encodeURIComponent(projectId)}&new=1`)}>
+              <Plus size={16} className="mr-2" /> Yksittäinen työ
+            </Button>
+            <Button onClick={() => setPlanOpen(true)} disabled={!canManage}>
+              <Layers3 size={16} className="mr-2" /> Rakenna työkokonaisuus
+            </Button>
+          </div>
+        </div>
+      )}
 
       {(error || operationError) && (
         <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -268,7 +285,7 @@ export default function ProjectWorks() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      {!embedded && <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         {[
           { label: 'Työkokonaisuuksia', value: plans.length, icon: Layers3, tone: 'bg-violet-50 text-violet-700' },
           { label: 'Työkohteita', value: targetCount, icon: MapPin, tone: 'bg-slate-100 text-slate-700' },
@@ -285,9 +302,9 @@ export default function ProjectWorks() {
             </CardContent>
           </Card>
         ))}
-      </div>
+      </div>}
 
-      {project && currentOrg && (
+      {!embedded && project && currentOrg && (
         <ProjectContactsFilesPanel
           organizationId={currentOrg.id}
           project={project}
@@ -297,7 +314,7 @@ export default function ProjectWorks() {
           canManage={canManage}
           onError={setOperationError}
           onSuccess={setSuccessMessage}
-          onNavigateWorkspaceDocuments={() => navigate(`/projektit/${projectId}/tyotila?tab=documents`)}
+          onNavigateWorkspaceDocuments={() => navigate(`/projektit/${projectId}?tab=documents`)}
         />
       )}
 
@@ -306,7 +323,7 @@ export default function ProjectWorks() {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae työkohdetta, vaihetta tai tekijää…" className="pl-9" />
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex flex-wrap gap-2 pb-1">
           {STATUS_FILTERS.map((status) => (
             <Button key={status} variant={statusFilter === status ? 'default' : 'outline'} size="sm" className="shrink-0" onClick={() => setStatusFilter(status)}>
               {status}

@@ -1,7 +1,14 @@
 import { supabase } from './client';
 import type {
-  FindingSeverity, FindingStatus, InspectionFinding, InspectionResultStatus, TemplateEditorSection,
+  FindingSeverity, FindingStatus, InspectionFinding, TemplateEditorSection,
 } from './inspectionTypes';
+import {
+  enqueueOfflineOperation,
+  isLikelyNetworkError,
+  type OfflineOperation,
+  type QueuedInspectionAttachment,
+  type QueuedInspectionResult,
+} from '../offlineQueue';
 
 export * from './inspectionTypes';
 export { loadInspectionWorkspace, loadInspectionDetail, loadTemplateEditor } from './inspectionRead';
@@ -104,14 +111,7 @@ export async function createInspections(input: {
   return ids;
 }
 
-export async function saveInspectionResult(input: {
-  inspectionId: string;
-  itemId: string;
-  status: InspectionResultStatus;
-  comment?: string;
-  measurementValue?: number;
-  measurementUnit?: string;
-}): Promise<void> {
+async function saveInspectionResultOnline(input: QueuedInspectionResult): Promise<void> {
   const { error } = await supabase.rpc('save_inspection_result', {
     p_inspection_id: input.inspectionId,
     p_item_id: input.itemId,
@@ -121,6 +121,21 @@ export async function saveInspectionResult(input: {
     p_measurement_unit: input.measurementUnit?.trim() || null,
   });
   if (error) throw failure('Tarkastuskohdan tallennus epäonnistui', error.message);
+}
+
+export async function saveInspectionResult(input: QueuedInspectionResult): Promise<boolean> {
+  if (!navigator.onLine) {
+    await enqueueOfflineOperation({ type: 'inspection-result', payload: input });
+    return false;
+  }
+  try {
+    await saveInspectionResultOnline(input);
+    return true;
+  } catch (caught) {
+    if (!isLikelyNetworkError(caught)) throw caught;
+    await enqueueOfflineOperation({ type: 'inspection-result', payload: input });
+    return false;
+  }
 }
 
 export async function createInspectionFinding(input: {
@@ -212,16 +227,7 @@ function safeFileName(name: string): string {
   return normalized.replace(/^-+|-+$/g, '') || 'liite';
 }
 
-export async function uploadInspectionAttachment(input: {
-  organizationId: string;
-  inspectionId?: string;
-  resultId?: string;
-  findingId?: string;
-  file: File;
-  kind: string;
-  caption?: string;
-  userId: string;
-}): Promise<void> {
+async function uploadInspectionAttachmentOnline(input: QueuedInspectionAttachment): Promise<void> {
   const target = input.findingId ?? input.resultId ?? input.inspectionId;
   if (!target) throw new Error('Liitteen kohde puuttuu.');
   const objectPath = `${input.organizationId}/${input.inspectionId ?? 'finding'}/${crypto.randomUUID()}-${safeFileName(input.file.name)}`;
@@ -251,6 +257,31 @@ export async function uploadInspectionAttachment(input: {
     await supabase.storage.from('inspection-files').remove([objectPath]);
     throw failure('Liitetiedon tallennus epäonnistui', insertError.message);
   }
+}
+
+export async function uploadInspectionAttachment(
+  input: QueuedInspectionAttachment,
+): Promise<boolean> {
+  if (!navigator.onLine) {
+    await enqueueOfflineOperation({ type: 'inspection-attachment', payload: input });
+    return false;
+  }
+  try {
+    await uploadInspectionAttachmentOnline(input);
+    return true;
+  } catch (caught) {
+    if (!isLikelyNetworkError(caught)) throw caught;
+    await enqueueOfflineOperation({ type: 'inspection-attachment', payload: input });
+    return false;
+  }
+}
+
+export async function syncInspectionOfflineOperation(operation: OfflineOperation): Promise<void> {
+  if (operation.type === 'inspection-result') {
+    await saveInspectionResultOnline(operation.payload);
+    return;
+  }
+  await uploadInspectionAttachmentOnline(operation.payload);
 }
 
 export async function createAttachmentUrl(objectPath: string): Promise<string> {

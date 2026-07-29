@@ -216,8 +216,8 @@ export default function CustomerPortalInviteDialog({
                           onCheckedChange={(value) => toggleProject(project.id, value === true)}
                         />
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium text-slate-950">{project.name}</span>
-                          <span className="mt-1 block truncate text-xs text-slate-500">{project.location || project.status || 'Ei sijaintia'}</span>
+                          <span className="block break-words text-sm font-medium text-slate-950">{project.name}</span>
+                          <span className="mt-1 block break-words text-xs text-slate-500">{project.location || project.status || 'Ei sijaintia'}</span>
                         </span>
                       </label>
                     );
