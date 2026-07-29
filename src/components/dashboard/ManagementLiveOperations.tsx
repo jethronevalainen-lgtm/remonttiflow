@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
-  CheckCircle2,
   ClipboardList,
   Clock3,
   FileText,
@@ -19,7 +18,9 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { StatusPanel } from '@/components/ui/status-panel';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -214,7 +215,7 @@ export default function ManagementLiveOperations() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid auto-rows-fr grid-cols-2 gap-3 xl:grid-cols-4">
         {[
           { label: 'Työmailla nyt', value: snapshot.metrics.activePeople, detail: `${snapshot.metrics.activeSites} aktiivista kohdetta`, icon: UsersRound, tone: 'bg-emerald-50 text-emerald-700', path: '/tyonjohto' },
           { label: 'Odottaa hyväksyntää', value: `${pendingHours.toFixed(1)} h`, detail: 'tuntikirjauksia', icon: Clock3, tone: 'bg-amber-50 text-amber-700', path: '/tuntikirjaukset' },
@@ -222,26 +223,34 @@ export default function ManagementLiveOperations() {
           { label: 'Laatu ja turvallisuus', value: criticalFindings.length + openSafety.length, detail: `${openInspections.length} avointa tarkastusta`, icon: ClipboardList, tone: 'bg-orange-50 text-orange-700', path: criticalFindings.length ? '/tarkastukset' : '/tyoturvallisuus' },
         ].map((item) => (
           <button key={item.label} type="button" onClick={() => navigate(item.path)} className="min-w-0 text-left">
-            <Card className="h-full min-w-0 border-slate-200 shadow-sm transition-shadow hover:shadow-md">
-              <CardContent className="p-3 sm:p-4">
-              <div className={cn('mb-3 flex h-9 w-9 items-center justify-center rounded-xl', item.tone)}><item.icon size={18} /></div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 sm:text-xs">{item.label}</p>
-              <p className="mt-1 break-words font-mono text-xl font-bold text-slate-950 sm:text-2xl">{item.value}</p>
-              <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+            <Card className="min-w-0 border-slate-200 shadow-sm transition-shadow hover:shadow-md">
+              <CardContent className="flex h-full flex-col p-3 sm:p-4">
+                <div className={cn('mb-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', item.tone)}>
+                  <item.icon size={18} />
+                </div>
+                <p className="break-words text-[10px] font-semibold uppercase tracking-wider text-slate-500 sm:text-xs">{item.label}</p>
+                <p className="mt-1 break-words font-mono text-xl font-bold text-slate-950 sm:text-2xl">{item.value}</p>
+                <p className="mt-auto break-words pt-2 text-xs text-slate-500">{item.detail}</p>
               </CardContent>
             </Card>
           </button>
         ))}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.8fr)]">
+      <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.8fr)]">
         <Card className="min-w-0 border-slate-200 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 p-4 sm:p-6">
-            <CardTitle className="flex items-center gap-2 text-base sm:text-lg"><UsersRound size={19} className="text-emerald-700" /> Aktiiviset kirjautumiset</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 p-4 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <UsersRound size={19} className="shrink-0 text-emerald-700" /> Aktiiviset kirjautumiset
+            </CardTitle>
             <Badge variant="outline">{snapshot.activeCheckIns.length} henkilöä</Badge>
           </CardHeader>
-          <CardContent className="space-y-3 p-4 pt-0 sm:p-6 sm:pt-0">
-            {loading && <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500"><Loader2 size={18} className="animate-spin" /> Ladataan työmaatilannetta…</div>}
+          <CardContent className="space-y-3 p-4 sm:p-6">
+            {loading && (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
+                <Loader2 size={18} className="animate-spin" /> Ladataan työmaatilannetta…
+              </div>
+            )}
             {!loading && snapshot.activeCheckIns.map((checkIn) => {
               const location = locationStatus(checkIn);
               return (
@@ -251,27 +260,40 @@ export default function ManagementLiveOperations() {
                       {checkIn.avatarUrl ? (
                         <img src={checkIn.avatarUrl} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
                       ) : (
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(checkIn.employeeName)}</div>
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
+                          {initials(checkIn.employeeName)}
+                        </div>
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-slate-950">{checkIn.employeeName}</p>
+                          <p className="break-words font-semibold text-slate-950">{checkIn.employeeName}</p>
                           <Badge variant="outline" className={location.className}>{location.label}</Badge>
                         </div>
-                        <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-600"><MapPin size={14} /> {checkIn.projectName}{checkIn.projectLocation ? ` · ${checkIn.projectLocation}` : ''}</p>
-                        <p className="mt-1 text-sm text-slate-700">{checkIn.description || 'Työn kuvausta ei ole annettu.'}</p>
+                        <p className="mt-1 flex items-start gap-1.5 break-words text-sm text-slate-600">
+                          <MapPin size={14} className="mt-0.5 shrink-0" />
+                          <span>{checkIn.projectName}{checkIn.projectLocation ? ` · ${checkIn.projectLocation}` : ''}</span>
+                        </p>
+                        <p className="mt-1 break-words text-sm text-slate-700">{checkIn.description || 'Työn kuvausta ei ole annettu.'}</p>
                         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                           <span>Aloittanut {clockLabel(checkIn.checkedInAt)}</span>
                           <span>Kesto {durationLabel(checkIn.durationMinutes)}</span>
                           <span>Tarkkuus ±{Math.round(checkIn.accuracyM)} m</span>
                           {checkIn.distanceFromSiteM != null && <span>Etäisyys työmaasta {Math.round(checkIn.distanceFromSiteM)} m</span>}
                         </div>
-                        {checkIn.workOrderTitle && <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-slate-700"><Wrench size={13} /> {checkIn.workOrderTitle}</p>}
+                        {checkIn.workOrderTitle && (
+                          <p className="mt-2 flex items-start gap-1.5 break-words text-xs font-medium text-slate-700">
+                            <Wrench size={13} className="mt-0.5 shrink-0" /> {checkIn.workOrderTitle}
+                          </p>
+                        )}
                       </div>
                     </div>
                     {checkIn.exceptionCodes.length > 0 && (
                       <div className="flex max-w-md flex-wrap gap-1.5 lg:justify-end">
-                        {checkIn.exceptionCodes.map((code) => <Badge key={code} variant="outline" className="border-amber-300 bg-white text-amber-800">{LIVE_EXCEPTION_LABELS[code]}</Badge>)}
+                        {checkIn.exceptionCodes.map((code) => (
+                          <Badge key={code} variant="outline" className="border-amber-300 bg-white text-amber-800">
+                            {LIVE_EXCEPTION_LABELS[code]}
+                          </Badge>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -279,67 +301,158 @@ export default function ManagementLiveOperations() {
               );
             })}
             {!loading && snapshot.activeCheckIns.length === 0 && (
-              <div className="py-10 text-center">
-                <CheckCircle2 size={40} className="mx-auto mb-3 text-emerald-500" />
-                <p className="font-semibold text-slate-900">Ei aktiivisia työmaakirjautumisia</p>
-                <p className="mt-1 text-sm text-slate-500">Työntekijän QR- tai työmaakirjautuminen ilmestyy tähän automaattisesti.</p>
-              </div>
+              <EmptyState
+                icon={UsersRound}
+                title="Ei aktiivisia työmaakirjautumisia"
+                description="Työntekijän QR- tai työmaakirjautuminen ilmestyy tähän automaattisesti."
+              />
             )}
           </CardContent>
         </Card>
 
-        <div className="space-y-5">
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="p-4 sm:p-5"><CardTitle className="flex items-center gap-2 text-base"><MapPin size={18} className="text-purple-700" /> Henkilöt työmaittain</CardTitle></CardHeader>
-            <CardContent className="space-y-2 p-4 pt-0 sm:p-5 sm:pt-0">
-              {snapshot.siteCounts.map((site) => (
-                <button key={site.key} type="button" onClick={() => site.projectId ? navigate(`/projektit/${site.projectId}`) : undefined} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left hover:bg-slate-50">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 font-mono font-bold text-purple-700">{site.peopleCount}</div>
-                  <div className="min-w-0 flex-1 break-words"><p className="font-medium text-slate-900">{site.projectName}</p><p className="text-xs text-slate-500">Ensimmäinen kirjautui {clockLabel(site.firstCheckedInAt)}</p></div>
-                  {site.exceptionCount > 0 && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">{site.exceptionCount} huomiota</Badge>}
-                </button>
-              ))}
-              {snapshot.siteCounts.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Ei aktiivisia työmaita.</p>}
-            </CardContent>
-          </Card>
-
-          <Card className={cn('border-slate-200 shadow-sm', exceptions.length > 0 && 'border-amber-300')}>
-            <CardHeader className="p-4 sm:p-5"><CardTitle className="flex items-center gap-2 text-base"><AlertTriangle size={18} className={exceptions.length ? 'text-amber-700' : 'text-emerald-600'} /> Vaatii huomiota</CardTitle></CardHeader>
-            <CardContent className="space-y-3 p-4 pt-0 sm:p-5 sm:pt-0">
-              {exceptions.slice(0, 6).map((item) => (
-                <div key={item.id} className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <p className="font-medium text-amber-950">{item.employeeName} · {item.projectName}</p>
-                  <p className="mt-1 text-xs leading-5 text-amber-800">{item.exceptionCodes.map((code) => LIVE_EXCEPTION_LABELS[code]).join(' · ')}</p>
+        <Card className="min-w-0 border-slate-200 shadow-sm">
+          <CardHeader className="border-b border-slate-100 bg-slate-50/70 p-4 sm:p-5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MapPin size={18} className="shrink-0 text-purple-700" /> Henkilöt työmaittain
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 p-4 sm:p-5">
+            {snapshot.siteCounts.map((site) => (
+              <button
+                key={site.key}
+                type="button"
+                onClick={() => site.projectId ? navigate(`/projektit/${site.projectId}`) : undefined}
+                className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left transition hover:bg-slate-50"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 font-mono font-bold text-purple-700">
+                  {site.peopleCount}
                 </div>
-              ))}
-              {exceptions.length === 0 && <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"><ShieldCheck size={18} className="mt-0.5" />Aktiivisissa kirjautumisissa ei ole havaittuja poikkeamia.</div>}
-              <Button variant="outline" className="w-full" onClick={() => navigate('/tuntikirjaukset')}>Avaa tuntikirjausten käsittely</Button>
-            </CardContent>
-          </Card>
-        </div>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words font-medium text-slate-900">{site.projectName}</p>
+                  <p className="break-words text-xs text-slate-500">Ensimmäinen kirjautui {clockLabel(site.firstCheckedInAt)}</p>
+                </div>
+                {site.exceptionCount > 0 && (
+                  <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                    {site.exceptionCount} huomiota
+                  </Badge>
+                )}
+              </button>
+            ))}
+            {!loading && snapshot.siteCounts.length === 0 && (
+              <EmptyState
+                compact
+                icon={MapPin}
+                title="Ei aktiivisia työmaita"
+                description="Työmaat ryhmitellään tähän heti, kun niille kirjaudutaan."
+              />
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between gap-3 p-4 sm:p-6">
-          <CardTitle className="flex items-center gap-2 text-base sm:text-lg"><FileText size={19} className="text-blue-700" /> Viimeisimmät työselosteet</CardTitle>
-          <Button variant="ghost" size="sm" onClick={() => navigate('/tuntikirjaukset')}>Näytä kaikki</Button>
-        </CardHeader>
-        <CardContent className="space-y-3 p-4 pt-0 sm:p-6 sm:pt-0">
-          {snapshot.recentDescriptions.map((entry) => (
-            <button key={entry.id} type="button" onClick={() => navigate('/tuntikirjaukset')} className={cn('block w-full rounded-xl border p-4 text-left transition hover:bg-slate-50', entry.qualityCodes.length ? 'border-amber-200' : 'border-slate-200')}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-slate-950">{entry.employeeName}</p><Badge variant="outline">{entry.status}</Badge></div>
-                  <p className="mt-1 text-xs text-slate-500">{entry.projectName}{entry.workOrderTitle ? ` · ${entry.workOrderTitle}` : ''} · {dateTimeLabel(entry.createdAt)} · {(entry.hours + entry.overtime).toFixed(1)} h</p>
-                  <p className="mt-3 text-sm leading-6 text-slate-700">{entry.description || 'Työselostetta ei ole annettu.'}</p>
+      <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.8fr)]">
+        <Card className="min-h-80 min-w-0 border-slate-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 p-4 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <FileText size={19} className="shrink-0 text-blue-700" /> Viimeisimmät työselosteet
+            </CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/tuntikirjaukset')}>Näytä kaikki</Button>
+          </CardHeader>
+          <CardContent className="flex h-full flex-col gap-3 p-4 sm:p-6">
+            {snapshot.recentDescriptions.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => navigate('/tuntikirjaukset')}
+                className={cn(
+                  'block w-full rounded-xl border bg-white p-4 text-left transition hover:bg-slate-50',
+                  entry.qualityCodes.length ? 'border-amber-200' : 'border-slate-200',
+                )}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="break-words font-semibold text-slate-950">{entry.employeeName}</p>
+                      <Badge variant="outline">{entry.status}</Badge>
+                    </div>
+                    <p className="mt-1 break-words text-xs text-slate-500">
+                      {entry.projectName}{entry.workOrderTitle ? ` · ${entry.workOrderTitle}` : ''} · {dateTimeLabel(entry.createdAt)} · {(entry.hours + entry.overtime).toFixed(1)} h
+                    </p>
+                    <p className="mt-3 break-words text-sm leading-6 text-slate-700">{entry.description || 'Työselostetta ei ole annettu.'}</p>
+                  </div>
+                  {entry.qualityCodes.length > 0 && (
+                    <div className="flex max-w-lg flex-wrap gap-1.5 sm:justify-end">
+                      {entry.qualityCodes.map((code) => (
+                        <Badge key={code} variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
+                          {DESCRIPTION_QUALITY_LABELS[code]}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {entry.qualityCodes.length > 0 && <div className="flex max-w-lg flex-wrap gap-1.5 sm:justify-end">{entry.qualityCodes.map((code) => <Badge key={code} variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">{DESCRIPTION_QUALITY_LABELS[code]}</Badge>)}</div>}
-              </div>
-            </button>
-          ))}
-          {snapshot.recentDescriptions.length === 0 && <p className="py-8 text-center text-sm text-slate-500">Työselosteita ei ole vielä kirjattu.</p>}
-        </CardContent>
-      </Card>
+              </button>
+            ))}
+            {!loading && snapshot.recentDescriptions.length === 0 && (
+              <EmptyState
+                icon={FileText}
+                title="Ei vielä työselosteita"
+                description="Kun työntekijät kirjaavat työselosteita, ne näkyvät tässä uusimmasta vanhimpaan."
+                action={(
+                  <Button variant="outline" onClick={() => navigate('/tuntikirjaukset')}>
+                    Avaa tuntikirjaukset
+                  </Button>
+                )}
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className={cn('min-h-80 min-w-0 border-slate-200 shadow-sm', exceptions.length > 0 && 'border-amber-300')}>
+          <CardHeader className="border-b border-slate-100 bg-slate-50/70 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <AlertTriangle size={18} className={cn('shrink-0', exceptions.length ? 'text-amber-700' : 'text-emerald-600')} />
+                Vaatii huomiota
+              </CardTitle>
+              <Badge variant="outline" className={exceptions.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}>
+                {exceptions.length ? `${exceptions.length} poikkeamaa` : 'Tilanne kunnossa'}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="flex h-full flex-col gap-3 p-4 sm:p-5">
+            {exceptions.slice(0, 6).map((item) => (
+              <StatusPanel
+                key={item.id}
+                tone="warning"
+                icon={AlertTriangle}
+                title={`${item.employeeName} · ${item.projectName}`}
+                description={item.exceptionCodes.map((code) => LIVE_EXCEPTION_LABELS[code]).join(' · ')}
+              />
+            ))}
+            {exceptions.length === 0 && (
+              <StatusPanel
+                tone="success"
+                icon={ShieldCheck}
+                title="Ei havaittuja poikkeamia"
+                description="Aktiivisissa työmaakirjautumisissa ei ole sijaintiin, kestoon tai työmääräykseen liittyviä huomioita."
+              />
+            )}
+            <StatusPanel
+              tone={pendingHours > 0 ? 'warning' : 'neutral'}
+              icon={Clock3}
+              title={pendingHours > 0 ? `${pendingHours.toFixed(1)} h odottaa hyväksyntää` : 'Ei odottavia tuntikirjauksia'}
+              description={pendingHours > 0
+                ? 'Käsittele odottavat tuntikirjaukset, jotta palkka-aineisto pysyy ajan tasalla.'
+                : 'Tuntikirjausten hyväksyntäjono on tällä hetkellä tyhjä.'}
+            />
+          </CardContent>
+          <CardFooter className="border-t border-slate-100 bg-slate-50/50 p-4 sm:p-5">
+            <Button className="w-full" onClick={() => navigate('/tuntikirjaukset')}>
+              Avaa tuntikirjausten käsittely
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
     </section>
   );
 }
