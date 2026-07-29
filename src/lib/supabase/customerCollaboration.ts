@@ -42,6 +42,16 @@ export interface CustomerProjectDocument {
   visibleToCustomer: boolean;
 }
 
+export interface CustomerChangeOrderLine {
+  lineNumber: number;
+  category: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  saleUnitPriceCents: number;
+  saleTotalCents: number;
+}
+
 export interface CustomerProjectChangeOrder {
   id: string;
   projectId: string;
@@ -55,6 +65,10 @@ export interface CustomerProjectChangeOrder {
   customerDecisionNote: string | null;
   submittedToCustomerAt: string | null;
   customerDecidedAt: string | null;
+  customerVersion: number;
+  vatRate: number;
+  scheduleEffectDays: number;
+  lines: CustomerChangeOrderLine[];
 }
 
 function mapDocument(row: Row, management = false): CustomerProjectDocument {
@@ -76,6 +90,19 @@ function mapDocument(row: Row, management = false): CustomerProjectDocument {
   };
 }
 
+function mapChangeOrderLine(value: unknown): CustomerChangeOrderLine {
+  const row = value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
+  return {
+    lineNumber: numberValue(row, 'lineNumber'),
+    category: text(row, 'category'),
+    description: text(row, 'description'),
+    quantity: numberValue(row, 'quantity'),
+    unit: text(row, 'unit'),
+    saleUnitPriceCents: numberValue(row, 'saleUnitPriceCents'),
+    saleTotalCents: numberValue(row, 'saleTotalCents'),
+  };
+}
+
 function mapChangeOrder(row: Row): CustomerProjectChangeOrder {
   const rawDecision = nullableText(row, 'customer_decision');
   return {
@@ -91,6 +118,10 @@ function mapChangeOrder(row: Row): CustomerProjectChangeOrder {
     customerDecisionNote: nullableText(row, 'customer_decision_note'),
     submittedToCustomerAt: nullableText(row, 'submitted_to_customer_at'),
     customerDecidedAt: nullableText(row, 'customer_decided_at'),
+    customerVersion: numberValue(row, 'customer_version'),
+    vatRate: numberValue(row, 'vat_rate'),
+    scheduleEffectDays: numberValue(row, 'schedule_effect_days'),
+    lines: Array.isArray(row.lines) ? row.lines.map(mapChangeOrderLine) : [],
   };
 }
 
@@ -137,7 +168,7 @@ export async function createCustomerDocumentUrl(storagePath: string): Promise<st
 }
 
 export async function loadCustomerProjectChangeOrders(projectId: string): Promise<CustomerProjectChangeOrder[]> {
-  const { data, error } = await supabase.rpc('customer_project_change_orders_v2', {
+  const { data, error } = await supabase.rpc('customer_project_change_orders_v3', {
     p_project_id: projectId,
   });
   if (error) throw new Error(`Lisä- ja muutostöiden haku epäonnistui: ${error.message}`);
@@ -148,14 +179,12 @@ export async function loadManagementProjectChangeOrders(
   organizationId: string,
   projectId: string,
 ): Promise<CustomerProjectChangeOrder[]> {
-  const { data, error } = await supabase
-    .from('change_orders')
-    .select('id, project_id, change_number, title, description, status, amount_cents, requested_at, customer_visible, customer_decision, customer_decision_note, submitted_to_customer_at, customer_decided_at')
-    .eq('organization_id', organizationId)
-    .eq('project_id', projectId)
-    .order('created_at', { ascending: false });
+  const { data, error } = await supabase.rpc('list_management_change_orders_v2', {
+    p_organization_id: organizationId,
+    p_project_id: projectId,
+  });
   if (error) throw new Error(`Lisä- ja muutostöiden haku epäonnistui: ${error.message}`);
-  return rows(data).filter((row) => booleanValue(row, 'customer_visible') || text(row, 'status') !== '').map(mapChangeOrder);
+  return rows(data).map(mapChangeOrder).filter((item) => item.id);
 }
 
 export async function submitChangeOrderToCustomer(changeOrderId: string): Promise<void> {
