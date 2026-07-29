@@ -40,6 +40,10 @@ function lineTotal(line: OfferLine): number {
   );
 }
 
+function sectionSaleTotal(lines: OfferLine[]): number {
+  return lines.reduce((sum, line) => sum + lineTotal(line), 0);
+}
+
 function rows(lines: OfferLine[]): string {
   return lines
     .filter((line) => line.customerVisible)
@@ -59,13 +63,20 @@ function rows(lines: OfferLine[]): string {
 }
 
 export function buildOfferPrintHtml(input: OfferPrintInput): string {
-  const sectionHtml = input.sections
-    .filter((section) => section.customerVisible)
-    .map((section) => {
+  const visibleSections = input.sections.filter((section) => section.customerVisible);
+  const sectionHtml = visibleSections
+    .map((section, index) => {
       const sectionLines = input.lines.filter((line) => line.sectionId === section.id);
       if (!sectionLines.some((line) => line.customerVisible)) return '';
-      return `<section>
-        <h2>${escapeHtml(section.title)}</h2>
+      const phaseTotal = sectionSaleTotal(sectionLines.filter((line) => line.customerVisible));
+      return `<section class="phase">
+        <div class="phase-head">
+          <div>
+            <span class="phase-index">Vaihe ${index + 1}</span>
+            <h2>${escapeHtml(section.title)}</h2>
+          </div>
+          <div class="phase-total">${escapeHtml(euro(phaseTotal))}</div>
+        </div>
         ${section.description ? `<p class="section-description">${escapeHtml(section.description)}</p>` : ''}
         <table>
           <thead><tr><th>Työ tai tuote</th><th class="number">Määrä</th><th>Yks.</th><th class="number">Yksikköhinta</th><th class="number">Yhteensä</th></tr></thead>
@@ -76,8 +87,24 @@ export function buildOfferPrintHtml(input: OfferPrintInput): string {
     .join('');
   const unsectioned = input.lines.filter((line) => !line.sectionId && line.customerVisible);
   const unsectionedHtml = unsectioned.length
-    ? `<section><h2>Muut työt ja tuotteet</h2><table><thead><tr><th>Työ tai tuote</th><th class="number">Määrä</th><th>Yks.</th><th class="number">Yksikköhinta</th><th class="number">Yhteensä</th></tr></thead><tbody>${rows(unsectioned)}</tbody></table></section>`
+    ? `<section class="phase">
+        <div class="phase-head">
+          <div>
+            <span class="phase-index">Muut</span>
+            <h2>Muut työt ja tuotteet</h2>
+          </div>
+          <div class="phase-total">${escapeHtml(euro(sectionSaleTotal(unsectioned)))}</div>
+        </div>
+        <table>
+          <thead><tr><th>Työ tai tuote</th><th class="number">Määrä</th><th>Yks.</th><th class="number">Yksikköhinta</th><th class="number">Yhteensä</th></tr></thead>
+          <tbody>${rows(unsectioned)}</tbody>
+        </table>
+      </section>`
     : '';
+
+  const phaseCount = visibleSections.filter((section) => (
+    input.lines.some((line) => line.sectionId === section.id && line.customerVisible)
+  )).length + (unsectioned.length ? 1 : 0);
 
   return `<!doctype html>
 <html lang="fi">
@@ -86,44 +113,190 @@ export function buildOfferPrintHtml(input: OfferPrintInput): string {
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>${escapeHtml(input.offer.offerNumber)} – ${escapeHtml(input.offer.name)}</title>
   <style>
-    :root { font-family: Inter, Arial, sans-serif; color: #0f172a; }
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --accent: #ea580c;
+      --soft: #fff7ed;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; background: #f8fafc; }
-    main { width: min(100%, 960px); margin: 0 auto; background: white; padding: 48px; }
-    header { display: flex; justify-content: space-between; gap: 32px; padding-bottom: 28px; border-bottom: 3px solid #f97316; }
-    h1 { margin: 6px 0 0; font-size: 30px; }
-    h2 { margin: 34px 0 10px; font-size: 18px; }
-    p { margin: 4px 0; line-height: 1.5; }
-    .brand { color: #f97316; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    body { margin: 0; background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); }
+    main {
+      width: min(100%, 960px);
+      margin: 0 auto;
+      background: white;
+      padding: 48px;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 32px;
+      padding-bottom: 28px;
+      border-bottom: 4px solid var(--accent);
+      background:
+        radial-gradient(circle at top right, rgba(234, 88, 12, 0.12), transparent 42%),
+        linear-gradient(180deg, #fff 0%, #fffaf5 100%);
+      margin: -48px -48px 0;
+      padding: 48px 48px 28px;
+    }
+    h1 { margin: 8px 0 0; font-size: 34px; letter-spacing: -0.03em; }
+    h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+    p { margin: 4px 0; line-height: 1.55; }
+    .brand {
+      color: var(--accent);
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-size: 13px;
+    }
+    .offer-kicker {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
     .meta { min-width: 280px; }
-    .meta-row { display: flex; justify-content: space-between; gap: 20px; padding: 4px 0; }
-    .intro { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 28px; }
-    .box { border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th { background: #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; text-align: left; }
-    th, td { border-bottom: 1px solid #e2e8f0; padding: 10px 8px; vertical-align: top; }
+    .meta-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: white;
+    }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 6px 0;
+      border-bottom: 1px dashed #edf2f7;
+      font-size: 14px;
+    }
+    .meta-row:last-child { border-bottom: 0; }
+    .intro {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      margin-top: 28px;
+    }
+    .box {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+      background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
+    .box strong { display: block; margin-bottom: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .phase {
+      margin-top: 28px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      background: white;
+    }
+    .phase-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      padding: 18px 18px 12px;
+      background: linear-gradient(90deg, var(--soft), white 55%);
+      border-bottom: 1px solid #fed7aa;
+    }
+    .phase-index {
+      display: inline-block;
+      margin-bottom: 6px;
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .phase-total {
+      font-size: 18px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .section-description {
+      margin: 0;
+      padding: 0 18px 8px;
+      color: #475569;
+      font-size: 14px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: #f8fafc;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      text-align: left;
+      color: var(--muted);
+    }
+    th, td { border-bottom: 1px solid var(--line); padding: 12px 18px; vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
     .number { text-align: right; white-space: nowrap; }
-    .note { margin-top: 3px; color: #64748b; font-size: 12px; }
+    .note { margin-top: 4px; color: var(--muted); font-size: 12px; }
     .option { margin-top: 4px; color: #b45309; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-    .section-description { color: #475569; }
-    .totals { width: min(100%, 430px); margin: 32px 0 0 auto; }
-    .total-row { display: flex; justify-content: space-between; gap: 20px; padding: 7px 0; }
-    .grand-total { margin-top: 8px; padding-top: 12px; border-top: 2px solid #0f172a; font-size: 20px; font-weight: 800; }
-    .terms { margin-top: 36px; padding-top: 24px; border-top: 1px solid #cbd5e1; white-space: pre-wrap; }
-    footer { margin-top: 44px; color: #64748b; font-size: 11px; }
-    .actions { position: sticky; top: 0; display: flex; justify-content: center; padding: 12px; background: #0f172a; }
-    .actions button { border: 0; border-radius: 8px; background: #f97316; color: white; padding: 10px 18px; font-weight: 700; cursor: pointer; }
+    .totals {
+      width: min(100%, 420px);
+      margin: 32px 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px 20px;
+      background: linear-gradient(180deg, #fff7ed, #ffffff);
+    }
+    .total-row { display: flex; justify-content: space-between; gap: 20px; padding: 8px 0; }
+    .grand-total {
+      margin-top: 8px;
+      padding-top: 14px;
+      border-top: 2px solid var(--ink);
+      font-size: 22px;
+      font-weight: 800;
+    }
+    .terms {
+      margin-top: 36px;
+      padding: 22px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      white-space: pre-wrap;
+    }
+    footer { margin-top: 36px; color: var(--muted); font-size: 11px; }
+    .actions {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      padding: 12px;
+      background: #0f172a;
+    }
+    .actions button {
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: white;
+      padding: 10px 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
     @media print {
       body { background: white; }
-      main { width: auto; padding: 18mm 15mm; }
+      main { width: auto; padding: 16mm 14mm; box-shadow: none; }
+      header { margin: -16mm -14mm 0; padding: 16mm 14mm 8mm; }
       .actions { display: none; }
-      section, table, .box { break-inside: avoid; }
+      section, table, .box, .phase, .totals { break-inside: avoid; }
     }
-    @media (max-width: 700px) {
+    @media (max-width: 760px) {
       main { padding: 24px 16px; }
       header, .intro { display: block; }
-      .meta, .intro .box { margin-top: 18px; }
+      header { margin: -24px -16px 0; padding: 24px 16px 18px; }
+      .meta, .intro .box { margin-top: 14px; }
+      .phase-head { display: block; }
+      .phase-total { margin-top: 10px; }
       table { font-size: 12px; }
+      th, td { padding: 10px 12px; }
     }
   </style>
 </head>
@@ -131,19 +304,26 @@ export function buildOfferPrintHtml(input: OfferPrintInput): string {
   <div class="actions"><button type="button" onclick="window.print()">Tulosta tai tallenna PDF</button></div>
   <main>
     <header>
-      <div><div class="brand">${escapeHtml(input.companyName)}</div><h1>Tarjous</h1><p>${escapeHtml(input.offer.name)}</p></div>
+      <div>
+        <div class="brand">${escapeHtml(input.companyName)}</div>
+        <h1>Tarjous</h1>
+        <p class="offer-kicker">${escapeHtml(input.offer.name)}</p>
+        <p class="offer-kicker">${escapeHtml(String(phaseCount))} hinnoiteltua vaihetta · versio ${escapeHtml(input.version.versionNumber)}</p>
+      </div>
       <div class="meta">
-        <div class="meta-row"><span>Tarjousnumero</span><strong>${escapeHtml(input.offer.offerNumber)}</strong></div>
-        <div class="meta-row"><span>Versio</span><strong>${escapeHtml(input.version.versionNumber)}</strong></div>
-        <div class="meta-row"><span>Päiväys</span><strong>${escapeHtml(date(input.version.createdAt))}</strong></div>
-        <div class="meta-row"><span>Voimassa</span><strong>${escapeHtml(date(input.offer.validUntil))}</strong></div>
+        <div class="meta-card">
+          <div class="meta-row"><span>Tarjousnumero</span><strong>${escapeHtml(input.offer.offerNumber)}</strong></div>
+          <div class="meta-row"><span>Päiväys</span><strong>${escapeHtml(date(input.version.createdAt))}</strong></div>
+          <div class="meta-row"><span>Voimassa</span><strong>${escapeHtml(date(input.offer.validUntil))}</strong></div>
+        </div>
       </div>
     </header>
     <div class="intro">
       <div class="box"><strong>Asiakas</strong><p>${escapeHtml(input.customerName || 'Asiakas')}</p>${input.offer.customerReference ? `<p>Viite: ${escapeHtml(input.offer.customerReference)}</p>` : ''}</div>
-      <div class="box"><strong>Toimitus ja maksuehto</strong><p>${escapeHtml(input.offer.deliveryTime || 'Sovitaan erikseen')}</p><p>${escapeHtml(input.offer.paymentTerms || '14 päivää netto')}</p></div>
+      <div class="box"><strong>Toimitusaika</strong><p>${escapeHtml(input.offer.deliveryTime || 'Sovitaan erikseen')}</p></div>
+      <div class="box"><strong>Maksuehto</strong><p>${escapeHtml(input.offer.paymentTerms || '14 päivää netto')}</p></div>
     </div>
-    ${input.version.notes ? `<section><h2>Tarjouksen sisältö</h2><p>${escapeHtml(input.version.notes)}</p></section>` : ''}
+    ${input.version.notes ? `<section class="terms" style="margin-top:24px"><h2 style="margin-bottom:8px;font-size:16px">Tarjouksen sisältö</h2><p>${escapeHtml(input.version.notes)}</p></section>` : ''}
     ${sectionHtml}
     ${unsectionedHtml}
     <div class="totals">
@@ -151,7 +331,7 @@ export function buildOfferPrintHtml(input: OfferPrintInput): string {
       <div class="total-row"><span>ALV ${escapeHtml(input.version.vatRate)} %</span><strong>${escapeHtml(euro(input.version.taxCents))}</strong></div>
       <div class="total-row grand-total"><span>Yhteensä</span><span>${escapeHtml(euro(input.version.totalCents))}</span></div>
     </div>
-    ${input.version.terms ? `<div class="terms"><h2>Ehdot ja rajaukset</h2><p>${escapeHtml(input.version.terms)}</p></div>` : ''}
+    ${input.version.terms ? `<div class="terms"><h2 style="margin-bottom:8px;font-size:16px">Ehdot ja rajaukset</h2><p>${escapeHtml(input.version.terms)}</p></div>` : ''}
     <footer>Tarjous on laadittu VaKantti-järjestelmällä. Asiakkaalle tarkoitettu tuloste ei sisällä yrityksen sisäisiä kustannustietoja.</footer>
   </main>
 </body>
