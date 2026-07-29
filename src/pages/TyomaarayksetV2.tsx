@@ -192,9 +192,7 @@ export default function TyomaarayksetV2() {
   const validateForm = () => {
     const errors: string[] = [];
     if (!form.title.trim()) errors.push('Työmääräyksen otsikko on pakollinen.');
-    if (form.assignmentScope === 'people' && form.assigneeUserIds.length === 0) {
-      errors.push('Valitse vähintään yksi vastuuhenkilö.');
-    }
+    
     if (!form.projectId && form.assignmentScope === 'project_team') {
       errors.push('Koko projektitiimi voidaan valita vain projektiin liitetylle työmääräykselle.');
     }
