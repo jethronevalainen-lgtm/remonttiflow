@@ -12,6 +12,7 @@ import {
   FileText,
   FolderKanban,
   History,
+  Layers3,
   Plus,
   RefreshCw,
   Ruler,
@@ -50,12 +51,19 @@ import {
   calculateOfferVersionTotals,
   calculateRecommendedSaleUnitCents,
 } from '@/lib/pricing/offerCalculator';
+import {
+  buildCalculationSteps,
+  getOfferPhaseTemplate,
+  mergePhaseSelections,
+  type OfferPhaseDefinition,
+} from '@/lib/pricing/offerPhases';
 import { openOfferPrintWindow } from '@/lib/pricing/offerPrint';
 import {
   addCatalogItem,
   addOfferLine,
   addOfferLines,
   addOfferSection,
+  addOfferSections,
   convertOfferToProject,
   createOffer,
   createOfferVersion,
@@ -63,6 +71,7 @@ import {
   deleteOffer,
   deleteOfferLine,
   deleteOfferSection,
+  findLatestOfferVersionId,
   transitionOffer,
   updateCatalogItem,
   updateOffer,
@@ -75,36 +84,28 @@ import {
   type PriceCatalogItem,
 } from '@/lib/supabase/offers';
 import { cn } from '@/lib/utils';
+import { CalculationStepsPanel } from './offers/CalculationStepsPanel';
 import { CatalogTab } from './offers/CatalogTab';
+import { OfferCreateWizard } from './offers/OfferCreateWizard';
 import { OfferKpiStrip } from './offers/OfferKpiStrip';
 import { OfferLineCard } from './offers/OfferLineCard';
 import { OfferListPanel } from './offers/OfferListPanel';
 import { OfferWorkflowCard } from './offers/OfferWorkflowCard';
+import { PhaseTemplatesPicker } from './offers/PhaseTemplatesPicker';
 import {
   centsInput,
   date,
   dateTime,
   daysUntil,
+  emptyOfferWizardForm,
   euro,
   expiryLabel,
   marginTone,
   moneyInput,
   OFFER_CATEGORIES,
+  type OfferWizardForm,
   UNSECTIONED,
 } from './offers/offerUi';
-
-interface OfferForm {
-  name: string;
-  customerId: string;
-  crmLeadId: string;
-  projectId: string;
-  offerNumber: string;
-  validUntil: string;
-  notes: string;
-  assignedUserId: string;
-  paymentTerms: string;
-  deliveryTime: string;
-}
 
 interface OfferMetaForm {
   name: string;
@@ -152,19 +153,6 @@ type ConfirmAction =
   | { kind: 'delete-section'; section: OfferSection; title: string; description: string }
   | { kind: 'delete-catalog'; item: PriceCatalogItem; title: string; description: string }
   | { kind: 'convert'; title: string; description: string };
-
-const emptyOffer = (): OfferForm => ({
-  name: '',
-  customerId: '',
-  crmLeadId: '',
-  projectId: '',
-  offerNumber: '',
-  validUntil: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
-  notes: '',
-  assignedUserId: '',
-  paymentTerms: '14 päivää netto',
-  deliveryTime: '',
-});
 
 const emptyLine = (): LineForm => ({
   category: 'Työ',
@@ -220,11 +208,14 @@ export default function Tarjoukset() {
   const [offerMetaDialog, setOfferMetaDialog] = useState(false);
   const [lineDialog, setLineDialog] = useState(false);
   const [sectionDialog, setSectionDialog] = useState(false);
+  const [phaseDialog, setPhaseDialog] = useState(false);
   const [catalogDialog, setCatalogDialog] = useState(false);
   const [importDialog, setImportDialog] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
-  const [offerForm, setOfferForm] = useState<OfferForm>(emptyOffer);
+  const [offerForm, setOfferForm] = useState<OfferWizardForm>(emptyOfferWizardForm);
+  const [phaseTemplateId, setPhaseTemplateId] = useState('bathroom');
+  const [phaseExtras, setPhaseExtras] = useState<OfferPhaseDefinition[]>([]);
   const [offerMetaForm, setOfferMetaForm] = useState<OfferMetaForm>({
     name: '', validUntil: '', customerReference: '', deliveryTime: '', paymentTerms: '', notes: '', assignedUserId: '',
   });
@@ -319,6 +310,14 @@ export default function Tarjoukset() {
         targetMarginPercent: selectedVersion.marginPercent,
       })
     : null;
+  const calculationSteps = browserTotals && selectedVersion
+    ? buildCalculationSteps(browserTotals, {
+        vatRate: selectedVersion.vatRate,
+        overheadPercent: selectedVersion.overheadPercent,
+        riskPercent: selectedVersion.riskPercent,
+        targetMarginPercent: selectedVersion.marginPercent,
+      })
+    : [];
 
   const totalsMismatch = Boolean(selectedVersion && browserTotals && (
     Math.abs(selectedVersion.subtotalCents - browserTotals.saleSubtotalCents) > 1
@@ -382,7 +381,7 @@ export default function Tarjoukset() {
     const customerId = searchParams.get('customer');
     const projectId = searchParams.get('project');
     if (!leadId && !customerId && !projectId) return;
-    const next = emptyOffer();
+    const next = emptyOfferWizardForm();
     const queryLead = crmLeads.find((item) => item.id === leadId);
     const queryCustomer = customers.find((item) => item.id === (customerId ?? queryLead?.customerId));
     const queryProject = projects.find((item) => item.id === projectId);
@@ -438,7 +437,7 @@ export default function Tarjoukset() {
   };
 
   const openOfferCreate = () => {
-    setOfferForm(emptyOffer());
+    setOfferForm(emptyOfferWizardForm());
     setErrors([]);
     setOperationError(null);
     setOfferDialog(true);
@@ -456,14 +455,26 @@ export default function Tarjoukset() {
     }));
   };
 
-  const saveOffer = async () => {
+  const saveOffer = async (phases: OfferPhaseDefinition[]) => {
     const nextErrors: string[] = [];
     if (!offerForm.name.trim()) nextErrors.push('Tarjouksen nimi on pakollinen.');
     if (!offerForm.customerId && !offerForm.crmLeadId && !offerForm.projectId) {
       nextErrors.push('Valitse vähintään asiakas, CRM-mahdollisuus tai projekti.');
     }
+    const vatRate = Number(offerForm.vatRate);
+    const overheadPercent = Number(offerForm.overheadPercent);
+    const riskPercent = Number(offerForm.riskPercent);
+    const marginPercent = Number(offerForm.marginPercent);
+    if (![vatRate, overheadPercent, riskPercent, marginPercent].every(Number.isFinite)
+      || vatRate < 0 || vatRate > 100
+      || overheadPercent < 0 || overheadPercent > 100
+      || riskPercent < 0 || riskPercent > 100
+      || marginPercent < 0 || marginPercent >= 100) {
+      nextErrors.push('ALV:n, yleiskulujen ja riskin pitää olla 0–100 %. Tavoitekatteen pitää olla alle 100 %.');
+    }
     setErrors(nextErrors);
     if (nextErrors.length || !currentOrg) return;
+
     await run(async () => {
       const offerId = await createOffer({
         organizationId: currentOrg.id,
@@ -476,18 +487,90 @@ export default function Tarjoukset() {
         notes: offerForm.notes.trim() || undefined,
         assignedUserId: offerForm.assignedUserId || undefined,
       });
-      if (offerForm.paymentTerms.trim() || offerForm.deliveryTime.trim()) {
-        await updateOffer(currentOrg.id, offerId, {
-          paymentTerms: offerForm.paymentTerms.trim(),
-          deliveryTime: offerForm.deliveryTime.trim(),
+
+      await updateOffer(currentOrg.id, offerId, {
+        paymentTerms: offerForm.paymentTerms.trim(),
+        deliveryTime: offerForm.deliveryTime.trim(),
+      });
+
+      const versionId = await findLatestOfferVersionId(currentOrg.id, offerId);
+      if (versionId) {
+        await updateOfferVersion(currentOrg.id, versionId, {
+          vatRate,
+          overheadPercent,
+          riskPercent,
+          marginPercent,
+          notes: offerForm.notes.trim(),
+          terms: offerForm.terms.trim(),
         });
+        if (phases.length) {
+          await addOfferSections(
+            currentOrg.id,
+            user?.id,
+            phases.map((phase, index) => ({
+              offerVersionId: versionId,
+              title: phase.title,
+              description: phase.description,
+              sortOrder: index,
+              customerVisible: true,
+            })),
+          );
+        }
       }
+
       await refreshAll();
       setSelectedOfferId(offerId);
-      setSelectedVersionId('');
-      setDetailTab('lines');
+      setSelectedVersionId(versionId ?? '');
+      setDetailTab(phases.length ? 'lines' : 'settings');
       setOfferDialog(false);
-    }, 'Tarjous luotiin.');
+    }, phases.length
+      ? `Tarjous luotiin ${phases.length} työvaiheella.`
+      : 'Tarjous luotiin.');
+  };
+
+  const applyPhaseTemplate = async () => {
+    if (!currentOrg || !selectedVersion) return;
+    const phases = mergePhaseSelections(phaseTemplateId, phaseExtras);
+    const existing = new Set(
+      versionSections.map((section) => section.title.toLocaleLowerCase('fi-FI')),
+    );
+    const toAdd = phases.filter(
+      (phase) => !existing.has(phase.title.toLocaleLowerCase('fi-FI')),
+    );
+    if (!toAdd.length) {
+      setOperationError('Valitut työvaiheet ovat jo tarjouksessa.');
+      return;
+    }
+    await run(async () => {
+      const template = getOfferPhaseTemplate(phaseTemplateId);
+      await addOfferSections(
+        currentOrg.id,
+        user?.id,
+        toAdd.map((phase, index) => ({
+          offerVersionId: selectedVersion.id,
+          title: phase.title,
+          description: phase.description,
+          sortOrder: versionSections.length + index,
+          customerVisible: true,
+        })),
+      );
+      if (
+        selectedVersion.marginPercent === 0
+        && selectedVersion.overheadPercent === 0
+        && selectedVersion.riskPercent === 0
+      ) {
+        await updateOfferVersion(currentOrg.id, selectedVersion.id, {
+          marginPercent: template.suggestedMarginPercent,
+          overheadPercent: template.suggestedOverheadPercent,
+          riskPercent: template.suggestedRiskPercent,
+          terms: selectedVersion.terms || template.defaultTerms,
+        });
+      }
+      await data.refresh();
+      setPhaseDialog(false);
+      setPhaseExtras([]);
+      setDetailTab('lines');
+    }, `Lisättiin ${toAdd.length} työvaihetta.`);
   };
 
   const openOfferMeta = () => {
@@ -903,7 +986,7 @@ export default function Tarjoukset() {
         <div>
           <h1 className="text-hero text-text-primary">Tarjouslaskenta</h1>
           <p className="mt-1 max-w-3xl break-words text-body-sm text-text-secondary">
-            Rakenna tarjous kustannuksista myyntihintaan, seuraa katetta, lukitse lähetetty versio ja muunna hyväksytty tarjous projektiksi.
+            Luo tarjous nopeasti vaiheittain: valitse työvaihepohja, hinnoittele rivit ja näe miten kate muodostuu loppusummaan.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1145,6 +1228,16 @@ export default function Tarjoukset() {
                   <TabsContent value="lines" className="space-y-4">
                     {draft && (
                       <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setPhaseTemplateId(versionSections.length ? 'blank' : 'bathroom');
+                            setPhaseExtras([]);
+                            setPhaseDialog(true);
+                          }}
+                        >
+                          <Layers3 size={15} className="mr-2" /> Lisää työvaiheita
+                        </Button>
                         <Button variant="outline" onClick={openSectionCreate}>
                           <FilePlus2 size={15} className="mr-2" /> Lisää osio
                         </Button>
@@ -1157,12 +1250,37 @@ export default function Tarjoukset() {
                       </div>
                     )}
 
-                    {versionSections.map((section) => (
+                    {!versionSections.length && !versionLines.length && draft && (
+                      <Card className="overflow-hidden border-dashed border-orange-300 bg-orange-50/40 shadow-none">
+                        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900">Aloita työvaiheilla</p>
+                            <p className="mt-1 break-words text-sm text-slate-600">
+                              Valitse valmis pohja (esim. kylpyhuone tai keittiö), niin tarjoukseen syntyy selkeät laskentavaiheet heti.
+                            </p>
+                          </div>
+                          <Button
+                            onClick={() => {
+                              setPhaseTemplateId('bathroom');
+                              setPhaseExtras([]);
+                              setPhaseDialog(true);
+                            }}
+                          >
+                            <Layers3 size={15} className="mr-2" /> Valitse pohja
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {versionSections.map((section, sectionIndex) => (
                       <Card key={section.id} className="overflow-hidden border-slate-200/80 shadow-none">
-                        <CardHeader className="border-b bg-slate-50 py-3">
+                        <CardHeader className="border-b bg-gradient-to-r from-orange-50 to-slate-50 py-3">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0">
-                              <CardTitle className="break-words text-base">{section.title}</CardTitle>
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-700">
+                                Vaihe {sectionIndex + 1}
+                              </p>
+                              <CardTitle className="mt-0.5 break-words text-base">{section.title}</CardTitle>
                               {section.description && (
                                 <p className="mt-1 break-words text-xs text-slate-500">{section.description}</p>
                               )}
@@ -1253,7 +1371,10 @@ export default function Tarjoukset() {
                     </Card>
                   </TabsContent>
 
-                  <TabsContent value="settings">
+                  <TabsContent value="settings" className="space-y-4">
+                    {calculationSteps.length > 0 && (
+                      <CalculationStepsPanel steps={calculationSteps} />
+                    )}
                     <Card className="border-slate-200/80 shadow-none">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
@@ -1301,7 +1422,7 @@ export default function Tarjoukset() {
                             </Button>
                           </CollapsibleTrigger>
                           <CollapsibleContent className="pt-2 text-sm text-slate-500">
-                            Tavoitekate lasketaan myyntihinnasta: esimerkiksi 10 000 € kustannus ja 20 % tavoitekate tarkoittaa 12 500 € myyntihintaa ennen muita kustannuksia. Yleiskulut ja riskivaraus lisätään kustannukseen ennen katteen laskentaa. Rivin ”Laske suositus” käyttää näitä asetuksia.
+                            Laskenta etenee vaiheittain: suorat kustannukset → yleiskulut → riskivaraus → arvioitu kustannus → veroton myynti → ALV → loppusumma. Tavoitekate lasketaan myyntihinnasta: esimerkiksi 10 000 € kustannus ja 20 % tavoitekate tarkoittaa 12 500 € myyntihintaa. Rivin ”Laske suositus” käyttää näitä asetuksia.
                           </CollapsibleContent>
                         </Collapsible>
                       </CardContent>
@@ -1369,85 +1490,38 @@ export default function Tarjoukset() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={offerDialog} onOpenChange={setOfferDialog}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Uusi tarjous</DialogTitle></DialogHeader>
-          {errors.length > 0 && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {errors.map((error) => <p key={error}>{error}</p>)}
-            </div>
-          )}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1 sm:col-span-2">
-              <Label>Tarjouksen nimi *</Label>
-              <Input value={offerForm.name} onChange={(event) => setOfferForm((previous) => ({ ...previous, name: event.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>CRM-mahdollisuus</Label>
-              <Select value={offerForm.crmLeadId || UNSECTIONED} onValueChange={(value) => selectLead(value === UNSECTIONED ? '' : value)}>
-                <SelectTrigger><SelectValue placeholder="Valitse" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNSECTIONED}>Ei CRM-mahdollisuutta</SelectItem>
-                  {crmLeads.filter((item) => !['Voitettu', 'Hävitty'].includes(item.stage)).map((item) => (
-                    <SelectItem key={item.id} value={item.id}>{item.name} · {item.company}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Asiakas</Label>
-              <Select value={offerForm.customerId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, customerId: value === UNSECTIONED ? '' : value }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNSECTIONED}>Ei asiakasta</SelectItem>
-                  {customers.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Nykyinen projekti</Label>
-              <Select value={offerForm.projectId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, projectId: value === UNSECTIONED ? '' : value }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNSECTIONED}>Ei projektia</SelectItem>
-                  {projects.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Vastuuhenkilö</Label>
-              <Select value={offerForm.assignedUserId || UNSECTIONED} onValueChange={(value) => setOfferForm((previous) => ({ ...previous, assignedUserId: value === UNSECTIONED ? '' : value }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNSECTIONED}>Ei vastuuhenkilöä</SelectItem>
-                  {people.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Tarjousnumero</Label>
-              <Input value={offerForm.offerNumber} placeholder="Muodostetaan automaattisesti" onChange={(event) => setOfferForm((previous) => ({ ...previous, offerNumber: event.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Voimassa asti</Label>
-              <Input type="date" value={offerForm.validUntil} onChange={(event) => setOfferForm((previous) => ({ ...previous, validUntil: event.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Maksuehto</Label>
-              <Input value={offerForm.paymentTerms} onChange={(event) => setOfferForm((previous) => ({ ...previous, paymentTerms: event.target.value }))} />
-            </div>
-            <div className="space-y-1">
-              <Label>Toimitusaika</Label>
-              <Input value={offerForm.deliveryTime} placeholder="Esim. 4–6 viikkoa" onChange={(event) => setOfferForm((previous) => ({ ...previous, deliveryTime: event.target.value }))} />
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <Label>Muistiinpanot</Label>
-              <Textarea value={offerForm.notes} rows={3} onChange={(event) => setOfferForm((previous) => ({ ...previous, notes: event.target.value }))} />
-            </div>
-          </div>
+      <OfferCreateWizard
+        open={offerDialog}
+        onOpenChange={setOfferDialog}
+        form={offerForm}
+        onFormChange={setOfferForm}
+        customers={customers}
+        crmLeads={crmLeads}
+        projects={projects}
+        people={people}
+        errors={errors}
+        saving={saving}
+        onSelectLead={selectLead}
+        onSubmit={(phases) => void saveOffer(phases)}
+      />
+
+      <Dialog open={phaseDialog} onOpenChange={setPhaseDialog}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Lisää työvaiheita laskentaan</DialogTitle>
+          </DialogHeader>
+          <PhaseTemplatesPicker
+            selectedTemplateId={phaseTemplateId}
+            onSelectTemplate={setPhaseTemplateId}
+            customPhases={phaseExtras}
+            onCustomPhasesChange={setPhaseExtras}
+            existingTitles={versionSections.map((section) => section.title)}
+          />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOfferDialog(false)}>Peruuta</Button>
-            <Button onClick={() => void saveOffer()} disabled={saving}>{saving ? 'Luodaan…' : 'Luo tarjous'}</Button>
+            <Button variant="outline" onClick={() => setPhaseDialog(false)}>Peruuta</Button>
+            <Button onClick={() => void applyPhaseTemplate()} disabled={saving}>
+              {saving ? 'Lisätään…' : 'Lisää valitut vaiheet'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

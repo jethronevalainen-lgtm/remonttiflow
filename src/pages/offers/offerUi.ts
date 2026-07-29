@@ -95,3 +95,43 @@ export function workflowStep(status: OfferStatus): number {
   if (status === 'Arkistoitu') return 3;
   return -1;
 }
+
+export interface OfferWizardForm {
+  name: string;
+  customerId: string;
+  crmLeadId: string;
+  projectId: string;
+  offerNumber: string;
+  validUntil: string;
+  notes: string;
+  assignedUserId: string;
+  paymentTerms: string;
+  deliveryTime: string;
+  vatRate: string;
+  overheadPercent: string;
+  riskPercent: string;
+  marginPercent: string;
+  terms: string;
+  templateId: string;
+}
+
+export function emptyOfferWizardForm(): OfferWizardForm {
+  return {
+    name: '',
+    customerId: '',
+    crmLeadId: '',
+    projectId: '',
+    offerNumber: '',
+    validUntil: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+    notes: '',
+    assignedUserId: '',
+    paymentTerms: '14 päivää netto',
+    deliveryTime: 'Sovitaan erikseen',
+    vatRate: '25.5',
+    overheadPercent: '8',
+    riskPercent: '3',
+    marginPercent: '20',
+    terms: 'Tarjous on voimassa ilmoitettuun päivään. Työt aloitetaan sopimuksen jälkeen.',
+    templateId: 'blank',
+  };
+}

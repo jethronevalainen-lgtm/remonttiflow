@@ -367,6 +367,35 @@ export async function addOfferSection(
   if (error) throw new Error(`Tarjousosion tallennus epäonnistui: ${error.message}`);
 }
 
+export async function addOfferSections(
+  organizationId: string,
+  userId: string | undefined,
+  values: Array<Omit<OfferSection, 'id'>>,
+): Promise<void> {
+  if (!values.length) return;
+  const { error } = await supabase.from('offer_sections').insert(values.map((value) => ({
+    organization_id: organizationId,
+    offer_version_id: value.offerVersionId,
+    title: value.title,
+    description: value.description || null,
+    sort_order: value.sortOrder,
+    customer_visible: value.customerVisible,
+    created_by: userId || null,
+  })));
+  if (error) throw new Error(`Tarjousosioiden tallennus epäonnistui: ${error.message}`);
+}
+
+/** Hakee tarjouksen uusimman version tunnisteen heti luonnin jälkeen. */
+export async function findLatestOfferVersionId(
+  organizationId: string,
+  offerId: string,
+): Promise<string | undefined> {
+  const data = await loadOffersData(organizationId);
+  return data.versions
+    .filter((version) => version.offerId === offerId)
+    .sort((a, b) => b.versionNumber - a.versionNumber)[0]?.id;
+}
+
 export async function updateOfferSection(
   organizationId: string,
   sectionId: string,
