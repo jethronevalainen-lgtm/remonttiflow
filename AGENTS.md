@@ -15,6 +15,19 @@ scrolling as a way to fit more columns — redesign the layout instead.
 
 This applies app-wide (lists, tables, badges, navigation, dialogs).
 
+### UI rule: cards and grids must align
+
+The shared `Card` primitive is a full-height flex column. Cards placed in the same
+grid row must use the available row height so their top and bottom edges align.
+Keep grid containers at the default stretch alignment or use `items-stretch` and
+`auto-rows-fr` for repeated summary cards.
+
+Use `h-fit` only for an intentionally compact standalone card or a populated
+sticky sidebar. Do not use it for empty states, KPI cards, comparison cards, or
+other sibling panels that should appear symmetrical. Use `min-h-*` rather than a
+fixed height so wrapped text remains fully visible. For KPI cards, reserve a
+consistent title area and push the supporting text to the bottom of the card.
+
 ### Aikataulutus progress
 
 `/aikataulutus` lists `project_phases`. The percentage is **not** a free-form
