@@ -398,20 +398,22 @@ export default function WorkOrderDialog({
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label>Tila</Label>
-              <Select
-                value={form.status}
-                onValueChange={(status: WorkOrderStatus) => onChange({ ...form, status })}
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {STATUSES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {editing && (
+              <div className="space-y-2">
+                <Label>Tila</Label>
+                <Select
+                  value={form.status}
+                  onValueChange={(status: WorkOrderStatus) => onChange({ ...form, status })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {STATUSES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-            <div className="space-y-2">
+            <div className={`space-y-2 ${editing ? '' : 'sm:col-span-2'}`}>
               <Label>Kohdistus</Label>
               <Select
                 value={form.assignmentScope}
@@ -494,7 +496,7 @@ export default function WorkOrderDialog({
           <Button variant="outline" onClick={onClose} disabled={saving}>Peruuta</Button>
           <Button onClick={onSave} disabled={saving}>
             {saving && <Loader2 size={16} className="mr-2 animate-spin" />}
-            Tallenna työmääräys
+            {editing ? 'Tallenna muutokset' : 'Luo työmääräys'}
           </Button>
         </DialogFooter>
       </DialogContent>
