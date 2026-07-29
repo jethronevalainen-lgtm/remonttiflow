@@ -128,7 +128,7 @@ begin
   perform cron.schedule(
     'vakantti-project-lifecycle',
     '7 * * * *',
-    $$select private.refresh_project_lifecycle_statuses(timezone('Europe/Helsinki', now())::date);$$
+    'select private.refresh_project_lifecycle_statuses(timezone(''Europe/Helsinki'', now())::date);'
   );
 exception
   when undefined_table or undefined_function then
