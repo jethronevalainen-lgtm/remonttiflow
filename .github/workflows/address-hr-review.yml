@@ -1,0 +1,172 @@
+name: Address HR review findings
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ github.head_ref == 'feature/hr-management-center' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: feature/hr-management-center
+          fetch-depth: 0
+
+      - name: Apply reviewed fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          from pathlib import Path
+
+          ui_path = Path('src/pages/hr/HrCenter.tsx')
+          ui = ui_path.read_text()
+          ui = ui.replace(
+              "  const canManage = actualRole === 'admin' || actualRole === 'supervisor';\n",
+              "  const canManage = actualRole === 'admin' || actualRole === 'supervisor';\n  const isAdmin = actualRole === 'admin';\n",
+          )
+          ui = ui.replace('truncate', 'break-words')
+          ui = ui.replace("completeness.missing.slice(0, 3).join(', ')", "completeness.missing.join(', ')")
+          ui = ui.replace(
+              'className="mt-2 text-xs text-slate-500"',
+              'className="mt-2 break-words text-xs text-slate-500"',
+          )
+          ui = ui.replace(
+              'hint="Luottamuksellinen tieto. Näkyvyys määräytyy HR-oikeuksien mukaan."',
+              'hint="Luottamuksellinen tieto. Näkyy vain organisaation adminille ja työntekijän nimetylle työnjohtajalle."',
+          )
+          ui = ui.replace(
+              '<SelectContent><SelectItem value="Vain HR">Vain HR</SelectItem><SelectItem value="HR ja esihenkilö">HR ja esihenkilö</SelectItem>',
+              '<SelectContent>{isAdmin && <SelectItem value="Vain HR">Vain HR</SelectItem>}<SelectItem value="HR ja esihenkilö">HR ja esihenkilö</SelectItem>',
+          )
+          ui = ui.replace(
+              'visibility: documentForm.visibility,',
+              "visibility: isAdmin ? documentForm.visibility : documentForm.visibility === 'Työntekijä' ? 'Työntekijä' : 'HR ja esihenkilö',",
+          )
+          ui_path.write_text(ui)
+
+          api_path = Path('src/lib/supabase/hrManagement.ts')
+          api = api_path.read_text()
+          api = api.replace("    managerNotes: optionalText(row, 'manager_notes'),\n", '')
+
+          old_load = """export async function loadHrWorkspace(organizationId: string): Promise<HrWorkspaceData> {
+  const [profiles, skills, trainings, goals, conversations, tasks, documents, events] = await Promise.all([
+    tableRows('employee_employment_profiles', organizationId, 'updated_at'),
+    tableRows('employee_skills', organizationId, 'updated_at'),
+    tableRows('employee_training_records', organizationId, 'start_date'),
+    tableRows('employee_goals', organizationId, 'target_date', true),
+    tableRows('employee_conversations', organizationId, 'scheduled_at'),
+    tableRows('employee_hr_tasks', organizationId, 'due_date', true),
+    tableRows('employee_documents', organizationId, 'created_at'),
+    tableRows('employee_hr_events', organizationId, 'event_date'),
+  ]);
+  return {
+    employmentProfiles: profiles.map(employmentProfile), skills: skills.map(skill), trainings: trainings.map(training),
+    goals: goals.map(goal), conversations: conversations.map(conversation), tasks: tasks.map(task),
+    documents: documents.map(document), events: events.slice(0, 1000).map(event),
+  };
+}
+"""
+          new_load = """export async function loadHrWorkspace(organizationId: string): Promise<HrWorkspaceData> {
+  const [profiles, managerNotes, skills, trainings, goals, conversations, tasks, documents, events] = await Promise.all([
+    tableRows('employee_employment_profiles', organizationId, 'updated_at'),
+    tableRows('employee_manager_notes', organizationId, 'updated_at'),
+    tableRows('employee_skills', organizationId, 'updated_at'),
+    tableRows('employee_training_records', organizationId, 'start_date'),
+    tableRows('employee_goals', organizationId, 'target_date', true),
+    tableRows('employee_conversations', organizationId, 'scheduled_at'),
+    tableRows('employee_hr_tasks', organizationId, 'due_date', true),
+    tableRows('employee_documents', organizationId, 'created_at'),
+    tableRows('employee_hr_events', organizationId, 'event_date'),
+  ]);
+  const managerNotesByEmployee = new Map(
+    managerNotes.map((row) => [text(row, 'employee_id'), optionalText(row, 'notes')]),
+  );
+  return {
+    employmentProfiles: profiles.map((row) => ({
+      ...employmentProfile(row),
+      managerNotes: managerNotesByEmployee.get(text(row, 'employee_id')),
+    })),
+    skills: skills.map(skill), trainings: trainings.map(training),
+    goals: goals.map(goal), conversations: conversations.map(conversation), tasks: tasks.map(task),
+    documents: documents.map(document), events: events.slice(0, 1000).map(event),
+  };
+}
+"""
+          if old_load not in api:
+              raise SystemExit('loadHrWorkspace block not found')
+          api = api.replace(old_load, new_load)
+
+          start = api.index('export async function saveEmploymentProfile')
+          end = api.index('\nasync function insertRecord', start)
+          new_save = """export async function saveEmploymentProfile(values: {
+  organizationId: string; employeeId: string; userId: string; input: EmploymentProfileInput;
+}): Promise<void> {
+  const { input } = values;
+  const { error } = await supabase.rpc('save_employee_employment_profile', {
+    p_organization_id: values.organizationId,
+    p_employee_id: values.employeeId,
+    p_employee_number: input.employeeNumber?.trim() || '',
+    p_personal_email: input.personalEmail?.trim().toLowerCase() || '',
+    p_work_location: input.workLocation?.trim() || '',
+    p_cost_center: input.costCenter?.trim() || '',
+    p_job_level: input.jobLevel?.trim() || '',
+    p_contract_type: input.contractType?.trim() || '',
+    p_contract_start_date: input.contractStartDate || null,
+    p_contract_end_date: input.contractEndDate || null,
+    p_probation_end_date: input.probationEndDate || null,
+    p_notice_period: input.noticePeriod?.trim() || '',
+    p_working_time_model: input.workingTimeModel?.trim() || '',
+    p_remote_work_policy: input.remoteWorkPolicy?.trim() || '',
+    p_manager_notes: input.managerNotes?.trim() || '',
+  });
+  if (error) throw new Error(`Työsuhdetietojen tallennus epäonnistui: ${error.message}`);
+}
+"""
+          api = api[:start] + new_save + api[end:]
+          api_path.write_text(api)
+
+          docs_path = Path('docs/hr-management-center.md')
+          docs = docs_path.read_text()
+          docs = docs.replace(
+              '- **Työntekijä** näkee omat RLS-politiikkojen sallimat tiedot ja työntekijälle jaetut dokumentit.\n',
+              '- **Työntekijä** näkee omat RLS-politiikkojen sallimat tiedot ja työntekijälle jaetut dokumentit. Esihenkilön luottamukselliset HR-merkinnät ovat erillisessä manager-only-taulussa.\n',
+          )
+          docs_path.write_text(docs)
+          PY
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify complete quality gate
+        env:
+          VITE_SUPABASE_URL: https://qnqhqtzssauwucgnpvfp.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_6_STwirtdiJMbWFregmWgg_GtNCC7Fp
+          CF_PAGES: "1"
+          CF_PAGES_BRANCH: feature/hr-management-center
+          CF_PAGES_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run ship:check
+
+      - name: Commit fixes
+        shell: bash
+        run: |
+          rm .github/workflows/address-hr-review.yml
+          git config user.name "VaKantti automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Korjaa HR-keskuksen katselmointihavainnot"
+          git push origin HEAD:feature/hr-management-center
