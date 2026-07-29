@@ -1,5 +1,15 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, LogIn, Search, ShieldCheck, Users } from 'lucide-react';
+import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  LogIn,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Users,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { Badge } from '@/components/ui/badge';
@@ -7,9 +17,17 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ROLE_LABELS, homeForRole } from '@/contexts/AuthContext';
-import { useOrganization } from '@/contexts/OrganizationContext';
+import {
+  CURRENT_ORG_STORAGE_KEY,
+  useOrganization,
+} from '@/contexts/OrganizationContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useOrganizationAdmin } from '@/hooks/useOrganizationAdmin';
+import {
+  demoRoleOrder,
+  isDemoAccountEmail,
+  provisionDemoEnvironment,
+} from '@/lib/supabase/demoEnvironment';
 import type { OrganizationRole } from '@/lib/supabase/types';
 
 const ROLE_BADGES: Record<OrganizationRole, string> = {
@@ -26,6 +44,13 @@ const ROLE_HELP: Record<OrganizationRole, string> = {
   project_coordinator: 'Projektien operatiivinen hallinta ja työaikahistoria ilman henkilöstö-, palkka-, matka- tai poissaolotietoja.',
   worker: 'Omat työt, kirjaukset, korjaukset, lomakkeet ja viestit.',
   customer: 'Vain sallitut asiakkuudet, projektit, dokumentit ja tilaajaviestintä.',
+};
+
+const DEMO_ROLE_SUMMARIES: Record<Exclude<OrganizationRole, 'admin'>, string> = {
+  supervisor: 'Näet työnjohdon tilannekuvan, projektit, resurssit, hyväksynnät ja henkilöstötoiminnot.',
+  project_coordinator: 'Näet projektien operatiivisen työn, mutta et henkilöstö-, palkka-, matka- tai poissaolotietoja.',
+  worker: 'Näet vain omat projektit, työmääräykset, tuntikirjaukset, turvallisuusasiat ja viestit.',
+  customer: 'Näet tilaajaportaalin projektit, dokumentit, tiedotteet ja yhteisen viestinnän.',
 };
 
 function initials(name: string): string {
@@ -49,6 +74,15 @@ export default function KayttajaEsikatseluV2() {
   const [search, setSearch] = useState('');
   const [startingUserId, setStartingUserId] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [provisioning, setProvisioning] = useState(false);
+
+  const isDemoOrganization = Boolean(currentOrg?.business_id?.startsWith('DEMO-'));
+  const demoMembers = useMemo(
+    () => members
+      .filter((member) => isDemoAccountEmail(member.profile?.email))
+      .sort((a, b) => demoRoleOrder(a.role) - demoRoleOrder(b.role)),
+    [members],
+  );
 
   const filteredMembers = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fi');
@@ -79,6 +113,20 @@ export default function KayttajaEsikatseluV2() {
     }
   };
 
+  const prepareDemoEnvironment = async () => {
+    if (!currentOrg) return;
+    setProvisioning(true);
+    setOperationError(null);
+    try {
+      const result = await provisionDemoEnvironment(currentOrg.id);
+      window.localStorage.setItem(CURRENT_ORG_STORAGE_KEY, result.organizationId);
+      window.location.reload();
+    } catch (caught) {
+      setOperationError(caught instanceof Error ? caught.message : 'Demoympäristön luonti epäonnistui.');
+      setProvisioning(false);
+    }
+  };
+
   const returnToAdministrator = async () => {
     setOperationError(null);
     try {
@@ -95,7 +143,7 @@ export default function KayttajaEsikatseluV2() {
         <div>
           <h1 className="text-hero text-text-primary">Toimi käyttäjänä</h1>
           <p className="mt-1 max-w-3xl text-body-sm leading-6 text-text-secondary">
-            Avaa sovellus valitun käyttäjän oikealla Supabase-istunnolla. Näet samat tiedot ja voit tehdä samat toiminnot kuin käyttäjä itse.
+            Tarkista roolikohtaiset näkymät oikealla Supabase-istunnolla. Voit käyttää organisaation todellisia käyttäjiä tai eristettyjä demotilejä.
           </p>
         </div>
         {isImpersonating && (
@@ -105,13 +153,89 @@ export default function KayttajaEsikatseluV2() {
         )}
       </div>
 
+      <Card className={isDemoOrganization ? 'border-emerald-300 bg-emerald-50/60' : 'border-indigo-300 bg-indigo-50/60'}>
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${isDemoOrganization ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                {isDemoOrganization ? <CheckCircle2 size={22} /> : <Sparkles size={22} />}
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-950">Roolien demoympäristö</h2>
+                  {isDemoOrganization && <Badge className="border-0 bg-emerald-600 text-white">Eristetty demo</Badge>}
+                </div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-700">
+                  {isDemoOrganization
+                    ? 'Olet erillisessä VaKantti-demoyrityksessä. Sen projektit, työmääräykset ja kirjaukset eivät sekoitu oikean organisaatiosi tietoihin.'
+                    : 'Luo yhdellä painikkeella erillinen demo-organisaatio, työnjohtajan, projektikoordinaattorin, työntekijän ja tilaajan demotilit sekä valmiit esimerkkiprojektit.'}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-slate-600">
+                  Demotileille ei näytetä eikä jaeta salasanoja. Ylläpitäjä avaa ne turvallisesti Toimi käyttäjänä -toiminnolla.
+                </p>
+              </div>
+            </div>
+            <Button
+              className="shrink-0 gap-2"
+              variant={isDemoOrganization ? 'outline' : 'default'}
+              disabled={provisioning || switching}
+              onClick={() => void prepareDemoEnvironment()}
+            >
+              {isDemoOrganization ? <RefreshCw size={16} /> : <Building2 size={16} />}
+              {provisioning
+                ? 'Valmistellaan…'
+                : isDemoOrganization
+                  ? 'Päivitä demotilit ja -data'
+                  : 'Luo ja avaa demoympäristö'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isDemoOrganization && demoMembers.length > 0 && (
+        <section className="space-y-3" aria-labelledby="demo-role-heading">
+          <div>
+            <h2 id="demo-role-heading" className="text-xl font-bold text-slate-950">Avaa roolin näkymä</h2>
+            <p className="mt-1 text-sm text-slate-600">Valitse rooli. Palaat ylläpitäjän istuntoon yläpalkin palautuspainikkeella tai päivittämällä sivun.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {demoMembers.map((member) => {
+              const name = member.profile?.full_name || member.profile?.email || ROLE_LABELS[member.role];
+              const isCurrentTarget = isImpersonating && member.userId === previewTarget?.userId;
+              const role = member.role as Exclude<OrganizationRole, 'admin'>;
+              return (
+                <Card key={member.userId} className="overflow-hidden border-slate-200 shadow-sm">
+                  <CardContent className="flex h-full flex-col p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-950 text-sm font-bold text-white">{initials(name)}</div>
+                      <Badge variant="outline" className={ROLE_BADGES[member.role]}>{ROLE_LABELS[member.role]}</Badge>
+                    </div>
+                    <h3 className="mt-4 font-bold text-slate-950">{name}</h3>
+                    <p className="mt-2 flex-1 text-sm leading-6 text-slate-600">{DEMO_ROLE_SUMMARIES[role]}</p>
+                    <Button
+                      className="mt-5 w-full gap-2"
+                      disabled={Boolean(startingUserId) || isCurrentTarget}
+                      aria-label={`Toimi käyttäjänä ${name}`}
+                      onClick={() => void actAsMember(member)}
+                    >
+                      <LogIn size={16} />
+                      {startingUserId === member.userId ? 'Avataan…' : 'Avaa näkymä'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <Card className="border-amber-300 bg-amber-50/80">
         <CardContent className="flex items-start gap-3 p-5 text-sm text-amber-950">
           <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-700" />
           <div>
             <p className="font-semibold">Toiminnot ja tallennukset ovat oikeita</p>
             <p className="mt-1 leading-6">
-              Käyttäjänä tehdyt kirjaukset, viestit, hyväksynnät, muutokset ja poistot tallentuvat tuotantoon kyseisen käyttäjän oikeuksilla. Käyttäjänä toimimisen aloitus ja lopetus kirjataan audit-lokiin.
+              Käyttäjänä tehdyt kirjaukset, viestit, hyväksynnät, muutokset ja poistot tallentuvat valittuun organisaatioon kyseisen käyttäjän oikeuksilla. Käyttäjänä toimimisen aloitus ja lopetus kirjataan audit-lokiin.
             </p>
           </div>
         </CardContent>
@@ -142,7 +266,10 @@ export default function KayttajaEsikatseluV2() {
 
       <Card className="overflow-hidden">
         <CardHeader className="gap-4 border-b sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="flex items-center gap-2"><Users size={20} /> {currentOrg?.name ?? 'Organisaatio'}</CardTitle>
+          <div>
+            <CardTitle className="flex items-center gap-2"><Users size={20} /> {currentOrg?.name ?? 'Organisaatio'}</CardTitle>
+            <p className="mt-1 text-sm text-slate-500">Kaikki organisaation käyttäjät ja roolit.</p>
+          </div>
           <div className="relative w-full sm:w-80">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Hae käyttäjää tai roolia" className="pl-9" />
@@ -154,6 +281,7 @@ export default function KayttajaEsikatseluV2() {
             const name = member.profile?.full_name || member.profile?.email || 'Nimetön käyttäjä';
             const email = member.profile?.email || '';
             const isCurrentTarget = isImpersonating && member.userId === previewTarget?.userId;
+            const isDemo = isDemoAccountEmail(email);
             return (
               <div
                 key={member.userId}
@@ -162,7 +290,10 @@ export default function KayttajaEsikatseluV2() {
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-light text-sm font-bold text-primary">{initials(name)}</div>
-                  <div className="min-w-0 break-words"><p className="font-semibold">{name}</p><p className="text-sm text-slate-500">{email || 'Ei sähköpostia'}</p></div>
+                  <div className="min-w-0 break-words">
+                    <div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{name}</p>{isDemo && <Badge variant="secondary">Demo</Badge>}</div>
+                    <p className="text-sm text-slate-500">{email || 'Ei sähköpostia'}</p>
+                  </div>
                 </div>
                 <div className="rounded-xl border bg-slate-50 p-3">
                   <Badge variant="outline" className={ROLE_BADGES[member.role]}>{ROLE_LABELS[member.role]}</Badge>
@@ -170,12 +301,16 @@ export default function KayttajaEsikatseluV2() {
                 </div>
                 <Button
                   className="gap-2"
-                  disabled={Boolean(startingUserId) || isCurrentTarget}
+                  disabled={Boolean(startingUserId) || isCurrentTarget || member.role === 'admin'}
                   aria-label={`Toimi käyttäjänä ${name}`}
                   onClick={() => void actAsMember(member)}
                 >
                   <LogIn size={16} />
-                  {startingUserId === member.userId ? 'Avataan…' : 'Toimi käyttäjänä'}
+                  {member.role === 'admin'
+                    ? 'Nykyinen ylläpitäjä'
+                    : startingUserId === member.userId
+                      ? 'Avataan…'
+                      : 'Toimi käyttäjänä'}
                 </Button>
               </div>
             );
