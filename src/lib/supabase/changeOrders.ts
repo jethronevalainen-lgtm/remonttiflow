@@ -158,7 +158,9 @@ function mapManagedChangeOrder(value: unknown): ManagedChangeOrder {
 
 export function calculateChangeOrderTotals(lines: ChangeOrderDraftLineInput[]): ChangeOrderTotals {
   const saleCents = lines.reduce(
-    (sum, line) => sum + Math.round(line.quantity * line.saleUnitPriceCents),
+    (sum, line) => sum + (line.customerVisible
+      ? Math.round(line.quantity * line.saleUnitPriceCents)
+      : 0),
     0,
   );
   const costCents = lines.reduce(
