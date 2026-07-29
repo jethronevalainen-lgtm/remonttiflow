@@ -16,6 +16,8 @@ const JSON_HEADERS = {
 type DemoScenario = 'normal' | 'busy' | 'late' | 'empty' | 'handover';
 type DemoRole = 'supervisor' | 'project_coordinator' | 'worker' | 'customer';
 
+type Row = Record<string, unknown>;
+
 interface Payload {
   sourceOrganizationId?: unknown;
   scenario?: unknown;
@@ -25,6 +27,36 @@ interface DemoAccount {
   userId: string;
   role: DemoRole;
   displayName: string;
+  email: string;
+}
+
+interface ScenarioProject {
+  id: string;
+  projectNumber: string;
+  name: string;
+  location: string;
+  startOffset: number;
+  endOffset: number;
+  budget: number;
+  spent: number;
+  progress: number;
+  completed?: boolean;
+  description: string;
+}
+
+interface ScenarioWorkOrder {
+  id: string;
+  projectId: string;
+  projectName: string;
+  title: string;
+  location: string;
+  startOffset: number;
+  endOffset: number;
+  status: 'Avoin' | 'Käynnissä' | 'Odottaa' | 'Valmis';
+  priority: 'Korkea' | 'Normaali' | 'Matala';
+  type: string;
+  assignee: DemoAccount;
+  occupied?: boolean;
 }
 
 function response(body: unknown, status = 200): Response {
@@ -40,7 +72,11 @@ function isUuid(value: string): boolean {
 }
 
 function isScenario(value: string): value is DemoScenario {
-  return value === 'normal' || value === 'busy' || value === 'late' || value === 'empty' || value === 'handover';
+  return value === 'normal'
+    || value === 'busy'
+    || value === 'late'
+    || value === 'empty'
+    || value === 'handover';
 }
 
 function namedSecret(name: string, fallback: string): string | null {
@@ -56,7 +92,7 @@ function namedSecret(name: string, fallback: string): string | null {
         }
       }
     } catch {
-      // Fall back to the standard Supabase secret.
+      // Use the standard Supabase function secret below.
     }
   }
   return Deno.env.get(fallback) ?? null;
@@ -91,18 +127,18 @@ async function deterministicUuid(seed: string): Promise<string> {
 async function upsertRows(
   admin: SupabaseClient,
   table: string,
-  rows: Record<string, unknown>[],
+  rows: Row[],
   onConflict = 'id',
 ): Promise<void> {
   if (!rows.length) return;
   const { error } = await admin.from(table).upsert(rows, { onConflict });
-  if (error) throw new Error(`${table}-skenaarion tallennus epäonnistui: ${error.message}`);
+  if (error) throw new Error(`${table}-demodatan tallennus epäonnistui: ${error.message}`);
 }
 
 async function deleteIds(admin: SupabaseClient, table: string, ids: string[]): Promise<void> {
   if (!ids.length) return;
   const { error } = await admin.from(table).delete().in('id', ids);
-  if (error) throw new Error(`${table}-skenaarion siivous epäonnistui: ${error.message}`);
+  if (error) throw new Error(`${table}-demodatan siivous epäonnistui: ${error.message}`);
 }
 
 async function loadDemoAccounts(admin: SupabaseClient, organizationId: string): Promise<DemoAccount[]> {
@@ -117,68 +153,221 @@ async function loadDemoAccounts(admin: SupabaseClient, organizationId: string): 
 
   const rows = memberships ?? [];
   const userIds = rows.map((row) => String(row.user_id));
+  if (userIds.length !== 4) throw new Error('Demoympäristössä ei ole kaikkia neljää roolia.');
+
   const { data: profiles, error: profileError } = await admin
     .from('profiles')
-    .select('id, full_name')
+    .select('id, full_name, email')
     .in('id', userIds);
   if (profileError) throw new Error(`Demoprofiilien haku epäonnistui: ${profileError.message}`);
-  const names = new Map((profiles ?? []).map((profile) => [String(profile.id), String(profile.full_name || '')]));
+  const profileMap = new Map((profiles ?? []).map((profile) => [String(profile.id), profile]));
 
-  return rows.map((row) => ({
-    userId: String(row.user_id),
-    role: row.role as DemoRole,
-    displayName: names.get(String(row.user_id)) || `Demo ${String(row.role)}`,
-  }));
+  return rows.map((membership) => {
+    const profile = profileMap.get(String(membership.user_id));
+    return {
+      userId: String(membership.user_id),
+      role: membership.role as DemoRole,
+      displayName: String(profile?.full_name || `Demo ${String(membership.role)}`),
+      email: String(profile?.email || ''),
+    };
+  });
 }
 
 async function scenarioIds(ownerUserId: string) {
   const id = (suffix: string) => deterministicUuid(`${ownerUserId}:demo:${suffix}`);
   return {
     customer: await id('customer'),
-    activeProject: await id('project:active'),
-    lateProject: await id('project:late'),
-    plannedProject: await id('project:planned'),
-    extraProjectA: await id('project:extra-a'),
-    extraProjectB: await id('project:extra-b'),
-    workerEmployee: await id('employee:worker'),
-    supervisorEmployee: await id('employee:supervisor'),
-    coordinatorEmployee: await id('employee:coordinator'),
-    baseWorkOrders: [
+    projects: await Promise.all(Array.from({ length: 5 }, (_, index) => id(`project:${index + 1}`))),
+    legacyProjects: [
+      await id('project:active'),
+      await id('project:late'),
+      await id('project:planned'),
+      await id('project:extra-a'),
+      await id('project:extra-b'),
+    ],
+    employees: {
+      worker: await id('employee:worker'),
+      supervisor: await id('employee:supervisor'),
+      coordinator: await id('employee:coordinator'),
+    },
+    workOrders: await Promise.all(Array.from({ length: 10 }, (_, index) => id(`work-order:${index + 1}`))),
+    legacyWorkOrders: [
       await id('work-order:kitchen'),
       await id('work-order:late'),
       await id('work-order:done'),
+      ...await Promise.all(Array.from({ length: 7 }, (_, index) => id(`work-order:extra-${index + 1}`))),
     ],
-    extraWorkOrders: await Promise.all(Array.from({ length: 7 }, (_, index) => id(`work-order:extra-${index + 1}`))),
-    baseTimeEntries: [await id('time:approved'), await id('time:pending')],
-    extraTimeEntries: await Promise.all(Array.from({ length: 4 }, (_, index) => id(`time:extra-${index + 1}`))),
-    baseSafety: await id('safety'),
-    extraSafety: [await id('safety:extra-1'), await id('safety:extra-2')],
-    baseDiary: await id('diary'),
-    basePhases: [await id('phase:active'), await id('phase:late')],
+    timeEntries: await Promise.all(Array.from({ length: 6 }, (_, index) => id(`time:${index + 1}`))),
+    legacyTimeEntries: [
+      await id('time:approved'),
+      await id('time:pending'),
+      ...await Promise.all(Array.from({ length: 4 }, (_, index) => id(`time:extra-${index + 1}`))),
+    ],
+    safetyItems: await Promise.all(Array.from({ length: 3 }, (_, index) => id(`safety:${index + 1}`))),
+    legacySafetyItems: [await id('safety'), await id('safety:extra-1'), await id('safety:extra-2')],
+    phases: await Promise.all(Array.from({ length: 4 }, (_, index) => id(`phase:${index + 1}`))),
+    legacyPhases: [await id('phase:active'), await id('phase:late')],
+    diary: await id('diary:scenario'),
+    legacyDiary: await id('diary'),
   };
 }
 
-async function clearScenarioExtras(admin: SupabaseClient, ids: Awaited<ReturnType<typeof scenarioIds>>) {
-  await deleteIds(admin, 'time_entries', ids.extraTimeEntries);
-  await deleteIds(admin, 'safety_items', ids.extraSafety);
-  await deleteIds(admin, 'work_orders', ids.extraWorkOrders);
-  await deleteIds(admin, 'projects', [ids.extraProjectA, ids.extraProjectB]);
-}
+async function clearDemoBusinessData(
+  admin: SupabaseClient,
+  organizationId: string,
+  ids: Awaited<ReturnType<typeof scenarioIds>>,
+): Promise<void> {
+  await deleteIds(admin, 'time_entries', [...ids.timeEntries, ...ids.legacyTimeEntries]);
+  await deleteIds(admin, 'diary_entries', [ids.diary, ids.legacyDiary]);
+  await deleteIds(admin, 'safety_items', [...ids.safetyItems, ...ids.legacySafetyItems]);
+  await deleteIds(admin, 'project_phases', [...ids.phases, ...ids.legacyPhases]);
+  await deleteIds(admin, 'work_orders', [...ids.workOrders, ...ids.legacyWorkOrders]);
+  await deleteIds(admin, 'projects', [...ids.projects, ...ids.legacyProjects]);
+  await deleteIds(admin, 'employees', Object.values(ids.employees));
 
-async function clearBaseline(admin: SupabaseClient, organizationId: string, ids: Awaited<ReturnType<typeof scenarioIds>>) {
-  await deleteIds(admin, 'time_entries', [...ids.baseTimeEntries, ...ids.extraTimeEntries]);
-  await deleteIds(admin, 'diary_entries', [ids.baseDiary]);
-  await deleteIds(admin, 'safety_items', [ids.baseSafety, ...ids.extraSafety]);
-  await deleteIds(admin, 'project_phases', ids.basePhases);
-  await deleteIds(admin, 'work_orders', [...ids.baseWorkOrders, ...ids.extraWorkOrders]);
-  await deleteIds(admin, 'projects', [ids.activeProject, ids.lateProject, ids.plannedProject, ids.extraProjectA, ids.extraProjectB]);
-  await deleteIds(admin, 'employees', [ids.workerEmployee, ids.supervisorEmployee, ids.coordinatorEmployee]);
-  const { error: accessError } = await admin.from('customer_users').delete().eq('organization_id', organizationId).eq('customer_id', ids.customer);
+  const { error: accessError } = await admin
+    .from('customer_users')
+    .delete()
+    .eq('organization_id', organizationId)
+    .eq('customer_id', ids.customer);
   if (accessError) throw new Error(`Tilaajademon siivous epäonnistui: ${accessError.message}`);
   await deleteIds(admin, 'customers', [ids.customer]);
 }
 
-async function applyScenario(
+function projectDefinitions(
+  scenario: Exclude<DemoScenario, 'empty'>,
+  ids: Awaited<ReturnType<typeof scenarioIds>>,
+): ScenarioProject[] {
+  const base: ScenarioProject[] = [
+    {
+      id: ids.projects[0], projectNumber: 'DEMO-001', name: 'Demokatu 12 – keittiökorjaukset',
+      location: 'Demokatu 12, Helsinki', startOffset: -14, endOffset: 30,
+      budget: 145000, spent: 48600, progress: 42,
+      description: 'Kahdentoista huoneiston keittiökorjaukset porrastetulla toteutuksella.',
+    },
+    {
+      id: ids.projects[1], projectNumber: 'DEMO-002', name: 'Demokatu 12 – vesivahingon jälkityöt',
+      location: 'Demokatu 12 B 8, Helsinki', startOffset: -40, endOffset: -3,
+      budget: 28500, spent: 26400, progress: 78,
+      description: 'Aikataulupoikkeamien ja viimeistelytehtävien esimerkkiprojekti.',
+    },
+    {
+      id: ids.projects[2], projectNumber: 'DEMO-003', name: 'Demokatu 12 – yleisten tilojen maalaus',
+      location: 'Demokatu 12, Helsinki', startOffset: 10, endOffset: 35,
+      budget: 42000, spent: 0, progress: 0,
+      description: 'Tuleva projekti suunnittelun, resursoinnin ja aikataulutuksen tarkasteluun.',
+    },
+  ];
+
+  if (scenario === 'normal') return base;
+  if (scenario === 'late') {
+    return base.map((project, index) => ({
+      ...project,
+      startOffset: -60 + index * 10,
+      endOffset: -14 + index * 5,
+      progress: [68, 82, 35][index],
+      spent: [102000, 27900, 13000][index],
+      description: `${project.name}: myöhässä oleva poikkeamatilanne.`,
+    }));
+  }
+  if (scenario === 'handover') {
+    return [
+      { ...base[0], startOffset: -50, endOffset: 3, progress: 94, spent: 137500, description: 'Luovutusvaiheessa oleva keittiökorjaus.' },
+      { ...base[1], startOffset: -45, endOffset: -2, progress: 100, spent: 28100, completed: true, description: 'Valmis vesivahingon jälkityö tilaajan tarkastukseen.' },
+      { ...base[2], startOffset: 20, endOffset: 45 },
+    ];
+  }
+  return [
+    ...base,
+    {
+      id: ids.projects[3], projectNumber: 'DEMO-004', name: 'Demokatu 14 – kylpyhuonekorjaukset',
+      location: 'Demokatu 14, Helsinki', startOffset: -8, endOffset: 42,
+      budget: 188000, spent: 21500, progress: 18,
+      description: 'Kiireisen työmaan rinnakkainen kylpyhuoneprojekti.',
+    },
+    {
+      id: ids.projects[4], projectNumber: 'DEMO-005', name: 'Demokatu 16 – julkisivun paikkakorjaukset',
+      location: 'Demokatu 16, Helsinki', startOffset: -2, endOffset: 20,
+      budget: 73000, spent: 8200, progress: 12,
+      description: 'Useita yhtäaikaisia resursseja kuormittava projekti.',
+    },
+  ];
+}
+
+function workOrderDefinitions(
+  scenario: Exclude<DemoScenario, 'empty'>,
+  projects: ScenarioProject[],
+  ids: Awaited<ReturnType<typeof scenarioIds>>,
+  worker: DemoAccount,
+  coordinator: DemoAccount,
+): ScenarioWorkOrder[] {
+  const normal: ScenarioWorkOrder[] = [
+    {
+      id: ids.workOrders[0], projectId: projects[0].id, projectName: projects[0].name,
+      title: 'Asenna keittiökalusteet asuntoon A 4', location: 'Demokatu 12 A 4',
+      startOffset: 0, endOffset: 2, status: 'Käynnissä', priority: 'Korkea', type: 'Kalusteasennus', assignee: worker,
+    },
+    {
+      id: ids.workOrders[1], projectId: projects[1].id, projectName: projects[1].name,
+      title: 'Korjaa kylpyhuoneen oviaukon listoitus', location: 'Demokatu 12 B 8',
+      startOffset: -4, endOffset: -1, status: 'Odottaa', priority: 'Korkea', type: 'Viimeistely', assignee: worker, occupied: true,
+    },
+    {
+      id: ids.workOrders[2], projectId: projects[0].id, projectName: projects[0].name,
+      title: 'Suojaa kulkureitti asuntoon A 2', location: 'Demokatu 12 A 2',
+      startOffset: -6, endOffset: -5, status: 'Valmis', priority: 'Normaali', type: 'Suojaus', assignee: worker, occupied: true,
+    },
+  ];
+  if (scenario === 'normal') return normal;
+  if (scenario === 'late') {
+    const titles = [
+      'Korjaa puuttuva silikonisauma', 'Täydennä luovutuskuvat', 'Selvitä materiaaliviive',
+      'Viimeistele listoitukset', 'Korjaa puuttuva palokatko', 'Sovi uusi käynti asukkaan kanssa',
+    ];
+    return titles.map((title, index) => ({
+      id: ids.workOrders[index], projectId: projects[index % projects.length].id,
+      projectName: projects[index % projects.length].name, title,
+      location: projects[index % projects.length].location,
+      startOffset: -(index + 6), endOffset: -(index + 1),
+      status: index === 0 ? 'Käynnissä' : index === 5 ? 'Valmis' : 'Odottaa',
+      priority: index === 5 ? 'Normaali' : 'Korkea', type: index === 2 ? 'Selvitys' : 'Viimeistely',
+      assignee: worker, occupied: true,
+    }));
+  }
+  if (scenario === 'handover') {
+    const titles = [
+      'Tee itselleluovutus asuntoon A 4', 'Koosta luovutuskansio tilaajalle',
+      'Korjaa tarkastuksessa löytyneet listapuutteet', 'Hyväksy loppusiivous', 'Luovuta valmis kohde tilaajalle',
+    ];
+    return titles.map((title, index) => ({
+      id: ids.workOrders[index], projectId: index === 4 ? projects[1].id : projects[0].id,
+      projectName: index === 4 ? projects[1].name : projects[0].name,
+      title, location: index === 4 ? projects[1].location : projects[0].location,
+      startOffset: index - 2, endOffset: index - 1,
+      status: index >= 3 ? 'Valmis' : index === 1 ? 'Käynnissä' : 'Odottaa',
+      priority: index === 2 ? 'Korkea' : 'Normaali',
+      type: index === 0 ? 'Itselleluovutus' : index === 1 ? 'Dokumentointi' : 'Viimeistely',
+      assignee: index === 1 ? coordinator : worker, occupied: true,
+    }));
+  }
+
+  const titles = [
+    'Pura vanhat kalusteet', 'Tee vedeneristyksen tarkastus', 'Asenna laatoitus',
+    'Tilaa puuttuvat hanat', 'Suojaa julkisivun kulkureitti', 'Korjaa rappausvaurio',
+    'Dokumentoi päivän työvaiheet', 'Asenna keittiön työtaso', 'Tee loppusiivous', 'Tarkista materiaalitoimitus',
+  ];
+  return titles.map((title, index) => ({
+    id: ids.workOrders[index], projectId: projects[index % projects.length].id,
+    projectName: projects[index % projects.length].name, title,
+    location: projects[index % projects.length].location,
+    startOffset: index - 3, endOffset: index - 1,
+    status: index === 0 ? 'Käynnissä' : index === 3 ? 'Odottaa' : index === 8 ? 'Valmis' : 'Avoin',
+    priority: index < 3 ? 'Korkea' : 'Normaali', type: 'Rakennustyö', assignee: worker,
+    occupied: index % 2 === 1,
+  }));
+}
+
+async function seedScenario(
   admin: SupabaseClient,
   ownerUserId: string,
   organizationId: string,
@@ -186,163 +375,247 @@ async function applyScenario(
   scenario: DemoScenario,
   accounts: DemoAccount[],
 ) {
-  const today = todayInHelsinki();
   const ids = await scenarioIds(ownerUserId);
+  await clearDemoBusinessData(admin, organizationId, ids);
+
+  if (scenario === 'empty') {
+    return { projects: 0, workOrders: 0, timeEntries: 0, safetyItems: 0 };
+  }
+
   const byRole = new Map(accounts.map((account) => [account.role, account]));
   const supervisor = byRole.get('supervisor');
   const coordinator = byRole.get('project_coordinator');
   const worker = byRole.get('worker');
-  const customer = byRole.get('customer');
-  if (!supervisor || !coordinator || !worker || !customer) throw new Error('Demoroolit ovat puutteelliset.');
+  const customerUser = byRole.get('customer');
+  if (!supervisor || !coordinator || !worker || !customerUser) throw new Error('Demoroolit ovat puutteelliset.');
 
-  await clearScenarioExtras(admin, ids);
+  const today = todayInHelsinki();
+  const projects = projectDefinitions(scenario, ids);
+  const workOrders = workOrderDefinitions(scenario, projects, ids, worker, coordinator);
+  const timeCount = scenario === 'busy' ? 6 : 2;
+  const safetyCount = scenario === 'busy' ? 3 : scenario === 'late' ? 2 : 1;
 
-  if (scenario === 'empty') {
-    await clearBaseline(admin, organizationId, ids);
-    return { projects: 0, workOrders: 0, timeEntries: 0, safetyItems: 0 };
-  }
+  await upsertRows(admin, 'customers', [{
+    id: ids.customer,
+    organization_id: organizationId,
+    created_by: ownerUserId,
+    name: 'Asunto Oy Demokatu 12',
+    type: 'Taloyhtiö',
+    contact_person: customerUser.displayName,
+    email: customerUser.email,
+    phone: '040 123 4567',
+    address: 'Demokatu 12, 00100 Helsinki',
+    status: 'Aktiivinen',
+    project_count: projects.length,
+    notes: `Eristetyn demoympäristön ${scenario}-skenaario.`,
+    archived_at: null,
+  }]);
 
-  if (scenario === 'normal') {
-    return { projects: 3, workOrders: 3, timeEntries: 2, safetyItems: 1 };
-  }
-
-  if (scenario === 'late') {
-    await upsertRows(admin, 'projects', [
-      { id: ids.activeProject, status: 'Suunniteltu', start_date: addDays(today, -45), end_date: addDays(today, -7), progress: 68, spent: 102000, description: 'Aikataulusta jäänyt keittiökorjaus, jossa useita avoimia tehtäviä.' },
-      { id: ids.lateProject, status: 'Suunniteltu', start_date: addDays(today, -60), end_date: addDays(today, -14), progress: 82, spent: 27900 },
-      { id: ids.plannedProject, status: 'Suunniteltu', start_date: addDays(today, -20), end_date: addDays(today, -2), progress: 35, spent: 13000, description: 'Myöhästynyt maalausprojekti poikkeamien tarkistamiseen.' },
-    ]);
-    await upsertRows(admin, 'work_orders', ids.baseWorkOrders.map((id, index) => ({
-      id,
-      due_date: addDays(today, -(index + 1)),
-      planned_end_date: addDays(today, -(index + 1)),
-      status: index === 2 ? 'Valmis' : index === 0 ? 'Käynnissä' : 'Odottaa',
-      priority: index === 2 ? 'Normaali' : 'Korkea',
-    })));
-    const extraRows = ids.extraWorkOrders.slice(0, 3).map((id, index) => ({
-      id,
-      organization_id: organizationId,
-      created_by: supervisor.userId,
-      project_id: index === 2 ? ids.plannedProject : ids.activeProject,
-      title: ['Korjaa puuttuva silikonisauma', 'Täydennä luovutuskuvat', 'Selvitä materiaaliviive'][index],
-      project: index === 2 ? 'Demokatu 12 – yleisten tilojen maalaus' : 'Demokatu 12 – keittiökorjaukset',
-      assignee: worker.displayName,
-      due_date: addDays(today, -(index + 2)),
-      planned_start_date: addDays(today, -(index + 5)),
-      planned_end_date: addDays(today, -(index + 2)),
-      planned_start_time: '07:00',
-      planned_end_time: '15:30',
-      priority: 'Korkea',
-      status: index === 2 ? 'Odottaa' : 'Avoin',
-      type: index === 2 ? 'Selvitys' : 'Viimeistely',
-      description: 'Myöhässä olevan skenaarion kiireellinen tehtävä.',
-      assignment_scope: 'people',
-      location: `Demokatu 12 ${index + 5}`,
-      occupancy_status: 'occupied',
-      resident_notification_required: true,
-    }));
-    await upsertRows(admin, 'work_orders', extraRows);
-    await upsertRows(admin, 'work_order_assignees', extraRows.map((row) => ({ organization_id: organizationId, work_order_id: row.id, user_id: worker.userId, assigned_by: supervisor.userId, responsibility: 'vastuuhenkilö' })), 'work_order_id,user_id');
-    await upsertRows(admin, 'safety_items', [{
-      id: ids.extraSafety[0], organization_id: organizationId, created_by: worker.userId,
-      project_id: ids.activeProject, project: 'Demokatu 12 – keittiökorjaukset', type: 'observation',
-      title: 'Poistumistie tukossa materiaalitoimituksen vuoksi', description: 'Kulkureitti on vapautettava välittömästi.',
-      date: today, severity: 'Korkea', status: 'Osoitettu', assignee: supervisor.displayName,
-      assignee_user_id: supervisor.userId, due_date: today, location: 'Demokatu 12 A, porrashuone', corrective_action: 'Siirrä materiaalit varastoon ja dokumentoi korjaus.',
-    }]);
-    return { projects: 3, workOrders: 6, timeEntries: 2, safetyItems: 2 };
-  }
-
-  if (scenario === 'handover') {
-    await upsertRows(admin, 'projects', [
-      { id: ids.activeProject, status: 'Suunniteltu', start_date: addDays(today, -50), end_date: addDays(today, 3), progress: 94, spent: 137500, description: 'Luovutusvaiheessa oleva keittiökorjaus.' },
-      { id: ids.lateProject, status: 'Valmis', start_date: addDays(today, -45), end_date: addDays(today, -2), progress: 100, spent: 28100, description: 'Valmis vesivahingon jälkityö tilaajan tarkastukseen.' },
-      { id: ids.plannedProject, status: 'Suunniteltu', start_date: addDays(today, 20), end_date: addDays(today, 45), progress: 0, spent: 0 },
-    ]);
-    await upsertRows(admin, 'work_orders', [
-      { id: ids.baseWorkOrders[0], status: 'Odottaa', due_date: addDays(today, 1), planned_end_date: addDays(today, 1), title: 'Tee itselleluovutus asuntoon A 4', type: 'Itselleluovutus' },
-      { id: ids.baseWorkOrders[1], status: 'Valmis', due_date: addDays(today, -2), planned_end_date: addDays(today, -2), completion_approved: true },
-      { id: ids.baseWorkOrders[2], status: 'Valmis', completion_approved: true },
-    ]);
-    const handoverRows = ids.extraWorkOrders.slice(0, 2).map((id, index) => ({
-      id,
-      organization_id: organizationId,
-      created_by: coordinator.userId,
-      project_id: ids.activeProject,
-      title: index === 0 ? 'Koosta luovutuskansio tilaajalle' : 'Korjaa tarkastuksessa löytynyt listapuutteet',
-      project: 'Demokatu 12 – keittiökorjaukset',
-      assignee: index === 0 ? coordinator.displayName : worker.displayName,
-      due_date: addDays(today, index + 1),
-      planned_start_date: today,
-      planned_end_date: addDays(today, index + 1),
-      planned_start_time: '08:00', planned_end_time: '15:30',
-      priority: index === 0 ? 'Normaali' : 'Korkea', status: index === 0 ? 'Käynnissä' : 'Odottaa',
-      type: index === 0 ? 'Dokumentointi' : 'Viimeistely',
-      description: 'Luovutusvaiheen esimerkkitehtävä.', assignment_scope: 'people',
-      location: 'Demokatu 12', occupancy_status: 'occupied', resident_notification_required: false,
-    }));
-    await upsertRows(admin, 'work_orders', handoverRows);
-    await upsertRows(admin, 'work_order_assignees', handoverRows.map((row, index) => ({ organization_id: organizationId, work_order_id: row.id, user_id: index === 0 ? coordinator.userId : worker.userId, assigned_by: supervisor.userId, responsibility: 'vastuuhenkilö' })), 'work_order_id,user_id');
-    return { projects: 3, workOrders: 5, timeEntries: 2, safetyItems: 1 };
-  }
-
-  const extraProjects = [
+  await upsertRows(admin, 'employees', [
     {
-      id: ids.extraProjectA, organization_id: organizationId, created_by: ownerUserId, customer_id: ids.customer,
-      project_number: 'DEMO-004', name: 'Demokatu 14 – kylpyhuonekorjaukset', customer: 'Asunto Oy Demokatu 12',
-      location: 'Demokatu 14, Helsinki', status: 'Suunniteltu', start_date: addDays(today, -8), end_date: addDays(today, 42),
-      budget: 188000, spent: 21500, progress: 18, description: 'Kiireisen työmaan rinnakkainen kylpyhuoneprojekti.',
-      responsible_supervisor_id: supervisor.userId, project_manager_id: coordinator.userId, archived_at: null,
+      id: ids.employees.worker, organization_id: organizationId, created_by: ownerUserId,
+      user_id: worker.userId, name: worker.displayName, role: 'Rakennustyöntekijä', department: 'Tuotanto',
+      email: worker.email, phone: '040 111 1111', start_date: addDays(today, -365), status: 'Aktiivinen',
+      hourly_cost_cents: 2850, employment_type: 'Vakituinen', employment_category: 'employee', archived_at: null,
     },
     {
-      id: ids.extraProjectB, organization_id: organizationId, created_by: ownerUserId, customer_id: ids.customer,
-      project_number: 'DEMO-005', name: 'Demokatu 16 – julkisivun paikkakorjaukset', customer: 'Asunto Oy Demokatu 12',
-      location: 'Demokatu 16, Helsinki', status: 'Suunniteltu', start_date: addDays(today, -2), end_date: addDays(today, 20),
-      budget: 73000, spent: 8200, progress: 12, description: 'Useita yhtäaikaisia resursseja kuormittava projekti.',
-      responsible_supervisor_id: supervisor.userId, project_manager_id: coordinator.userId, archived_at: null,
+      id: ids.employees.supervisor, organization_id: organizationId, created_by: ownerUserId,
+      user_id: supervisor.userId, name: supervisor.displayName, role: 'Työnjohtaja', department: 'Työnjohto',
+      email: supervisor.email, start_date: addDays(today, -700), status: 'Aktiivinen',
+      employment_type: 'Vakituinen', employment_category: 'employee', archived_at: null,
     },
-  ];
-  await upsertRows(admin, 'projects', extraProjects);
-  await upsertRows(admin, 'project_members', extraProjects.flatMap((project) => [worker, coordinator, supervisor].map((account) => ({ organization_id: organizationId, project_id: project.id, user_id: account.userId, role: account.role === 'worker' ? 'asentaja' : account.role === 'supervisor' ? 'työnjohtaja' : 'projektikoordinaattori' }))), 'project_id,user_id');
-  await upsertRows(admin, 'customer_user_projects', extraProjects.map((project) => ({ organization_id: organizationId, customer_id: ids.customer, user_id: customer.userId, project_id: project.id, created_by: ownerUserId })), 'organization_id,customer_id,user_id,project_id');
+    {
+      id: ids.employees.coordinator, organization_id: organizationId, created_by: ownerUserId,
+      user_id: coordinator.userId, name: coordinator.displayName, role: 'Projektikoordinaattori', department: 'Projektit',
+      email: coordinator.email, start_date: addDays(today, -200), status: 'Aktiivinen',
+      employment_type: 'Vakituinen', employment_category: 'employee', archived_at: null,
+    },
+  ]);
 
-  const busyWorkOrders = ids.extraWorkOrders.map((id, index) => {
-    const project = index < 4 ? extraProjects[0] : extraProjects[1];
-    return {
-      id, organization_id: organizationId, created_by: supervisor.userId, project_id: project.id,
-      title: ['Pura vanhat kalusteet', 'Tee vedeneristyksen tarkastus', 'Asenna laatoitus', 'Tilaa puuttuvat hanat', 'Suojaa julkisivun kulkureitti', 'Korjaa rappausvaurio', 'Dokumentoi päivän työvaiheet'][index],
-      project: project.name, assignee: worker.displayName, due_date: addDays(today, index - 1),
-      planned_start_date: addDays(today, index - 2), planned_end_date: addDays(today, index - 1),
-      planned_start_time: '07:00', planned_end_time: '15:30', priority: index < 3 ? 'Korkea' : 'Normaali',
-      status: index === 0 ? 'Käynnissä' : index === 3 ? 'Odottaa' : 'Avoin', type: 'Rakennustyö',
-      description: 'Kiireisen skenaarion rinnakkainen työmääräys.', assignment_scope: 'people',
-      location: project.location, occupancy_status: index % 2 ? 'occupied' : 'vacant', resident_notification_required: index % 2 === 1,
-    };
-  });
-  await upsertRows(admin, 'work_orders', busyWorkOrders);
-  await upsertRows(admin, 'work_order_assignees', busyWorkOrders.map((row) => ({ organization_id: organizationId, work_order_id: row.id, user_id: worker.userId, assigned_by: supervisor.userId, responsibility: 'vastuuhenkilö' })), 'work_order_id,user_id');
-
-  const busyTimes = ids.extraTimeEntries.map((id, index) => ({
-    id, organization_id: organizationId, created_by: worker.userId, user_id: worker.userId,
-    employee_id: ids.workerEmployee, project_id: index < 2 ? ids.extraProjectA : ids.extraProjectB,
-    work_order_id: ids.extraWorkOrders[index], date: addDays(today, -(index + 1)), employee: worker.displayName,
-    project: index < 2 ? extraProjects[0].name : extraProjects[1].name, hours: 7.5 + (index % 2) * 0.5,
-    overtime: index === 1 ? 1 : 0, break_minutes: 30, description: 'Kiireisen skenaarion työpäivä.',
-    status: index < 2 ? 'Odottaa' : 'Hyväksytty', source: 'manual', break_source: 'manual',
-    start_time: '07:00', end_time: index === 1 ? '16:00' : '15:00', billable: true,
-    billing_status: index < 2 ? 'recorded' : 'approved', approved_by: index < 2 ? null : supervisor.userId,
-    approved_at: index < 2 ? null : `${addDays(today, -index)}T12:00:00.000Z`,
-  }));
-  await upsertRows(admin, 'time_entries', busyTimes);
-  await upsertRows(admin, 'safety_items', ids.extraSafety.map((id, index) => ({
-    id, organization_id: organizationId, created_by: worker.userId, project_id: index === 0 ? ids.extraProjectA : ids.extraProjectB,
-    project: index === 0 ? extraProjects[0].name : extraProjects[1].name, type: 'observation',
-    title: index === 0 ? 'Työalueen valaistus puutteellinen' : 'Telineen kulkutie vaatii siivouksen',
-    description: 'Kiireisen työmaan turvallisuushavainto.', date: today, severity: 'Keskitasoinen', status: 'Osoitettu',
-    assignee: supervisor.displayName, assignee_user_id: supervisor.userId, due_date: addDays(today, 1),
-    location: index === 0 ? 'Demokatu 14' : 'Demokatu 16', corrective_action: 'Korjaa puute ja kuittaa toimenpide.',
+  await upsertRows(admin, 'projects', projects.map((project) => ({
+    id: project.id,
+    organization_id: organizationId,
+    created_by: ownerUserId,
+    customer_id: ids.customer,
+    project_number: project.projectNumber,
+    name: project.name,
+    customer: 'Asunto Oy Demokatu 12',
+    location: project.location,
+    status: project.completed ? 'Valmis' : 'Suunniteltu',
+    start_date: addDays(today, project.startOffset),
+    end_date: addDays(today, project.endOffset),
+    budget: project.budget,
+    spent: project.spent,
+    progress: project.completed ? 100 : project.progress,
+    description: project.description,
+    responsible_supervisor_id: supervisor.userId,
+    project_manager_id: coordinator.userId,
+    archived_at: null,
   })));
-  return { projects: 5, workOrders: 10, timeEntries: 6, safetyItems: 3 };
+
+  await upsertRows(admin, 'project_members', projects.flatMap((project) => [
+    { organization_id: organizationId, project_id: project.id, user_id: worker.userId, role: 'asentaja' },
+    { organization_id: organizationId, project_id: project.id, user_id: coordinator.userId, role: 'projektikoordinaattori' },
+    { organization_id: organizationId, project_id: project.id, user_id: supervisor.userId, role: 'työnjohtaja' },
+  ]), 'project_id,user_id');
+
+  await upsertRows(admin, 'customer_users', [{
+    organization_id: organizationId,
+    customer_id: ids.customer,
+    user_id: customerUser.userId,
+    access_scope: 'selected_projects',
+    portal_profile: 'approver',
+    portal_permissions: {},
+    disabled_at: null,
+  }], 'organization_id,customer_id,user_id');
+  await upsertRows(admin, 'customer_user_projects', projects.map((project) => ({
+    organization_id: organizationId,
+    customer_id: ids.customer,
+    user_id: customerUser.userId,
+    project_id: project.id,
+    created_by: ownerUserId,
+  })), 'organization_id,customer_id,user_id,project_id');
+
+  await upsertRows(admin, 'work_orders', workOrders.map((order) => ({
+    id: order.id,
+    organization_id: organizationId,
+    created_by: supervisor.userId,
+    project_id: order.projectId,
+    title: order.title,
+    project: order.projectName,
+    assignee: order.assignee.displayName,
+    due_date: addDays(today, order.endOffset),
+    planned_start_date: addDays(today, order.startOffset),
+    planned_end_date: addDays(today, order.endOffset),
+    planned_start_time: '07:00',
+    planned_end_time: '15:30',
+    priority: order.priority,
+    status: order.status,
+    type: order.type,
+    description: `${order.title}. Dokumentoi työ ja mahdolliset poikkeamat.`,
+    assignment_scope: 'people',
+    location: order.location,
+    location_detail: order.location,
+    occupancy_status: order.occupied ? 'occupied' : 'vacant',
+    access_notes: order.occupied ? 'Sovi käynti etukäteen ja ilmoita saapumisesta.' : 'Avain huoltoyhtiön avainkaapista.',
+    resident_notification_required: Boolean(order.occupied),
+    completed_at: order.status === 'Valmis' ? `${addDays(today, order.endOffset)}T12:00:00.000Z` : null,
+    completion_approved: order.status === 'Valmis',
+  })));
+  await upsertRows(admin, 'work_order_assignees', workOrders.map((order) => ({
+    organization_id: organizationId,
+    work_order_id: order.id,
+    user_id: order.assignee.userId,
+    assigned_by: supervisor.userId,
+    responsibility: 'vastuuhenkilö',
+  })), 'work_order_id,user_id');
+
+  await upsertRows(admin, 'project_phases', projects.slice(0, Math.min(4, projects.length)).map((project, index) => ({
+    id: ids.phases[index],
+    organization_id: organizationId,
+    project_id: project.id,
+    created_by: coordinator.userId,
+    name: scenario === 'handover' ? ['Itselleluovutus', 'Luovutus tilaajalle', 'Tulevan työn suunnittelu'][index] ?? 'Luovutus' : ['Purku', 'Asennukset', 'Viimeistely', 'Dokumentointi'][index],
+    project_name: project.name,
+    start_date: addDays(today, project.startOffset),
+    end_date: addDays(today, project.endOffset),
+    status: project.completed ? 'Valmis' : project.endOffset < 0 ? 'Myöhässä' : project.startOffset <= 0 ? 'Käynnissä' : 'Suunniteltu',
+    progress: project.completed ? 100 : project.progress,
+    sequence_no: index + 1,
+    default_priority: project.endOffset < 0 ? 'Korkea' : 'Normaali',
+    notes: `${scenario}-skenaarion työvaihe.`,
+  })));
+
+  await upsertRows(admin, 'time_entries', Array.from({ length: timeCount }, (_, index) => {
+    const order = workOrders[index % workOrders.length];
+    const approved = index % 3 !== 1;
+    return {
+      id: ids.timeEntries[index],
+      organization_id: organizationId,
+      created_by: worker.userId,
+      user_id: worker.userId,
+      employee_id: ids.employees.worker,
+      project_id: order.projectId,
+      work_order_id: order.id,
+      date: addDays(today, -(index + 1)),
+      employee: worker.displayName,
+      project: order.projectName,
+      hours: index % 2 ? 8 : 7.5,
+      overtime: index === 1 ? 0.5 : 0,
+      break_minutes: 30,
+      description: `${scenario}-skenaarion työpäivä.`,
+      status: approved ? 'Hyväksytty' : 'Odottaa',
+      approved_by: approved ? supervisor.userId : null,
+      approved_at: approved ? `${addDays(today, -index)}T12:00:00.000Z` : null,
+      source: 'manual',
+      break_source: 'manual',
+      start_time: '07:00',
+      end_time: index % 2 ? '15:30' : '15:00',
+      billable: true,
+      billing_status: approved ? 'approved' : 'recorded',
+    };
+  }));
+
+  await upsertRows(admin, 'safety_items', Array.from({ length: safetyCount }, (_, index) => {
+    const project = projects[index % projects.length];
+    const titles = ['Porraskäytävän suojamuovi irronnut', 'Poistumistie vaatii siivouksen', 'Työalueen valaistus puutteellinen'];
+    return {
+      id: ids.safetyItems[index],
+      organization_id: organizationId,
+      created_by: worker.userId,
+      project_id: project.id,
+      project: project.name,
+      type: 'observation',
+      title: titles[index],
+      description: `${scenario}-skenaarion turvallisuushavainto.`,
+      date: today,
+      severity: scenario === 'late' && index === 0 ? 'Korkea' : 'Keskitasoinen',
+      status: 'Osoitettu',
+      assignee: supervisor.displayName,
+      assignee_user_id: supervisor.userId,
+      due_date: addDays(today, scenario === 'late' ? 0 : 1),
+      location: project.location,
+      corrective_action: 'Korjaa puute, dokumentoi toimenpide ja kuittaa havainto.',
+    };
+  }));
+
+  await upsertRows(admin, 'diary_entries', [{
+    id: ids.diary,
+    organization_id: organizationId,
+    created_by: supervisor.userId,
+    project_id: projects[0].id,
+    project: projects[0].name,
+    date: addDays(today, -1),
+    weather: 'Puolipilvinen',
+    temperature: 18,
+    workers: scenario === 'busy' ? 8 : 4,
+    work_phases: `${scenario}-skenaarion päivän työvaiheet.`,
+    deliveries: 'Materiaalitoimitus saapui klo 09.30.',
+    issues: scenario === 'late' ? 'Aikataulu ja materiaalisaatavuus vaativat välittömiä toimenpiteitä.' : 'Ei vakavia poikkeamia.',
+    author: supervisor.displayName,
+    status: 'Hyväksytty',
+    approved_by: supervisor.userId,
+    approved_at: `${addDays(today, -1)}T16:00:00.000Z`,
+  }]);
+
+  const seeded = {
+    projects: projects.length,
+    workOrders: workOrders.length,
+    timeEntries: timeCount,
+    safetyItems: safetyCount,
+  };
+
+  const refreshedAt = new Date().toISOString();
+  const { error: environmentError } = await admin.from('demo_environments').update({
+    source_organization_id: sourceOrganizationId,
+    active_scenario: scenario,
+    dataset_version: DATASET_VERSION,
+    seeded_counts: seeded,
+    refreshed_at: refreshedAt,
+  }).eq('owner_user_id', ownerUserId);
+  if (environmentError) throw new Error(`Demoympäristön metatietojen päivitys epäonnistui: ${environmentError.message}`);
+
+  return seeded;
 }
 
 Deno.serve(async (request) => {
@@ -355,7 +628,9 @@ Deno.serve(async (request) => {
   const url = Deno.env.get('SUPABASE_URL');
   const publishableKey = namedSecret('SUPABASE_PUBLISHABLE_KEYS', 'SUPABASE_ANON_KEY');
   const serviceKey = namedSecret('SUPABASE_SECRET_KEYS', 'SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !publishableKey || !serviceKey) return response({ error: 'Palvelimen Supabase-konfiguraatio puuttuu.' }, 503);
+  if (!url || !publishableKey || !serviceKey) {
+    return response({ error: 'Palvelimen Supabase-konfiguraatio puuttuu.' }, 503);
+  }
 
   let payload: Payload;
   try {
@@ -366,8 +641,12 @@ Deno.serve(async (request) => {
 
   const sourceOrganizationId = stringValue(payload.sourceOrganizationId);
   const scenarioValue = stringValue(payload.scenario) || 'normal';
-  if (!isUuid(sourceOrganizationId)) return response({ error: 'Lähdeorganisaation tunniste puuttuu tai on virheellinen.' }, 400);
-  if (!isScenario(scenarioValue)) return response({ error: 'Tuntematon demodataskenaario.' }, 400);
+  if (!isUuid(sourceOrganizationId)) {
+    return response({ error: 'Lähdeorganisaation tunniste puuttuu tai on virheellinen.' }, 400);
+  }
+  if (!isScenario(scenarioValue)) {
+    return response({ error: 'Tuntematon demodataskenaario.' }, 400);
+  }
 
   const userClient = createClient(url, publishableKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -385,9 +664,13 @@ Deno.serve(async (request) => {
     .eq('user_id', actor.id)
     .maybeSingle();
   if (membershipError) return response({ error: 'Ylläpitäjän käyttöoikeuden tarkistus epäonnistui.' }, 500);
-  if (sourceMembership?.role !== 'admin') return response({ error: 'Vain organisaation ylläpitäjä voi vaihtaa demodataskenaarion.' }, 403);
+  if (sourceMembership?.role !== 'admin') {
+    return response({ error: 'Vain organisaation ylläpitäjä voi vaihtaa demodataskenaarion.' }, 403);
+  }
 
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  const admin = createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
 
   try {
     const { data: environment, error: environmentError } = await admin
@@ -395,20 +678,21 @@ Deno.serve(async (request) => {
       .select('organization_id')
       .eq('owner_user_id', actor.id)
       .maybeSingle();
-    if (environmentError || !environment?.organization_id) throw new Error(environmentError?.message || 'Demoympäristöä ei ole vielä luotu.');
+    if (environmentError || !environment?.organization_id) {
+      throw new Error(environmentError?.message || 'Demoympäristöä ei ole vielä luotu.');
+    }
+
     const organizationId = String(environment.organization_id);
     const accounts = await loadDemoAccounts(admin, organizationId);
-    const seeded = await applyScenario(admin, actor.id, organizationId, sourceOrganizationId, scenarioValue, accounts);
+    const seeded = await seedScenario(
+      admin,
+      actor.id,
+      organizationId,
+      sourceOrganizationId,
+      scenarioValue,
+      accounts,
+    );
     const refreshedAt = new Date().toISOString();
-
-    const { error: updateError } = await admin.from('demo_environments').update({
-      source_organization_id: sourceOrganizationId,
-      active_scenario: scenarioValue,
-      dataset_version: DATASET_VERSION,
-      seeded_counts: seeded,
-      refreshed_at: refreshedAt,
-    }).eq('owner_user_id', actor.id);
-    if (updateError) throw new Error(`Demoympäristön metatietojen päivitys epäonnistui: ${updateError.message}`);
 
     await admin.from('audit_logs').insert({
       organization_id: organizationId,
@@ -429,6 +713,8 @@ Deno.serve(async (request) => {
     });
   } catch (caught) {
     console.error('Demo scenario provisioning failed', caught);
-    return response({ error: caught instanceof Error ? caught.message : 'Demodataskenaarion valmistelu epäonnistui.' }, 500);
+    return response({
+      error: caught instanceof Error ? caught.message : 'Demodataskenaarion valmistelu epäonnistui.',
+    }, 500);
   }
 });
