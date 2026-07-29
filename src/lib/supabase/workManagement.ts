@@ -27,6 +27,10 @@ export interface ManagedWorkOrder {
   projectId?: string;
   project: string;
   location: string;
+  buildingId?: string;
+  stairwellId?: string;
+  unitId?: string;
+  locationDetail: string;
   title: string;
   dueDate: string;
   plannedStartDate: string;
@@ -271,6 +275,17 @@ export async function loadRoleWorkspace(
       projectId,
       project: text(item, 'project') || (projectId ? 'Nimetön projekti' : 'Yksittäinen työ'),
       location: text(item, 'location'),
+      buildingId: optionalText(item, 'building_id'),
+      stairwellId: optionalText(item, 'stairwell_id'),
+      unitId: optionalText(item, 'unit_id'),
+      locationDetail: text(item, 'location_detail')
+        || (
+          !optionalText(item, 'building_id')
+          && !optionalText(item, 'stairwell_id')
+          && !optionalText(item, 'unit_id')
+            ? text(item, 'location')
+            : ''
+        ),
       title: text(item, 'title'),
       dueDate: text(item, 'due_date'),
       plannedStartDate: text(item, 'planned_start_date'),
@@ -370,6 +385,10 @@ export async function saveManagedWorkOrder(values: {
   projectId?: string;
   title: string;
   location?: string;
+  buildingId?: string;
+  stairwellId?: string;
+  unitId?: string;
+  locationDetail?: string;
   dueDate?: string;
   plannedStartDate?: string;
   plannedEndDate?: string;
@@ -389,12 +408,15 @@ export async function saveManagedWorkOrder(values: {
   assignmentScope: WorkAssignmentScope;
   assigneeUserIds: string[];
 }): Promise<string> {
-  const { data, error } = await supabase.rpc('save_work_order_v2', {
+  const { data, error } = await supabase.rpc('save_work_order_v3', {
     p_organization_id: values.organizationId,
     p_work_order_id: values.workOrderId ?? null,
     p_project_id: values.projectId || null,
     p_title: values.title,
-    p_location: values.location || null,
+    p_building_id: values.buildingId || null,
+    p_stairwell_id: values.stairwellId || null,
+    p_unit_id: values.unitId || null,
+    p_location_detail: values.locationDetail || values.location || null,
     p_due_date: values.dueDate || null,
     p_planned_start_date: values.plannedStartDate || null,
     p_planned_end_date: values.plannedEndDate || null,

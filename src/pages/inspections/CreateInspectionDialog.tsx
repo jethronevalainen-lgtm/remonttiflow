@@ -184,7 +184,7 @@ export default function CreateInspectionDialog({
             {projectUnits.map((unit) => (
               <label key={unit.id} className="flex cursor-pointer items-center gap-3 p-3 hover:bg-slate-50">
                 <Checkbox checked={selectedUnitIds.includes(unit.id)} onCheckedChange={(value) => toggleUnit(unit.id, value === true)} />
-                <div className="min-w-0 flex-1"><p className="font-medium">{unit.unitCode}</p><p className="truncate text-xs text-text-secondary">{unit.unitType || 'Huoneistotyyppi puuttuu'} · {unit.status}</p></div>
+                <div className="min-w-0 flex-1 break-words"><p className="font-medium">{unit.unitCode}</p><p className="text-xs text-text-secondary">{unit.unitType || 'Huoneistotyyppi puuttuu'} · {unit.status}</p></div>
                 {unit.plannedCompletionDate && <span className="text-xs text-text-muted">Luovutus {unit.plannedCompletionDate}</span>}
               </label>
             ))}

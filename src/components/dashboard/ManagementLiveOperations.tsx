@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
+  ClipboardList,
   Clock3,
   FileText,
+  FolderKanban,
+  HardHat,
   Loader2,
   MapPin,
   RefreshCw,
@@ -17,7 +20,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
+import { useInspectionWorkspace } from '@/hooks/useInspectionData';
 import {
   loadManagementLiveOperations,
   subscribeManagementLiveOperations,
@@ -102,6 +108,9 @@ function locationStatus(checkIn: ActiveSiteCheckIn) {
 export default function ManagementLiveOperations() {
   const navigate = useNavigate();
   const { currentOrg } = useOrganization();
+  const { effectiveDisplayName } = useViewAs();
+  const { projects, workOrders, timeEntries, safetyItems } = useAppDataContext();
+  const { inspections, findings } = useInspectionWorkspace();
   const [snapshot, setSnapshot] = useState<ManagementLiveOperationsSnapshot>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -144,9 +153,41 @@ export default function ManagementLiveOperations() {
     () => snapshot.activeCheckIns.filter((item) => item.exceptionCodes.length > 0),
     [snapshot.activeCheckIns],
   );
+  const today = new Date().toISOString().slice(0, 10);
+  const pendingHours = timeEntries
+    .filter((entry) => entry.status === 'Odottaa')
+    .reduce((sum, entry) => sum + entry.hours + entry.overtime, 0);
+  const delayedWork = workOrders.filter((order) => (
+    !['Valmis', 'Peruttu'].includes(order.status)
+    && Boolean(order.dueDate && order.dueDate < today)
+  ));
+  const delayedProjects = projects.filter((project) => project.status === 'Myöhässä');
+  const openFindings = findings.filter((finding) => !['Hyväksytty', 'Mitätöity'].includes(finding.status));
+  const criticalFindings = openFindings.filter((finding) => (
+    finding.severity === 'Kriittinen' || Boolean(finding.dueDate && finding.dueDate < today)
+  ));
+  const openSafety = safetyItems.filter((item) => !['Valmis', 'Suljettu', 'Korjattu'].includes(item.status));
+  const openInspections = inspections.filter((inspection) => !['Hyväksytty', 'Mitätöity'].includes(inspection.status));
 
   return (
     <section className="mx-auto max-w-[1500px] space-y-4 sm:space-y-5">
+      <div className="rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-5 text-white shadow-xl sm:p-7">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300">
+              <HardHat size={16} /> Päivän tilannekuva
+            </div>
+            <h1 className="mt-2 break-words text-2xl font-bold tracking-tight sm:text-3xl">{currentOrg?.name}</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Hei {effectiveDisplayName}. Tässä ovat asiat, joihin työnjohdon pitää reagoida nyt.
+            </p>
+          </div>
+          <Badge className="w-fit border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100">
+            {new Date().toLocaleDateString('fi-FI', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </Badge>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-orange-700">
@@ -173,23 +214,23 @@ export default function ManagementLiveOperations() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {[
-          { label: 'Työmailla nyt', value: snapshot.metrics.activePeople, detail: `${snapshot.metrics.activeSites} työmaata`, icon: UsersRound, tone: 'bg-emerald-50 text-emerald-700' },
-          { label: 'Tunnit tänään', value: `${snapshot.metrics.todayHours.toFixed(1)} h`, detail: 'ei hylättyjä', icon: Clock3, tone: 'bg-blue-50 text-blue-700' },
-          { label: 'Odottaa hyväksyntää', value: `${snapshot.metrics.pendingHours.toFixed(1)} h`, detail: 'tuntikirjauksia', icon: Clock3, tone: 'bg-amber-50 text-amber-700' },
-          { label: 'Live-poikkeamat', value: snapshot.metrics.activeExceptions, detail: 'aktiivisissa kirjauksissa', icon: AlertTriangle, tone: 'bg-red-50 text-red-700' },
-          { label: 'Selostepuutteet', value: snapshot.metrics.descriptionExceptions, detail: '30 päivän aineistossa', icon: FileText, tone: 'bg-orange-50 text-orange-700' },
-          { label: 'Työmaat', value: snapshot.metrics.activeSites, detail: 'aktiivista kohdetta', icon: MapPin, tone: 'bg-purple-50 text-purple-700' },
+          { label: 'Työmailla nyt', value: snapshot.metrics.activePeople, detail: `${snapshot.metrics.activeSites} aktiivista kohdetta`, icon: UsersRound, tone: 'bg-emerald-50 text-emerald-700', path: '/tyonjohto' },
+          { label: 'Odottaa hyväksyntää', value: `${pendingHours.toFixed(1)} h`, detail: 'tuntikirjauksia', icon: Clock3, tone: 'bg-amber-50 text-amber-700', path: '/tuntikirjaukset' },
+          { label: 'Aikataulupoikkeamat', value: delayedWork.length + delayedProjects.length, detail: `${delayedWork.length} työtä · ${delayedProjects.length} projektia`, icon: FolderKanban, tone: 'bg-red-50 text-red-700', path: delayedWork.length ? '/tyomaaraykset' : '/projektit' },
+          { label: 'Laatu ja turvallisuus', value: criticalFindings.length + openSafety.length, detail: `${openInspections.length} avointa tarkastusta`, icon: ClipboardList, tone: 'bg-orange-50 text-orange-700', path: criticalFindings.length ? '/tarkastukset' : '/tyoturvallisuus' },
         ].map((item) => (
-          <Card key={item.label} className="min-w-0 border-slate-200 shadow-sm">
-            <CardContent className="p-3 sm:p-4">
+          <button key={item.label} type="button" onClick={() => navigate(item.path)} className="min-w-0 text-left">
+            <Card className="h-full min-w-0 border-slate-200 shadow-sm transition-shadow hover:shadow-md">
+              <CardContent className="p-3 sm:p-4">
               <div className={cn('mb-3 flex h-9 w-9 items-center justify-center rounded-xl', item.tone)}><item.icon size={18} /></div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 sm:text-xs">{item.label}</p>
               <p className="mt-1 break-words font-mono text-xl font-bold text-slate-950 sm:text-2xl">{item.value}</p>
               <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </button>
         ))}
       </div>
 
@@ -254,7 +295,7 @@ export default function ManagementLiveOperations() {
               {snapshot.siteCounts.map((site) => (
                 <button key={site.key} type="button" onClick={() => site.projectId ? navigate(`/projektit/${site.projectId}`) : undefined} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left hover:bg-slate-50">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 font-mono font-bold text-purple-700">{site.peopleCount}</div>
-                  <div className="min-w-0 flex-1"><p className="truncate font-medium text-slate-900">{site.projectName}</p><p className="text-xs text-slate-500">Ensimmäinen kirjautui {clockLabel(site.firstCheckedInAt)}</p></div>
+                  <div className="min-w-0 flex-1 break-words"><p className="font-medium text-slate-900">{site.projectName}</p><p className="text-xs text-slate-500">Ensimmäinen kirjautui {clockLabel(site.firstCheckedInAt)}</p></div>
                   {site.exceptionCount > 0 && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">{site.exceptionCount} huomiota</Badge>}
                 </button>
               ))}

@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays, parseISO } from 'date-fns';
+import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
 
 export interface TimeRange {
   startTime: string;
@@ -25,7 +25,7 @@ export function hasScheduleConflict<T extends TimeRange>(items: T[]): boolean {
 }
 
 export function shiftedDate(value: string, dayDelta: number): string {
-  return addDays(parseISO(value), dayDelta).toISOString().slice(0, 10);
+  return format(addDays(parseISO(value), dayDelta), 'yyyy-MM-dd');
 }
 
 export function shiftedWorkOrderStart(

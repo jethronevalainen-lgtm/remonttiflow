@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useInspectionDetail } from '@/hooks/useInspectionData';
 import {
@@ -21,6 +20,7 @@ import { cn } from '@/lib/utils';
 import type { Project } from '@/types';
 import InspectionActionsMenu from './InspectionActionsMenu';
 import { ApprovalDialog, FindingDialog, SignatureDialog, VoidDialog, type FindingDraft } from './InspectionDialogs';
+import GuidedInspectionRunner from './GuidedInspectionRunner';
 import InspectionSectionCard from './InspectionSectionCard';
 import {
   BLOCKING_SEVERITIES, findingStatusClasses, formatDate, formatDateTime,
@@ -112,7 +112,7 @@ function AttachmentPreview({ attachment, onOpen }: { attachment: InspectionAttac
         {previewState === 'ready' && previewUrl && <img src={previewUrl} alt={attachment.caption || attachment.fileName} className="h-full w-full object-cover transition group-hover:scale-[1.02]" onError={() => setPreviewState('error')} />}
         {previewState === 'error' && <div className="flex flex-col items-center gap-2 px-3 text-center text-xs text-slate-500"><ImageIcon size={28} className="text-slate-400" /><span>Avaa tiedosto napsauttamalla.</span></div>}
       </div>
-      <div className="p-3"><p className="text-xs font-semibold text-primary">{attachment.kind}</p><p className="mt-1 truncate text-sm font-medium">{attachment.fileName}</p><p className="mt-1 text-xs text-text-muted">{formatDateTime(attachment.createdAt)}</p></div>
+      <div className="p-3"><p className="text-xs font-semibold text-primary">{attachment.kind}</p><p className="mt-1 break-words text-sm font-medium">{attachment.fileName}</p><p className="mt-1 text-xs text-text-muted">{formatDateTime(attachment.createdAt)}</p></div>
     </button>
   );
 }
@@ -125,7 +125,6 @@ export default function InspectionDetailView({
 }: Props) {
   const { detail, loading, error, refresh } = useInspectionDetail(inspectionId);
   const [tab, setTab] = useState<DetailTab>('summary');
-  const [activeSectionId, setActiveSectionId] = useState('');
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, string>>({});
@@ -147,12 +146,6 @@ export default function InspectionDetailView({
     return Object.values(grouped).sort((a, b) => a[0].sectionOrder - b[0].sectionOrder);
   }, [detail]);
 
-  useEffect(() => {
-    if (!sections.length || activeSectionId) return;
-    const firstIncomplete = sections.find((results) => results.some((result) => result.status === 'Tarkastamatta'));
-    setActiveSectionId((firstIncomplete ?? sections[0])[0].sectionId);
-  }, [activeSectionId, sections]);
-
   const refreshAll = async () => { await Promise.all([refresh(), onWorkspaceRefresh()]); };
   const fail = (caught: unknown, fallback: string) => setOperationError(caught instanceof Error ? caught.message : fallback);
 
@@ -165,8 +158,8 @@ export default function InspectionDetailView({
     setSavingKey(result.id);
     setOperationError(null);
     try {
-      await saveInspectionResult({ inspectionId, itemId: result.itemId, status, comment: comments[result.id], measurementValue: result.measurementValue, measurementUnit: result.measurementUnit });
-      await refreshAll();
+      const savedOnline = await saveInspectionResult({ inspectionId, itemId: result.itemId, status, comment: comments[result.id], measurementValue: result.measurementValue, measurementUnit: result.measurementUnit });
+      if (savedOnline) await refreshAll();
     } catch (caught) {
       fail(caught, 'Tarkastuskohdan tallennus epäonnistui.');
     } finally {
@@ -178,8 +171,8 @@ export default function InspectionDetailView({
     setSavingKey(`comment-${result.id}`);
     setOperationError(null);
     try {
-      await saveInspectionResult({ inspectionId, itemId: result.itemId, status: result.status, comment: comments[result.id], measurementValue: result.measurementValue, measurementUnit: result.measurementUnit });
-      await refreshAll();
+      const savedOnline = await saveInspectionResult({ inspectionId, itemId: result.itemId, status: result.status, comment: comments[result.id], measurementValue: result.measurementValue, measurementUnit: result.measurementUnit });
+      if (savedOnline) await refreshAll();
     } catch (caught) {
       fail(caught, 'Kommentin tallennus epäonnistui.');
     } finally {
@@ -193,7 +186,7 @@ export default function InspectionDetailView({
     setSavingKey(`section-${results[0]?.sectionId ?? ''}`);
     setOperationError(null);
     try {
-      await Promise.all(uncheckedResults.map((result) => saveInspectionResult({
+      const outcomes = await Promise.all(uncheckedResults.map((result) => saveInspectionResult({
         inspectionId,
         itemId: result.itemId,
         status: 'Kunnossa',
@@ -201,7 +194,7 @@ export default function InspectionDetailView({
         measurementValue: result.measurementValue,
         measurementUnit: result.measurementUnit,
       })));
-      await refreshAll();
+      if (outcomes.every(Boolean)) await refreshAll();
     } catch (caught) {
       fail(caught, 'Osion tallennus epäonnistui.');
     } finally {
@@ -231,8 +224,8 @@ export default function InspectionDetailView({
     setSavingKey(`upload-${result.id}`);
     setOperationError(null);
     try {
-      await uploadInspectionAttachment({ organizationId, inspectionId, resultId: result.id, file, kind: result.status === 'Puute' ? 'Puutekuva' : 'Yleiskuva', userId });
-      await refreshAll();
+      const savedOnline = await uploadInspectionAttachment({ organizationId, inspectionId, resultId: result.id, file, kind: result.status === 'Puute' ? 'Puutekuva' : 'Yleiskuva', userId });
+      if (savedOnline) await refreshAll();
     } catch (caught) {
       fail(caught, 'Liitteen lähetys epäonnistui.');
     } finally {
@@ -247,8 +240,8 @@ export default function InspectionDetailView({
     setSavingKey(`inspection-upload-${kind}`);
     setOperationError(null);
     try {
-      await uploadInspectionAttachment({ organizationId, inspectionId, file, kind, userId });
-      await refreshAll();
+      const savedOnline = await uploadInspectionAttachment({ organizationId, inspectionId, file, kind, userId });
+      if (savedOnline) await refreshAll();
     } catch (caught) {
       fail(caught, 'Tarkastuksen liitteen lähetys epäonnistui.');
     } finally {
@@ -286,10 +279,6 @@ export default function InspectionDetailView({
   const approvalBlockers = [...preSignatureBlockers, !hasHandwrittenSignature ? 'Allekirjoita tarkastus.' : null].filter((item): item is string => Boolean(item));
   const signatureReady = canManage && !locked && preSignatureBlockers.length === 0;
   const canApprove = canManage && !locked && approvalBlockers.length === 0;
-  const sectionIsComplete = (results: InspectionResultDetail[]) => results.length > 0 && results.every((result) => result.status !== 'Tarkastamatta');
-  const activeSectionIndex = Math.max(0, sections.findIndex((results) => results[0].sectionId === activeSectionId));
-  const activeSection = sections[activeSectionIndex];
-
   const nextAction = !inspectionComplete
     ? { label: 'Jatka tarkastusta', detail: `${completedResults}/${detail.results.length} tarkastuskohtaa käsitelty`, tab: 'inspection' as DetailTab }
     : blockingFindings.length > 0
@@ -341,12 +330,12 @@ export default function InspectionDetailView({
       </Card>
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)}>
-        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 print:hidden">
-          <TabsTrigger value="summary" className="whitespace-nowrap">Yhteenveto</TabsTrigger>
-          <TabsTrigger value="inspection" className="whitespace-nowrap">Tarkastus <span className="ml-1 text-xs text-text-muted">{completedResults}/{detail.results.length}</span></TabsTrigger>
-          <TabsTrigger value="findings" className="whitespace-nowrap">Puutteet <span className="ml-1 text-xs text-text-muted">{openFindings.length}</span></TabsTrigger>
-          <TabsTrigger value="attachments" className="whitespace-nowrap">Kuvat ja liitteet</TabsTrigger>
-          <TabsTrigger value="approval" className="whitespace-nowrap">Hyväksyntä</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 print:hidden sm:grid-cols-5">
+          <TabsTrigger value="summary" className="whitespace-normal">Yhteenveto</TabsTrigger>
+          <TabsTrigger value="inspection" className="whitespace-normal">Tarkastus <span className="ml-1 text-xs text-text-muted">{completedResults}/{detail.results.length}</span></TabsTrigger>
+          <TabsTrigger value="findings" className="whitespace-normal">Puutteet <span className="ml-1 text-xs text-text-muted">{openFindings.length}</span></TabsTrigger>
+          <TabsTrigger value="attachments" className="whitespace-normal">Kuvat ja liitteet</TabsTrigger>
+          <TabsTrigger value="approval" className="whitespace-normal">Hyväksyntä</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary" className="mt-4 space-y-4">
@@ -386,25 +375,39 @@ export default function InspectionDetailView({
         </TabsContent>
 
         <TabsContent value="inspection" className="mt-4">
-          <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-            <Card className="h-fit print:hidden lg:sticky lg:top-20">
-              <CardHeader className="pb-3"><CardTitle className="text-base">Tarkastuksen osiot</CardTitle><p className="text-xs text-text-secondary">Valitse osio. Valmiit osiot näkyvät vihreällä.</p></CardHeader>
-              <CardContent className="space-y-2">
-                <div className="lg:hidden"><Select value={activeSectionId} onValueChange={setActiveSectionId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{sections.map((results) => <SelectItem key={results[0].sectionId} value={results[0].sectionId}>{results[0].sectionTitle}</SelectItem>)}</SelectContent></Select></div>
-                <div className="hidden space-y-2 lg:block">
-                  {sections.map((results) => {
-                    const complete = sectionIsComplete(results);
-                    const done = results.filter((result) => result.status !== 'Tarkastamatta').length;
-                    return <button key={results[0].sectionId} type="button" onClick={() => setActiveSectionId(results[0].sectionId)} className={cn('flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition', activeSectionId === results[0].sectionId ? 'border-primary bg-primary/5' : 'border-slate-200 hover:bg-slate-50')}><span className={cn('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold', complete ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700')}>{complete ? <CheckCircle2 size={15} /> : done}</span><span className="min-w-0"><span className="block text-sm font-semibold leading-snug">{results[0].sectionTitle}</span><span className="mt-1 block text-xs text-text-secondary">{done}/{results.length} käsitelty</span></span></button>;
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-3">
-              {activeSection && <InspectionSectionCard results={activeSection} attachments={detail.attachments} canManage={canManage} locked={locked} savingKey={savingKey} comments={comments} onCommentChange={(id, value) => setComments((previous) => ({ ...previous, [id]: value }))} onStatus={saveStatus} onSaveComment={saveComment} onMarkSection={markSectionOkay} onUpload={uploadResult} onOpenAttachment={openAttachment} />}
-              {activeSection && activeSectionIndex < sections.length - 1 && <div className="flex justify-end print:hidden"><Button variant="outline" disabled={!sectionIsComplete(activeSection)} onClick={() => setActiveSectionId(sections[activeSectionIndex + 1][0].sectionId)}>Seuraava osio<ChevronRight size={16} className="ml-2" /></Button></div>}
-            </div>
+          <div className="print:hidden">
+            <GuidedInspectionRunner
+              results={detail.results}
+              attachments={detail.attachments}
+              canManage={canManage}
+              locked={locked}
+              savingKey={savingKey}
+              comments={comments}
+              onCommentChange={(id, value) => setComments((previous) => ({ ...previous, [id]: value }))}
+              onStatus={saveStatus}
+              onSaveComment={saveComment}
+              onUpload={uploadResult}
+              onOpenAttachment={openAttachment}
+            />
+          </div>
+          <div className="hidden space-y-3 print:block">
+            {sections.map((results) => (
+              <InspectionSectionCard
+                key={results[0].sectionId}
+                results={results}
+                attachments={detail.attachments}
+                canManage={false}
+                locked
+                savingKey={null}
+                comments={comments}
+                onCommentChange={() => undefined}
+                onStatus={saveStatus}
+                onSaveComment={saveComment}
+                onMarkSection={markSectionOkay}
+                onUpload={uploadResult}
+                onOpenAttachment={openAttachment}
+              />
+            ))}
           </div>
         </TabsContent>
 

@@ -168,7 +168,7 @@ export default function HenkilokortitPreview() {
                     className={`flex w-full items-center gap-3 border-b border-slate-100 p-4 text-left ${selectedCard.employeeId === card.employeeId ? 'bg-orange-50' : 'hover:bg-slate-50'}`}
                   >
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-sm font-bold text-white">{initials(card.employeeName)}</div>
-                    <div className="min-w-0"><p className="truncate font-semibold">{card.employeeName}</p><p className="truncate text-sm text-slate-500">{card.employeeRole} · {card.department}</p></div>
+                    <div className="min-w-0 break-words"><p className="font-semibold">{card.employeeName}</p><p className="text-sm text-slate-500">{card.employeeRole} · {card.department}</p></div>
                   </button>
                 ))}
               </CardContent>
@@ -181,8 +181,8 @@ export default function HenkilokortitPreview() {
                 <div className="flex min-w-0 items-center gap-4">
                   <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl bg-orange-500 text-xl font-bold text-white">{initials(selectedCard.employeeName)}</div>
                   <div className="min-w-0">
-                    <h2 className="truncate text-2xl font-bold text-slate-950">{selectedCard.employeeName}</h2>
-                    <p className="mt-1 truncate text-sm text-slate-500">{selectedCard.employeeRole} · {selectedCard.department}</p>
+                    <h2 className="break-words text-2xl font-bold text-slate-950">{selectedCard.employeeName}</h2>
+                    <p className="mt-1 break-words text-sm text-slate-500">{selectedCard.employeeRole} · {selectedCard.department}</p>
                     <div className="mt-2 flex flex-wrap gap-2"><Badge variant="outline">{selectedCard.employeeStatus}</Badge><Badge variant="outline">{selectedCard.employmentType || 'Työsuhdemuoto puuttuu'}</Badge></div>
                   </div>
                 </div>

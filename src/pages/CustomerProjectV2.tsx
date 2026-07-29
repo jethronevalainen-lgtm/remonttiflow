@@ -106,7 +106,7 @@ function CustomerDocumentCard({ document, onError }: { document: CustomerProject
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-3"><div><Badge variant="outline">{document.documentType}</Badge><h3 className="mt-3 font-semibold text-slate-950">{document.title}</h3></div><span className="text-xs text-slate-400">{fileSize(document.sizeBytes)}</span></div>
         {document.description && <p className="mt-2 text-sm leading-6 text-slate-700">{document.description}</p>}
-        <p className="mt-2 truncate text-xs text-slate-500">{document.fileName}</p>
+        <p className="mt-2 break-words text-xs text-slate-500">{document.fileName}</p>
         <Button className="mt-4 w-full" variant="outline" disabled={!url} onClick={() => url && window.open(url, '_blank', 'noopener,noreferrer')}><ExternalLink size={15} className="mr-2" /> Avaa tiedosto</Button>
       </CardContent>
     </Card>
@@ -260,7 +260,7 @@ export default function CustomerProjectV2() {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1"><TabsTrigger value="overview">Tilannekuva</TabsTrigger><TabsTrigger value="documents">Dokumentit ja kuvat ({documents.length})</TabsTrigger><TabsTrigger value="changes">Lisä- ja muutostyöt ({changeOrders.length})</TabsTrigger><TabsTrigger value="requests">Työpyynnöt ({requests.length})</TabsTrigger><TabsTrigger value="aftercare">Reklamaatiot ja takuu</TabsTrigger></TabsList>
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 sm:grid-cols-5"><TabsTrigger value="overview">Tilannekuva</TabsTrigger><TabsTrigger value="documents">Dokumentit ja kuvat ({documents.length})</TabsTrigger><TabsTrigger value="changes">Lisä- ja muutostyöt ({changeOrders.length})</TabsTrigger><TabsTrigger value="requests">Työpyynnöt ({requests.length})</TabsTrigger><TabsTrigger value="aftercare">Reklamaatiot ja takuu</TabsTrigger></TabsList>
         <TabsContent value="overview">
           <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
             <Card><CardHeader><CardTitle>Projektin perustiedot</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">{[['Tilaaja', context?.customerName || '—'], ['Sijainti', context?.location || '—'], ['Aloitus', dateLabel(context?.startDate)], ['Valmistuminen', dateLabel(context?.endDate)], ['Työnjohto', project?.supervisorName || 'Ei määritetty'], ['Projektin tila', context?.status || '—']].map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-1 break-words font-semibold text-slate-900">{value}</p></div>)}</CardContent></Card>

@@ -123,7 +123,7 @@ export default function LandingPage() {
             </span>
             <span>
               <span className="block text-base font-bold leading-none tracking-tight">{BRAND.name}</span>
-              <span className="mt-1 hidden text-xs text-slate-400 sm:block">{BRAND.tagline}</span>
+              <span className="mt-1 block text-[11px] leading-tight text-slate-400 sm:text-xs">{BRAND.tagline}</span>
             </span>
           </Link>
 
@@ -230,7 +230,7 @@ export default function LandingPage() {
                           ['B03 · itselleluovutus', 'Odottaa'],
                         ].map(([task, status]) => (
                           <div key={task} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-xs">
-                            <span className="min-w-0 truncate font-medium text-slate-700">{task}</span>
+                            <span className="min-w-0 break-words font-medium text-slate-700">{task}</span>
                             <span className="flex-none font-semibold text-slate-500">{status}</span>
                           </div>
                         ))}

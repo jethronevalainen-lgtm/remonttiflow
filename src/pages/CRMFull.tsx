@@ -905,8 +905,8 @@ export default function CRM() {
       </Card>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <div className="overflow-x-auto pb-1">
-          <TabsList className="min-w-max">
+        <div className="pb-1">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6">
             <TabsTrigger value="overview">Tilannekuva</TabsTrigger>
             <TabsTrigger value="pipeline">Myyntiputki</TabsTrigger>
             <TabsTrigger value="tasks">Tehtävät ({openActivities.length})</TabsTrigger>
@@ -934,8 +934,8 @@ export default function CRM() {
                     <button key={`lead-${lead.id}`} type="button" onClick={() => openLeadEdit(lead)} className="flex w-full items-center gap-3 px-5 py-4 text-left transition hover:bg-muted/40">
                       <div className="rounded-lg bg-red-50 p-2 text-red-600"><Target size={17} /></div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{lead.nextAction}</p>
-                        <p className="truncate text-xs text-text-secondary">{lead.name} · {lead.company || 'Ei asiakasta'}</p>
+                        <p className="break-words font-medium">{lead.nextAction}</p>
+                        <p className="break-words text-xs text-text-secondary">{lead.name} · {lead.company || 'Ei asiakasta'}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-xs font-semibold text-red-700">{dateTime(lead.nextActionDueAt)}</p>
@@ -951,8 +951,8 @@ export default function CRM() {
                       <div key={`activity-${activity.id}`} className="flex items-center gap-3 px-5 py-4">
                         <div className="rounded-lg bg-orange-50 p-2 text-orange-600"><Clock3 size={17} /></div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium">{activity.subject}</p>
-                          <p className="truncate text-xs text-text-secondary">{lead?.name || customer?.name || activity.activityType}</p>
+                          <p className="break-words font-medium">{activity.subject}</p>
+                          <p className="break-words text-xs text-text-secondary">{lead?.name || customer?.name || activity.activityType}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs font-semibold text-red-700">{dateTime(activity.dueAt)}</p>
@@ -987,8 +987,8 @@ export default function CRM() {
                     {missingNextAction.slice(0, 5).map((lead) => (
                       <button key={lead.id} type="button" onClick={() => openLeadEdit(lead)} className="flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left hover:bg-muted/40">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{lead.name}</p>
-                          <p className="truncate text-xs text-text-secondary">{lead.company || 'Ei asiakasta'} · {lead.assignee || 'Ei vastuuhenkilöä'}</p>
+                          <p className="break-words text-sm font-medium">{lead.name}</p>
+                          <p className="break-words text-xs text-text-secondary">{lead.company || 'Ei asiakasta'} · {lead.assignee || 'Ei vastuuhenkilöä'}</p>
                         </div>
                         <ArrowRight size={16} className="shrink-0 text-primary" />
                       </button>
@@ -1011,7 +1011,7 @@ export default function CRM() {
                     {decisionsSoon.slice(0, 5).map((lead) => (
                       <button key={lead.id} type="button" onClick={() => openLeadEdit(lead)} className="flex w-full items-center justify-between gap-4 text-left">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{lead.name}</p>
+                          <p className="break-words text-sm font-medium">{lead.name}</p>
                           <p className="text-xs text-text-secondary">{dateOnly(lead.expectedDecisionDate)} · {lead.probability ?? DEFAULT_PROBABILITY[lead.stage]} %</p>
                         </div>
                         <span className="font-mono text-sm font-bold">{currency(lead.value)}</span>
@@ -1032,12 +1032,12 @@ export default function CRM() {
         </TabsContent>
 
         <TabsContent value="pipeline">
-          <div className="flex min-w-max gap-4 overflow-x-auto pb-4">
+          <div className="grid gap-4 pb-4 md:grid-cols-2 xl:grid-cols-4">
             {PIPELINE_STAGES.map((stage) => {
               const stageLeads = leadsByStage[stage];
               const stageValue = stageLeads.reduce((sum, lead) => sum + lead.value, 0);
               return (
-                <section key={stage} className="w-[290px] shrink-0 space-y-3">
+                <section key={stage} className="min-w-0 space-y-3">
                   <div className="rounded-xl border bg-card p-3">
                     <div className="flex items-center justify-between gap-2">
                       <Badge variant="outline" className={stageClass(stage)}>{stage}</Badge>
@@ -1061,12 +1061,12 @@ export default function CRM() {
                             <button type="button" className="block w-full text-left" onClick={() => openLeadEdit(lead)}>
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className="truncate font-semibold">{lead.name}</p>
-                                  <p className="truncate text-sm text-text-secondary">{customer?.name || lead.company || 'Ei asiakasta'}</p>
+                                  <p className="break-words font-semibold">{lead.name}</p>
+                                  <p className="break-words text-sm text-text-secondary">{customer?.name || lead.company || 'Ei asiakasta'}</p>
                                 </div>
                                 {stage === 'Jäissä' && <Snowflake size={16} className="shrink-0 text-slate-500" />}
                               </div>
-                              {site && <p className="mt-2 flex items-center gap-1 truncate text-xs text-text-secondary"><MapPin size={13} />{site.name}</p>}
+                              {site && <p className="mt-2 flex items-start gap-1 break-words text-xs text-text-secondary"><MapPin size={13} className="mt-0.5 shrink-0" />{site.name}</p>}
                               <div className="mt-3 flex items-center justify-between">
                                 <span className="font-mono font-bold">{currency(lead.value)}</span>
                                 <Badge variant="secondary">{probability} %</Badge>
@@ -1180,7 +1180,7 @@ export default function CRM() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <Building2 size={18} className="shrink-0 text-primary" />
-                            <h3 className="truncate font-semibold text-text-primary">{row.customer.name}</h3>
+                            <h3 className="break-words font-semibold text-text-primary">{row.customer.name}</h3>
                           </div>
                           <p className="mt-1 text-xs text-text-secondary">{row.customer.type}{row.customer.businessId ? ` · ${row.customer.businessId}` : ''}</p>
                         </div>
@@ -1195,7 +1195,7 @@ export default function CRM() {
 
                       <div className="mt-4 space-y-2 text-sm">
                         <div className="flex items-center justify-between gap-3"><span className="text-text-secondary">Avoin tarjouskanta</span><span className="font-mono font-bold">{currency(row.activeValue)}</span></div>
-                        <div className="flex items-center justify-between gap-3"><span className="text-text-secondary">Yhteyshenkilö</span><span className="truncate">{primary?.name || row.customer.contactPerson || 'Ei määritetty'}</span></div>
+                        <div className="flex items-start justify-between gap-3"><span className="text-text-secondary">Yhteyshenkilö</span><span className="break-words text-right">{primary?.name || row.customer.contactPerson || 'Ei määritetty'}</span></div>
                         <div className="flex items-center justify-between gap-3"><span className="text-text-secondary">Avoimet tehtävät</span><span className={overdue ? 'font-semibold text-red-700' : ''}>{row.activities.length}{overdue ? ` · ${overdue} myöhässä` : ''}</span></div>
                       </div>
 
@@ -1398,8 +1398,8 @@ export default function CRM() {
                 <CardContent className="p-5">
                   <div className="mb-4 flex items-center justify-between"><h3 className="font-semibold">Projektit ja myynti</h3><Briefcase size={18} className="text-primary" /></div>
                   <div className="space-y-3">
-                    {selectedCustomerData.leads.map((lead) => <button key={lead.id} type="button" onClick={() => openLeadEdit(lead)} className="flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left hover:bg-muted/40"><div className="min-w-0"><p className="truncate font-medium">{lead.name}</p><Badge variant="outline" className={`mt-1 ${stageClass(lead.stage)}`}>{lead.stage}</Badge></div><span className="font-mono font-bold">{currency(lead.value)}</span></button>)}
-                    {selectedCustomerData.projects.map((project) => <div key={project.id} className="flex items-center justify-between gap-3 rounded-xl border p-3"><div className="min-w-0"><p className="truncate font-medium">{project.name}</p><p className="text-xs text-text-secondary">{project.status} · {project.progress} %</p></div><span className="font-mono text-sm font-bold">{currency(project.budget)}</span></div>)}
+                    {selectedCustomerData.leads.map((lead) => <button key={lead.id} type="button" onClick={() => openLeadEdit(lead)} className="flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left hover:bg-muted/40"><div className="min-w-0 break-words"><p className="font-medium">{lead.name}</p><Badge variant="outline" className={`mt-1 ${stageClass(lead.stage)}`}>{lead.stage}</Badge></div><span className="font-mono font-bold">{currency(lead.value)}</span></button>)}
+                    {selectedCustomerData.projects.map((project) => <div key={project.id} className="flex items-center justify-between gap-3 rounded-xl border p-3"><div className="min-w-0 break-words"><p className="font-medium">{project.name}</p><p className="text-xs text-text-secondary">{project.status} · {project.progress} %</p></div><span className="font-mono text-sm font-bold">{currency(project.budget)}</span></div>)}
                     {!selectedCustomerData.leads.length && !selectedCustomerData.projects.length && <p className="text-sm text-text-muted">Ei myyntimahdollisuuksia tai projekteja.</p>}
                   </div>
                 </CardContent>

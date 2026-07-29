@@ -193,7 +193,7 @@ export default function CustomerCollaborationManager() {
       </div>
 
       <Tabs defaultValue="documents" className="space-y-4">
-        <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 sm:grid-cols-4">
           <TabsTrigger value="documents">Dokumentit ja kuvat ({documents.length})</TabsTrigger>
           <TabsTrigger value="changes">Lisä- ja muutostyöt ({changeOrders.length})</TabsTrigger>
         </TabsList>
@@ -216,8 +216,8 @@ export default function CustomerCollaborationManager() {
                       <Badge variant="outline" className={document.visibleToCustomer ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ''}>{document.visibleToCustomer ? 'Näkyy tilaajalle' : 'Sisäinen'}</Badge>
                     </div>
                     <h3 className="mt-4 font-semibold text-slate-950">{document.title}</h3>
-                    <p className="mt-1 truncate text-sm text-slate-500">{document.fileName}</p>
-                    {document.description && <p className="mt-2 line-clamp-2 text-sm text-slate-700">{document.description}</p>}
+                    <p className="mt-1 break-words text-sm text-slate-500">{document.fileName}</p>
+                    {document.description && <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-700">{document.description}</p>}
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <Button variant="outline" size="sm" onClick={() => void openDocument(document)}><ExternalLink size={14} className="mr-1" /> Avaa</Button>
                       <Button size="sm" variant={document.visibleToCustomer ? 'outline' : 'default'} disabled={savingId === document.id} onClick={() => void toggleDocument(document)}>

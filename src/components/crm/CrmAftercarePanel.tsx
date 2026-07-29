@@ -472,12 +472,12 @@ export function CrmAftercarePanel() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{item.title}</h3><Badge variant="outline" className={statusClass(item.status)}>{item.status}</Badge>{overdue && <Badge className="border-0 bg-red-600 text-white">Myöhässä</Badge>}</div>
-                    <p className="mt-1 line-clamp-2 text-sm text-text-secondary">{item.description}</p>
-                    {item.resolution && <p className="mt-2 line-clamp-1 text-xs text-emerald-700"><span className="font-semibold">Ratkaisu:</span> {item.resolution}</p>}
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm text-text-secondary">{item.description}</p>
+                    {item.resolution && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-emerald-700"><span className="font-semibold">Ratkaisu:</span> {item.resolution}</p>}
                   </div>
                   <div className="space-y-1 text-sm">
                     <p className="flex items-center gap-1.5"><Building2 size={14} className="text-text-muted" />{customer?.name || 'Asiakas puuttuu'}</p>
-                    <p className="truncate text-xs text-text-secondary">{project?.name || 'Ei projektia'}{site ? ` · ${site.name}` : ''}</p>
+                    <p className="break-words text-xs text-text-secondary">{project?.name || 'Ei projektia'}{site ? ` · ${site.name}` : ''}</p>
                     <p className="flex items-center gap-1.5 text-xs text-text-secondary"><UserRound size={13} />{assignee?.name || 'Ei vastuuhenkilöä'}</p>
                   </div>
                   <div className="text-sm">
@@ -509,7 +509,7 @@ export function CrmAftercarePanel() {
             <div className="space-y-3">
               {pendingChangeOrders.slice(0, 8).map((item) => {
                 const project = projects.find((entry) => entry.id === item.projectId);
-                return <div key={item.id} className="flex items-center justify-between gap-4 rounded-xl border p-3"><div className="min-w-0"><p className="truncate font-medium">{item.title}</p><p className="truncate text-xs text-text-secondary">{project?.name || 'Projekti'} · {item.status}</p></div><span className="font-mono font-bold">{euroFromCents(item.amountCents)}</span></div>;
+                return <div key={item.id} className="flex items-center justify-between gap-4 rounded-xl border p-3"><div className="min-w-0 break-words"><p className="font-medium">{item.title}</p><p className="text-xs text-text-secondary">{project?.name || 'Projekti'} · {item.status}</p></div><span className="font-mono font-bold">{euroFromCents(item.amountCents)}</span></div>;
               })}
               {!pendingChangeOrders.length && <p className="text-sm text-text-muted">Ei asiakkaan päätöstä odottavia lisätöitä.</p>}
             </div>

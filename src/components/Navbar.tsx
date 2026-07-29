@@ -83,41 +83,43 @@ const customerGroups: NavGroup[] = [{
 
 const managementGroups: NavGroup[] = [
   {
-    key: 'overview', title: 'Tilannekuva', items: [
-      { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-      { label: 'Työnjohto', icon: HardHat, path: '/tyonjohto' },
-      { label: 'Raportit', icon: BarChart3, path: '/raportit' },
+    key: 'today', title: 'Tänään', items: [
+      { label: 'Päivän tilannekuva', icon: LayoutDashboard, path: '/dashboard' },
     ],
   },
   {
-    key: 'work-control', title: 'Työn ohjaus', items: [
+    key: 'projects', title: 'Projektit', items: [
+      { label: 'Projektit', icon: FolderKanban, path: '/projektit' },
+      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
+      { label: 'Projektipyynnöt', icon: FileQuestion, path: '/projektipyynnot' },
+    ],
+  },
+  {
+    key: 'work-control', title: 'Työt ja aikataulu', items: [
       { label: 'Työmääräykset', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Aikataulutus', icon: CalendarClock, path: '/aikataulutus' },
-      { label: 'Työvuorot', icon: CalendarClock, path: '/tyovuorokalenteri' },
-      { label: 'Tarkastukset ja luovutukset', icon: ClipboardList, path: '/tarkastukset' },
+      { label: 'Resurssikalenteri', icon: CalendarClock, path: '/tyovuorokalenteri' },
       { label: 'Päiväkirjat', icon: FileText, path: '/paivakirjat' },
-      { label: 'Työturvallisuus', icon: ShieldCheck, path: '/tyoturvallisuus' },
       { label: 'Tilaukset', icon: ShoppingCart, path: '/tilaukset' },
       { label: 'Jätehuolto', icon: Recycle, path: '/jatehuolto' },
     ],
   },
   {
-    key: 'projects', title: 'Projektit ja yhteistyö', items: [
-      { label: 'Projektit ja tiimit', icon: FolderKanban, path: '/projektit' },
-      { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
-      { label: 'Projektipyynnöt', icon: FileQuestion, path: '/projektipyynnot' },
-      { label: 'QR-kirjautumisen hallinta', icon: QrCode, path: '/qr-hallinta' },
+    key: 'quality', title: 'Laatu ja turvallisuus', items: [
+      { label: 'Tarkastukset ja luovutukset', icon: ClipboardList, path: '/tarkastukset' },
+      { label: 'Työturvallisuus', icon: ShieldCheck, path: '/tyoturvallisuus' },
+      { label: 'Kuittaukset', icon: ClipboardSignature, path: '/kuittaukset' },
+      { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
     ],
   },
   {
-    key: 'people', title: 'Henkilöt ja kirjaukset', items: [
+    key: 'people', title: 'Henkilöstö ja työaika', items: [
       { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto' },
       { label: 'Henkilökortit ja palkat', icon: ShieldCheck, path: '/henkilokortit' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
       { label: 'Kaikki kirjaukset', icon: ClipboardList, path: '/kirjaukset' },
       { label: 'Palkka-aineisto', icon: BadgeEuro, path: '/palkka-aineisto' },
       { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
-      { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
     ],
   },
   {
@@ -129,10 +131,16 @@ const managementGroups: NavGroup[] = [
     ],
   },
   {
-    key: 'tools', title: 'Työkalut', items: [
-      { label: 'Kuittaukset', icon: ClipboardSignature, path: '/kuittaukset' },
-      { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
+    key: 'reports', title: 'Raportit', items: [
+      { label: 'Raporttikeskus', icon: BarChart3, path: '/raportit' },
+      { label: 'Työnjohdon koonti', icon: HardHat, path: '/tyonjohto' },
+    ],
+  },
+  {
+    key: 'tools', title: 'Hallinta ja työkalut', items: [
+      { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
       { label: 'Kalusto', icon: Wrench, path: '/kalusto' },
+      { label: 'QR-kirjautumisen hallinta', icon: QrCode, path: '/qr-hallinta' },
       { label: 'AI-työkalut', icon: Sparkles, path: '/ai' },
     ],
   },
@@ -153,11 +161,13 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
   const { user } = useAuth();
   const { effectiveRole, effectiveDisplayName, isImpersonating } = useViewAs();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    overview: true,
-    'work-control': true,
+    today: true,
+    'work-control': false,
     projects: false,
+    quality: false,
     people: false,
     commercial: false,
+    reports: false,
     tools: false,
     'own-work': true,
     'site-tools': true,
@@ -172,20 +182,19 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
     ? workerGroups
     : role === 'customer'
       ? customerGroups
-      : [
-          ...managementGroups,
-          ...(role === 'admin'
-            ? [{
-                key: 'admin',
-                title: 'Admin',
+      : managementGroups.map((group) => (
+          role === 'admin' && group.key === 'tools'
+            ? {
+                ...group,
                 items: [
+                  ...group.items,
                   { label: 'Organisaation hallinta', icon: Settings, path: '/hallinta' },
                   { label: 'Varmuuskopiot', icon: DatabaseBackup, path: '/varmuuskopiot' },
                   { label: 'Toimi käyttäjänä', icon: Eye, path: '/kayttajaesikatselu' },
                 ],
-              }]
-            : []),
-        ];
+              }
+            : group
+        ));
   const groups = baseGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => allowedRoutes.has(item.path)) }))
     .filter((group) => group.items.length > 0);
@@ -211,7 +220,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
         <item.icon size={19} className="flex-shrink-0" />
         {!collapsed && <span className="min-w-0 break-words text-left leading-5">{item.label}</span>}
         {collapsed && (
-          <span className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+          <span className="pointer-events-none absolute left-full z-50 ml-2 max-w-64 whitespace-normal rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
             {item.label}
           </span>
         )}

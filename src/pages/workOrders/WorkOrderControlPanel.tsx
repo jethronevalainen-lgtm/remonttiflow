@@ -355,7 +355,7 @@ function MultiSelectFilter({
               />
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-slate-800">{option.label}</span>
-                {option.description && <span className="block truncate text-xs text-slate-500">{option.description}</span>}
+                {option.description && <span className="block break-words text-xs text-slate-500">{option.description}</span>}
               </span>
             </label>
           ))}
@@ -533,6 +533,48 @@ export default function WorkOrderControlPanel({
   const totalPages = Math.max(1, Math.ceil(sortedOrders.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageOrders = sortedOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const todayKey = new Date().toLocaleDateString('sv-SE');
+  const mobileGroups = [
+    {
+      key: 'active',
+      label: 'Työssä nyt',
+      orders: pageOrders.filter((order) => order.activeSessionCount > 0),
+    },
+    {
+      key: 'today',
+      label: 'Tänään',
+      orders: pageOrders.filter((order) => (
+        order.activeSessionCount === 0
+        && !['Valmis', 'Peruttu'].includes(order.status)
+        && !order.attentionFlags.includes('overdue')
+        && [order.plannedStartDate, order.plannedEndDate, order.dueDate].includes(todayKey)
+      )),
+    },
+    {
+      key: 'overdue',
+      label: 'Myöhässä',
+      orders: pageOrders.filter((order) => (
+        order.activeSessionCount === 0
+        && !['Valmis', 'Peruttu'].includes(order.status)
+        && order.attentionFlags.includes('overdue')
+      )),
+    },
+    {
+      key: 'next',
+      label: 'Seuraavaksi',
+      orders: pageOrders.filter((order) => (
+        order.activeSessionCount === 0
+        && !['Valmis', 'Peruttu'].includes(order.status)
+        && !order.attentionFlags.includes('overdue')
+        && ![order.plannedStartDate, order.plannedEndDate, order.dueDate].includes(todayKey)
+      )),
+    },
+    {
+      key: 'done',
+      label: 'Valmiit',
+      orders: pageOrders.filter((order) => ['Valmis', 'Peruttu'].includes(order.status)),
+    },
+  ].filter((group) => group.orders.length > 0);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -815,7 +857,15 @@ export default function WorkOrderControlPanel({
           { key: 'unassigned', label: 'Ilman tekijää', value: counts.unassigned, icon: UserRound, tone: 'bg-slate-50 text-slate-700', action: () => setFilters({ ...defaultFilters(projectFilterId), attentionFlags: ['missing_assignee'] }) },
           { key: 'billing', label: 'Laskutusvalmiit', value: counts.readyToBill, icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-700', action: () => setFilters({ ...defaultFilters(projectFilterId), attentionFlags: ['ready_to_bill'] }) },
         ].map((item) => (
-          <button key={item.key} type="button" onClick={() => { item.action(); setPage(1); }} className="text-left">
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => { item.action(); setPage(1); }}
+            className={cn(
+              'text-left',
+              !['active', 'review', 'overdue', 'unassigned'].includes(item.key) && 'hidden lg:block',
+            )}
+          >
             <Card className="h-full border-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
               <CardContent className="flex items-center justify-between gap-2 p-4">
                 <div><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{item.label}</p><p className="mt-1 font-mono text-2xl font-bold text-slate-950">{item.value}</p></div>
@@ -829,7 +879,7 @@ export default function WorkOrderControlPanel({
       <Card className="overflow-visible border-slate-200 shadow-sm">
         <CardContent className="space-y-4 p-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="hidden min-w-0 flex-wrap items-center gap-2 lg:flex">
               <Button
                 variant={activeSavedViewId === null ? 'default' : 'outline'}
                 size="sm"
@@ -855,7 +905,7 @@ export default function WorkOrderControlPanel({
               ))}
               <Button variant="ghost" size="sm" className="gap-2" onClick={() => setSaveViewOpen(true)}><Save size={15} /> Tallenna näkymä</Button>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden flex-wrap items-center gap-2 lg:flex">
               <Button variant="outline" size="sm" onClick={exportCsv} className="gap-2"><Download size={15} /> Vie CSV</Button>
             </div>
           </div>
@@ -871,9 +921,11 @@ export default function WorkOrderControlPanel({
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              <MultiSelectFilter label="Asiakas" options={customerOptions} selected={filters.customerNames} onToggle={(value) => setFilters((current) => ({ ...current, customerNames: toggleValue(current.customerNames, value) }))} searchable />
-              <MultiSelectFilter label="Projekti" options={projectOptions} selected={filters.projectIds} onToggle={(value) => setFilters((current) => ({ ...current, projectIds: toggleValue(current.projectIds, value) }))} searchable />
-              <MultiSelectFilter label="Tekijät" options={personOptions} selected={filters.assigneeIds} onToggle={(value) => setFilters((current) => ({ ...current, assigneeIds: toggleValue(current.assigneeIds, value) }))} searchable />
+              <div className="hidden flex-wrap gap-2 lg:flex">
+                <MultiSelectFilter label="Asiakas" options={customerOptions} selected={filters.customerNames} onToggle={(value) => setFilters((current) => ({ ...current, customerNames: toggleValue(current.customerNames, value) }))} searchable />
+                <MultiSelectFilter label="Projekti" options={projectOptions} selected={filters.projectIds} onToggle={(value) => setFilters((current) => ({ ...current, projectIds: toggleValue(current.projectIds, value) }))} searchable />
+                <MultiSelectFilter label="Tekijät" options={personOptions} selected={filters.assigneeIds} onToggle={(value) => setFilters((current) => ({ ...current, assigneeIds: toggleValue(current.assigneeIds, value) }))} searchable />
+              </div>
               <MultiSelectFilter
                 label="Tila"
                 options={['Avoin', 'Käynnissä', 'Odottaa', REVIEW_STATUS, 'Valmis', 'Peruttu'].map((value) => ({ label: value, value }))}
@@ -954,7 +1006,79 @@ export default function WorkOrderControlPanel({
 
         {!loading && !controlQuery.isLoading && pageOrders.length > 0 && (
           <>
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 lg:hidden">
+              {mobileGroups.map((group) => (
+                <section key={group.key} className="bg-slate-50">
+                  <h3 className="border-y border-slate-200 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
+                    {group.label} · {group.orders.length}
+                  </h3>
+                  <div className="divide-y divide-slate-100 bg-white">
+                    {group.orders.map((order) => (
+                      <article
+                        key={order.id}
+                        className={cn(
+                          'p-4',
+                          order.activeSessionCount > 0 && 'border-l-4 border-l-orange-500',
+                          selectedIds.includes(order.id) && 'bg-blue-50',
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            checked={selectedIds.includes(order.id)}
+                            onCheckedChange={() => setSelectedIds((current) => toggleValue(current, order.id))}
+                            className="mt-1"
+                            aria-label={`Valitse ${order.title}`}
+                          />
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => openDetail(order)}
+                              className="block break-words text-left text-base font-semibold leading-snug text-slate-950"
+                            >
+                              {order.title}
+                            </button>
+                            <p className="flex items-start gap-1 break-words text-sm text-slate-600">
+                              <MapPin size={14} className="mt-0.5 shrink-0" />
+                              <span>{order.location || order.projectLocation || order.project}</span>
+                            </p>
+                            <p className="break-words text-sm text-slate-600">{assignmentLabel(order)}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              <Badge variant="outline" className={statusClass(displayStatus(order))}>
+                                {displayStatus(order)}
+                              </Badge>
+                              {order.attentionFlags.slice(0, 2).map((flag) => (
+                                <Badge
+                                  key={flag}
+                                  variant="outline"
+                                  className="border-amber-200 bg-amber-50 text-amber-800"
+                                >
+                                  {ATTENTION_LABELS[flag]}
+                                </Badge>
+                              ))}
+                            </div>
+                            <p className="text-sm font-medium text-slate-700">
+                              {order.plannedStartDate
+                                ? `${formatDate(order.plannedStartDate)}–${formatDate(order.plannedEndDate)}`
+                                : `Määräpäivä ${formatDate(order.dueDate, 'puuttuu')}`}
+                            </p>
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <Button variant="outline" size="sm" onClick={() => openDetail(order)}>
+                                <Eye size={14} className="mr-1" /> Avaa
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => onEdit(order)}>
+                                <Pencil size={14} className="mr-1" /> Muokkaa
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+
+            <div className="hidden divide-y divide-slate-100 lg:block">
               <div className={cn('hidden items-center gap-3 bg-slate-100 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 lg:grid', WORK_ORDER_GRID_COLUMNS)}>
                 <Checkbox
                   checked={pageAllSelected ? true : pageSomeSelected ? 'indeterminate' : false}
@@ -1239,7 +1363,7 @@ export default function WorkOrderControlPanel({
       <Sheet open={Boolean(detailOrder)} onOpenChange={(open) => !open && setDetailOrderId(null)}>
         <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-3xl">
           {detailOrder && <div className="min-h-full bg-slate-50"><SheetHeader className="border-b bg-white p-6 pr-12"><div className="flex flex-wrap gap-2"><Badge variant="outline" className={statusClass(displayStatus(detailOrder))}>{displayStatus(detailOrder)}</Badge><Badge variant="outline" className={priorityClass(detailOrder.priority)}>{detailOrder.priority}</Badge><Badge variant="outline" className={billingClass(detailOrder.billingStatus)}>{BILLING_LABELS[detailOrder.billingStatus]}</Badge>{detailOrder.activeSessionCount > 0 && <Badge className="bg-orange-600">Työssä nyt</Badge>}</div><SheetTitle className="mt-3 text-2xl">{detailOrder.title}</SheetTitle><SheetDescription>{detailOrder.workNumber} · {detailOrder.customerName} · {detailOrder.project}</SheetDescription></SheetHeader>
-            <div className="sticky top-0 z-10 flex overflow-x-auto border-b bg-white px-4">{([['summary', 'Yhteenveto', BriefcaseBusiness], ['time', 'Työaika', Clock3], ['billing', 'Laskutus', Receipt], ['history', 'Historia', History]] as const).map(([tab, label, Icon]) => <button key={tab} type="button" onClick={() => setDetailTab(tab)} className={cn('flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium', detailTab === tab ? 'border-orange-500 text-orange-700' : 'border-transparent text-slate-500')}><Icon size={15} /> {label}</button>)}</div>
+            <div className="sticky top-0 z-10 grid grid-cols-2 border-b bg-white px-4 sm:grid-cols-4">{([['summary', 'Yhteenveto', BriefcaseBusiness], ['time', 'Työaika', Clock3], ['billing', 'Laskutus', Receipt], ['history', 'Historia', History]] as const).map(([tab, label, Icon]) => <button key={tab} type="button" onClick={() => setDetailTab(tab)} className={cn('flex min-h-11 items-center justify-center gap-2 border-b-2 px-4 py-3 text-sm font-medium', detailTab === tab ? 'border-orange-500 text-orange-700' : 'border-transparent text-slate-500')}><Icon size={15} /> {label}</button>)}</div>
             <div className="space-y-5 p-5">
               {detailTab === 'summary' && <><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-2"><div className="flex items-start gap-3"><Building2 size={18} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Asiakas</p><p className="font-medium text-slate-800">{detailOrder.customerName}</p></div></div><div className="flex items-start gap-3"><BriefcaseBusiness size={18} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Projekti</p><p className="font-medium text-slate-800">{detailOrder.project}</p></div></div><div className="flex items-start gap-3"><MapPin size={18} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Kohde</p><p className="font-medium text-slate-800">{detailOrder.location || detailOrder.projectLocation || 'Ei määritetty'}</p></div></div><div className="flex items-start gap-3"><CalendarDays size={18} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Aikataulu</p><p className="font-medium text-slate-800">{detailOrder.plannedStartDate ? `${formatDate(detailOrder.plannedStartDate)}–${formatDate(detailOrder.plannedEndDate)}` : 'Ei työjaksoa'}</p><p className="text-xs text-slate-500">Määräpäivä {formatDate(detailOrder.dueDate, 'puuttuu')}</p></div></div><div className="flex items-start gap-3 sm:col-span-2"><UsersRound size={18} className="mt-0.5 text-slate-400" /><div><p className="text-xs uppercase tracking-wide text-slate-400">Vastuuhenkilöt</p><p className="font-medium text-slate-800">{assignmentLabel(detailOrder)}</p></div></div>{detailOrder.description && <div className="sm:col-span-2"><p className="text-xs uppercase tracking-wide text-slate-400">Työkuvaus</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{detailOrder.description}</p></div>}</CardContent></Card>
                 {detailOrder.attentionFlags.length > 0 && <Card className="border-amber-200 bg-amber-50"><CardContent className="p-4"><p className="flex items-center gap-2 font-semibold text-amber-950"><AlertTriangle size={17} /> Vaatii huomiota</p><div className="mt-3 flex flex-wrap gap-2">{detailOrder.attentionFlags.map((flag) => <Badge key={flag} variant="outline" className="border-amber-300 bg-white text-amber-900">{ATTENTION_LABELS[flag]}</Badge>)}</div></CardContent></Card>}
@@ -1252,7 +1376,7 @@ export default function WorkOrderControlPanel({
 
               {detailTab === 'billing' && <div className="space-y-4"><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-3"><div><p className="text-xs uppercase tracking-wide text-slate-400">Tila</p><Badge variant="outline" className={cn('mt-2', billingClass(detailOrder.billingStatus))}>{BILLING_LABELS[detailOrder.billingStatus]}</Badge></div><div><p className="text-xs uppercase tracking-wide text-slate-400">Laskutusrivejä</p><p className="mt-1 text-2xl font-bold">{detailOrder.billingItemCount}</p></div><div><p className="text-xs uppercase tracking-wide text-slate-400">Veroton arvo</p><p className="mt-1 text-2xl font-bold">{formatMoney(detailOrder.billingTotalCents)}</p></div>{detailOrder.invoiceReference && <div className="sm:col-span-3"><p className="text-xs uppercase tracking-wide text-slate-400">Laskuviite</p><p className="mt-1 font-mono text-sm">{detailOrder.invoiceReference}</p></div>}</CardContent></Card><Card><CardContent className="p-0"><div className="border-b p-5"><p className="font-semibold">Laskutusrivit</p></div>{insightsQuery.isLoading ? <div className="p-8 text-center text-slate-500">Ladataan…</div> : (insightsQuery.data?.billingLines ?? []).length === 0 ? <div className="p-8 text-center text-sm text-slate-500">Työmääräykselle ei ole muodostettu laskutusrivejä.</div> : <div className="divide-y">{insightsQuery.data?.billingLines.map((line) => <div key={line.id} className="grid gap-2 p-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="font-medium text-slate-900">{line.description}</p><p className="mt-1 text-xs text-slate-500">{line.quantity.toLocaleString('fi-FI')} {line.unit} · {formatDateTime(line.createdAt)}</p></div><div className="text-right"><p className="font-semibold">{formatMoney(line.totalExVatCents)}</p><Badge variant="outline" className={cn('mt-1', billingClass(line.status))}>{BILLING_LABELS[line.status]}</Badge></div></div>)}</div>}</CardContent></Card></div>}
 
-              {detailTab === 'history' && <Card><CardContent className="p-0"><div className="border-b p-5"><p className="font-semibold">Muutoshistoria</p><p className="mt-1 text-sm text-slate-500">Työmääräyksen luonti, muokkaukset ja massatoiminnot.</p></div>{insightsQuery.isLoading ? <div className="p-8 text-center text-slate-500">Ladataan…</div> : (insightsQuery.data?.auditEvents ?? []).length === 0 ? <div className="p-8 text-center text-sm text-slate-500">Muutoshistoriaa ei löytynyt.</div> : <div className="divide-y">{insightsQuery.data?.auditEvents.map((event) => <div key={event.id} className="flex gap-3 p-5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600"><History size={15} /></div><div className="min-w-0"><p className="font-medium text-slate-900">{event.action === 'work_order_created' ? 'Työmääräys luotiin' : event.action === 'work_order_updated' ? 'Työmääräystä muokattiin' : event.action === 'work_order_bulk_updated' ? 'Työmääräys päivitettiin ohjauspaneelista' : event.action}</p><p className="mt-1 text-xs text-slate-500">{people.find((person) => person.userId === event.userId)?.name ?? 'Järjestelmä'} · {formatDateTime(event.createdAt)}</p><pre className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-[11px] text-slate-600">{JSON.stringify(event.metadata, null, 2)}</pre></div></div>)}</div>}</CardContent></Card>}
+              {detailTab === 'history' && <Card><CardContent className="p-0"><div className="border-b p-5"><p className="font-semibold">Muutoshistoria</p><p className="mt-1 text-sm text-slate-500">Työmääräyksen luonti, muokkaukset ja massatoiminnot.</p></div>{insightsQuery.isLoading ? <div className="p-8 text-center text-slate-500">Ladataan…</div> : (insightsQuery.data?.auditEvents ?? []).length === 0 ? <div className="p-8 text-center text-sm text-slate-500">Muutoshistoriaa ei löytynyt.</div> : <div className="divide-y">{insightsQuery.data?.auditEvents.map((event) => <div key={event.id} className="flex gap-3 p-5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600"><History size={15} /></div><div className="min-w-0"><p className="font-medium text-slate-900">{event.action === 'work_order_created' ? 'Työmääräys luotiin' : event.action === 'work_order_updated' ? 'Työmääräystä muokattiin' : event.action === 'work_order_bulk_updated' ? 'Työmääräys päivitettiin ohjauspaneelista' : event.action}</p><p className="mt-1 text-xs text-slate-500">{people.find((person) => person.userId === event.userId)?.name ?? 'Järjestelmä'} · {formatDateTime(event.createdAt)}</p><pre className="mt-2 max-w-full whitespace-pre-wrap break-all rounded-lg bg-slate-50 p-3 text-[11px] text-slate-600">{JSON.stringify(event.metadata, null, 2)}</pre></div></div>)}</div>}</CardContent></Card>}
             </div>
           </div>}
         </SheetContent>

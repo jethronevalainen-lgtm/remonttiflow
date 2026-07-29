@@ -823,7 +823,7 @@ export default function Tyovuorokalenteri() {
       </Card>
 
       <div className="space-y-3 lg:hidden">
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex flex-wrap gap-2 pb-1">
           {visibleDays.map((day, index) => (
             <button
               key={day.toISOString()}

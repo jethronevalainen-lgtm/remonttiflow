@@ -198,7 +198,7 @@ export default function TemplateEditorDialog({ open, organizationId, template, o
                       {sections.map((section, index) => (
                         <div key={section.id} className="flex items-center gap-1">
                           <button type="button" onClick={() => setActiveSectionId(section.id)} className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-left ${section.id === activeSection?.id ? 'border-primary bg-primary/5' : 'border-slate-200 hover:bg-slate-50'}`}>
-                            <p className="truncate text-sm font-semibold">{section.title || `Nimetön osio ${index + 1}`}</p>
+                            <p className="break-words text-sm font-semibold">{section.title || `Nimetön osio ${index + 1}`}</p>
                             <p className="mt-0.5 text-xs text-text-muted">{section.items.length} kysymystä</p>
                           </button>
                           <div className="flex flex-col">

@@ -183,7 +183,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="hidden font-medium text-gray-400 sm:inline">{BRAND.name}</span>
           <span className="hidden text-gray-300 sm:inline">/</span>
-          <span className="max-w-[36vw] truncate font-semibold text-gray-900 sm:max-w-[220px] md:max-w-none">{label}</span>
+          <span className="max-w-[36vw] break-words font-semibold text-gray-900 sm:max-w-[220px] md:max-w-none">{label}</span>
         </div>
       </div>
 
@@ -250,7 +250,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
               aria-label={`Vaihda organisaatiota. Nykyinen ${currentOrg?.name ?? 'Organisaatio'}`}
             >
               <Building2 size={16} className="text-gray-400" />
-              <span className="hidden max-w-[160px] truncate text-sm font-medium text-gray-700 sm:inline">
+              <span className="hidden max-w-[160px] break-words text-sm font-medium text-gray-700 sm:inline">
                 {currentOrg?.name ?? 'Organisaatio'}
               </span>
               <ChevronDown size={14} className="hidden text-gray-400 sm:block" />
@@ -258,7 +258,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           ) : (
             <div className="hidden items-center gap-2 px-2 py-1.5 sm:flex sm:px-3">
               <Building2 size={14} className="text-gray-400" />
-              <span className="hidden max-w-[160px] truncate text-sm font-medium text-gray-700 sm:inline">
+              <span className="hidden max-w-[160px] break-words text-sm font-medium text-gray-700 sm:inline">
                 {currentOrg?.name ?? 'Organisaatio'}
               </span>
             </div>
@@ -292,7 +292,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
                       className="flex min-h-11 w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
                     >
                       <Building2 size={14} className="flex-shrink-0 text-gray-400" />
-                      <p className="truncate text-sm font-medium text-gray-800">
+                      <p className="break-words text-sm font-medium text-gray-800">
                         {organization.name}
                       </p>
                       {currentOrg?.id === organization.id && (
@@ -425,7 +425,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 shadow-md">
             <span className="text-sm font-bold text-white">{initialsOf(displayName)}</span>
           </div>
-          <span className="hidden max-w-[160px] truncate text-sm font-medium text-gray-700 lg:inline">
+          <span className="hidden max-w-[160px] break-words text-sm font-medium text-gray-700 lg:inline">
             {displayName}
           </span>
         </div>
