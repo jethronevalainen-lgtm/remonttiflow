@@ -4,16 +4,19 @@ import {
   BellRing,
   CheckCircle2,
   ExternalLink,
+  FolderKanban,
   Info,
   Megaphone,
   Pin,
   ShieldAlert,
+  Wrench,
   X,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { useVisibleAnnouncements } from '@/hooks/useAnnouncements';
 import type {
   AnnouncementPlacement,
@@ -52,8 +55,16 @@ interface AnnouncementCardProps {
 
 export function AnnouncementCard({ announcement, compact = false, onRecord }: AnnouncementCardProps) {
   const navigate = useNavigate();
+  const { effectiveRole } = useViewAs();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const relatedPath = announcement.linkPath
+    ?? (announcement.relatedWorkOrderId ? '/tyomaaraykset' : undefined)
+    ?? (announcement.relatedProjectId
+      ? effectiveRole === 'customer'
+        ? `/tilaajan-projektit/${announcement.relatedProjectId}`
+        : `/projektit/${announcement.relatedProjectId}`
+      : undefined);
 
   const run = async (event: 'opened' | 'acknowledged' | 'dismissed') => {
     setSaving(true);
@@ -69,7 +80,7 @@ export function AnnouncementCard({ announcement, compact = false, onRecord }: An
 
   const openLink = async () => {
     await run('opened');
-    if (announcement.linkPath) navigate(announcement.linkPath);
+    if (relatedPath) navigate(relatedPath);
   };
 
   return (
@@ -99,6 +110,11 @@ export function AnnouncementCard({ announcement, compact = false, onRecord }: An
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-2">
+          {announcement.relatedProjectId && <Badge variant="outline" className="gap-1"><FolderKanban size={11} /> Projektiin liittyvä tiedote</Badge>}
+          {announcement.relatedWorkOrderId && <Badge variant="outline" className="gap-1"><Wrench size={11} /> Työmääräykseen liittyvä tiedote</Badge>}
+        </div>
+
         <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{announcement.content}</p>
 
         {announcement.requireAcknowledgement && !announcement.acknowledgedAt && (
@@ -121,14 +137,14 @@ export function AnnouncementCard({ announcement, compact = false, onRecord }: An
               <CheckCircle2 size={15} /> {saving ? 'Tallennetaan…' : 'Olen lukenut ja ymmärtänyt'}
             </Button>
           )}
-          {announcement.linkPath && (
+          {relatedPath && (
             <Button variant="outline" onClick={() => void openLink()} disabled={saving} className="gap-2">
               <ExternalLink size={15} /> Avaa liittyvä kohde
             </Button>
           )}
           {announcement.dismissible && (!announcement.requireAcknowledgement || Boolean(announcement.acknowledgedAt)) && (
             <Button variant="ghost" onClick={() => void run('dismissed')} disabled={saving} className="gap-2 text-slate-600">
-              <X size={15} /> Piilota
+              <X size={15} /> Piilota tästä näkymästä
             </Button>
           )}
         </div>
