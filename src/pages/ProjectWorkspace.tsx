@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -45,6 +46,7 @@ import {
   inferProjectDocumentType,
   PROJECT_DOCUMENT_TYPES,
 } from '@/lib/projectDocumentMeta';
+import { supabase } from '@/lib/supabase/client';
 import {
   archiveProjectDocument,
   createChangeOrder,
@@ -76,6 +78,48 @@ const WORKSPACE_TABS = new Set([
   'finance',
   'more',
 ]);
+
+interface ProjectSalesOrderSummary {
+  id: string;
+  orderNumber: string;
+  status: string;
+  contractValueCents: number;
+  costBudgetCents: number;
+  targetMarginCents: number;
+  targetMarginPercent: number;
+  lockedAt: string;
+}
+
+function numberValue(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+async function loadProjectSalesOrder(projectId: string): Promise<ProjectSalesOrderSummary | null> {
+  const { data, error } = await supabase
+    .from('sales_orders')
+    .select('id, order_number, status, contract_value_cents, cost_budget_cents, target_margin_cents, target_margin_percent, locked_at')
+    .eq('project_id', projectId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Projektin tilauksen haku epäonnistui: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: String(data.id),
+    orderNumber: String(data.order_number ?? ''),
+    status: String(data.status ?? 'Vahvistettu'),
+    contractValueCents: numberValue(data.contract_value_cents),
+    costBudgetCents: numberValue(data.cost_budget_cents),
+    targetMarginCents: numberValue(data.target_margin_cents),
+    targetMarginPercent: numberValue(data.target_margin_percent),
+    lockedAt: String(data.locked_at ?? ''),
+  };
+}
 
 function euro(value: number) {
   return new Intl.NumberFormat('fi-FI', {
@@ -146,6 +190,13 @@ export default function ProjectWorkspace() {
   const [changeRequestedAt, setChangeRequestedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const salesOrderQuery = useQuery({
+    queryKey: ['project-sales-order', projectId ?? 'none'],
+    queryFn: () => loadProjectSalesOrder(projectId as string),
+    enabled: Boolean(projectId && canManage),
+    staleTime: 30_000,
+    retry: 1,
+  });
 
   const projectOrders = useMemo(
     () => roleWorkspace.workOrders.filter((item) => item.projectId === projectId || item.project === project?.name),
@@ -314,7 +365,19 @@ export default function ProjectWorkspace() {
   }
 
   const summary = workspace.summary;
-  const marginCents = (summary?.changeOrderAmountCents ?? 0) - (summary?.changeOrderCostCents ?? 0);
+  const approvedChangeAmountCents = summary?.changeOrderAmountCents ?? 0;
+  const approvedChangeCostCents = summary?.changeOrderCostCents ?? 0;
+  const salesOrder = salesOrderQuery.data ?? null;
+  const originalContractValueCents = salesOrder?.contractValueCents ?? Math.round((project?.budget ?? 0) * 100);
+  const currentContractValueCents = originalContractValueCents + approvedChangeAmountCents;
+  const originalCostBudgetCents = salesOrder?.costBudgetCents ?? 0;
+  const currentCostBudgetCents = originalCostBudgetCents + approvedChangeCostCents;
+  const originalTargetMarginCents = salesOrder?.targetMarginCents
+    ?? (salesOrder ? originalContractValueCents - originalCostBudgetCents : 0);
+  const currentTargetMarginCents = currentContractValueCents - currentCostBudgetCents;
+  const actualCostCents = Math.round((project?.spent ?? 0) * 100);
+  const marginCents = approvedChangeAmountCents - approvedChangeCostCents;
+  const financialQueryError = salesOrderQuery.error instanceof Error ? salesOrderQuery.error.message : null;
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-5 sm:space-y-6">
@@ -343,9 +406,9 @@ export default function ProjectWorkspace() {
         </div>
       </div>
 
-      {(workspace.error || operationError) && (
+      {(workspace.error || operationError || financialQueryError) && (
         <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          <AlertTriangle size={17} className="mt-0.5 shrink-0" />{operationError ?? workspace.error}
+          <AlertTriangle size={17} className="mt-0.5 shrink-0" />{operationError ?? workspace.error ?? financialQueryError}
         </div>
       )}
       {workspace.loading && <div className="flex items-center gap-2 rounded-xl border bg-white p-4 text-sm text-text-secondary"><Loader2 size={17} className="animate-spin" />Ladataan projektin tilannekuvaa…</div>}
@@ -355,7 +418,7 @@ export default function ProjectWorkspace() {
           { label: 'Avoimet työmääräykset', value: summary?.openWorkOrders ?? projectOrders.filter((item) => !['Valmis', 'Peruttu'].includes(item.status)).length, detail: `${projectOrders.length} yhteensä`, icon: Wrench, tone: 'bg-orange-50 text-orange-700' },
           { label: 'Hyväksytyt tunnit', value: `${(summary?.approvedHours ?? projectHours.filter((item) => item.status === 'Hyväksytty').reduce((sum, item) => sum + item.hours + item.overtime, 0)).toFixed(1)} h`, detail: `${(summary?.pendingHours ?? projectHours.filter((item) => item.status === 'Odottaa').reduce((sum, item) => sum + item.hours + item.overtime, 0)).toFixed(1)} h odottaa`, icon: Clock3, tone: 'bg-blue-50 text-blue-700' },
           { label: 'Laatu ja turvallisuus', value: (summary?.openFindings ?? 0) + (summary?.openSafetyItems ?? projectSafety.filter((item) => !['Korjattu', 'Suljettu'].includes(item.status)).length), detail: `${summary?.openFindings ?? 0} tarkastuspuutetta`, icon: ShieldCheck, tone: 'bg-red-50 text-red-700' },
-          { label: 'Muutostöiden kate', value: euro(marginCents / 100), detail: `${workspace.changeOrders.length} muutostyötä`, icon: Euro, tone: 'bg-emerald-50 text-emerald-700' },
+          { label: 'Nykyinen tilausarvo', value: euro(currentContractValueCents / 100), detail: approvedChangeAmountCents > 0 ? `${euro(approvedChangeAmountCents / 100)} hyväksyttyjä muutostöitä` : 'Ei hyväksyttyjä muutostöitä', icon: Euro, tone: 'bg-emerald-50 text-emerald-700' },
         ].map((item) => (
           <Card key={item.label} className="border-slate-200 shadow-sm">
             <CardContent className="p-4 sm:p-5">
@@ -398,8 +461,8 @@ export default function ProjectWorkspace() {
                   ['Sijainti', project?.location || '—'],
                   ['Aloitus', project?.startDate || '—'],
                   ['Valmistuminen', project?.endDate || '—'],
-                  ['Budjetti', euro(project?.budget ?? 0)],
-                  ['Toteutunut', euro(project?.spent ?? 0)],
+                  ['Nykyinen tilausarvo', euro(currentContractValueCents / 100)],
+                  ['Toteutuneet kustannukset', euro(actualCostCents / 100)],
                 ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 p-4"><p className="text-xs uppercase tracking-wider text-slate-500">{label}</p><p className="mt-1 font-semibold text-slate-900">{value}</p></div>)}
               </CardContent>
             </Card>
@@ -503,10 +566,35 @@ export default function ProjectWorkspace() {
         </TabsContent>
 
         <TabsContent value="finance" className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Budjetti</p><p className="mt-2 break-words text-2xl font-bold">{euro(project?.budget ?? 0)}</p></CardContent></Card>
-            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Toteutunut</p><p className="mt-2 break-words text-2xl font-bold">{euro(project?.spent ?? 0)}</p></CardContent></Card>
-            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Muutostöiden kate</p><p className="mt-2 break-words text-2xl font-bold">{euro(marginCents / 100)}</p></CardContent></Card>
+          {salesOrderQuery.isLoading && <div className="flex items-center gap-2 rounded-xl border bg-white p-4 text-sm text-text-secondary"><Loader2 size={17} className="animate-spin" />Haetaan projektin vahvistettua tilausta…</div>}
+          {!salesOrderQuery.isLoading && !salesOrder && canManage && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+              <p className="break-words">Projektilla ei ole vahvistettuun tarjoukseen perustuvaa tilausta. Myyntiarvo näytetään vanhasta projektibudjetista, mutta kustannusbudjettia ja tavoitekatetta ei voida todentaa.</p>
+            </div>
+          )}
+          {salesOrder && (
+            <Card className="border-emerald-200 bg-emerald-50/60">
+              <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Vahvistettu tilaus</p>
+                  <p className="mt-1 break-words text-lg font-bold text-emerald-950">{salesOrder.orderNumber}</p>
+                  <p className="mt-1 break-words text-sm text-emerald-800">Taloudellinen lähtötaso lukittu {dateTime(salesOrder.lockedAt)}. Muutokset tehdään lisä- ja muutostöinä.</p>
+                </div>
+                <Badge className="w-fit border-emerald-300 bg-white text-emerald-800">{salesOrder.status}</Badge>
+              </CardContent>
+            </Card>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Alkuperäinen sopimusarvo</p><p className="mt-2 break-words text-2xl font-bold">{euro(originalContractValueCents / 100)}</p></CardContent></Card>
+            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Hyväksytyt muutostyöt</p><p className="mt-2 break-words text-2xl font-bold">{euro(approvedChangeAmountCents / 100)}</p></CardContent></Card>
+            <Card className="border-emerald-200"><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-emerald-700">Nykyinen tilausarvo</p><p className="mt-2 break-words text-2xl font-bold text-emerald-950">{euro(currentContractValueCents / 100)}</p></CardContent></Card>
+            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Alkuperäinen kustannusbudjetti</p><p className="mt-2 break-words text-2xl font-bold">{salesOrder ? euro(originalCostBudgetCents / 100) : 'Ei asetettu'}</p></CardContent></Card>
+            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Muutostöiden kustannus</p><p className="mt-2 break-words text-2xl font-bold">{euro(approvedChangeCostCents / 100)}</p></CardContent></Card>
+            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Nykyinen kustannusbudjetti</p><p className="mt-2 break-words text-2xl font-bold">{salesOrder ? euro(currentCostBudgetCents / 100) : 'Ei asetettu'}</p></CardContent></Card>
+            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Alkuperäinen tavoitekate</p><p className="mt-2 break-words text-2xl font-bold">{salesOrder ? euro(originalTargetMarginCents / 100) : 'Ei asetettu'}</p>{salesOrder && <p className="mt-1 text-xs text-text-secondary">{salesOrder.targetMarginPercent.toLocaleString('fi-FI', { maximumFractionDigits: 1 })} % sopimusarvosta</p>}</CardContent></Card>
+            <Card className="border-emerald-200"><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-emerald-700">Nykyinen tavoitekate</p><p className="mt-2 break-words text-2xl font-bold text-emerald-950">{salesOrder ? euro(currentTargetMarginCents / 100) : 'Ei asetettu'}</p><p className="mt-1 text-xs text-text-secondary">Muutostöiden kate {euro(marginCents / 100)}</p></CardContent></Card>
+            <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Toteutuneet kustannukset</p><p className="mt-2 break-words text-2xl font-bold">{euro(actualCostCents / 100)}</p></CardContent></Card>
           </div>
           {canManage && <div className="flex justify-end"><Button onClick={openChange}><Plus size={16} className="mr-2" /> Uusi muutostyö</Button></div>}
           <Card><CardContent className="p-0"><div className="hidden grid-cols-[120px_1.3fr_140px_140px_170px] gap-3 border-b bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 lg:grid"><span>Tunnus</span><span>Muutostyö</span><span>Myynti</span><span>Kustannus</span><span>Tila</span></div>{workspace.changeOrders.map((change) => <div key={change.id} className="grid gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-[120px_1.3fr_140px_140px_170px] lg:items-center"><span className="font-mono text-sm">{change.changeNumber || '—'}</span><div><p className="font-semibold">{change.title}</p><p className="break-words text-xs text-text-secondary">{change.description || 'Ei lisätietoja'}</p></div><span className="font-mono text-sm">{euro(change.amountCents / 100)}</span><span className="font-mono text-sm">{euro(change.costCents / 100)}</span><div>{canManage ? <Select value={change.status} onValueChange={(value: ChangeOrderStatus) => void changeState(change.id, value)} disabled={saving}><SelectTrigger className={cn('min-h-11', statusClass(change.status))}><SelectValue /></SelectTrigger><SelectContent>{CHANGE_ORDER_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select> : <Badge variant="outline" className={statusClass(change.status)}>{change.status}</Badge>}</div></div>)}{!workspace.loading && workspace.changeOrders.length === 0 && <div className="p-12 text-center"><BriefcaseBusiness size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei muutostöitä</p></div>}</CardContent></Card>
