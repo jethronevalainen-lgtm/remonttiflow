@@ -24,10 +24,6 @@ function numberValue(row: Row, key: string): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function booleanValue(row: Row, key: string): boolean {
-  return row[key] === true;
-}
-
 export interface CustomerProjectDocument {
   id: string;
   projectId: string;
