@@ -130,19 +130,10 @@ function statusIndicator(status: ProjectStatus) {
 
 function statusSummary(status: ProjectStatus, startDate: string, endDate: string) {
   if (status === 'Valmis') return null;
-  if (status === 'Myöhässä') {
-    return endDate
-      ? `Tavoite ${formatDate(endDate)} ylitetty`
-      : 'Tavoiteaika ylitetty';
+  if (status === 'Suunniteltu') {
+    return startDate ? `Alkaa ${formatDate(startDate)}` : null;
   }
-  if (status === 'Aktiivinen') {
-    return endDate
-      ? `Tavoite ${formatDate(endDate)}`
-      : 'Tavoitepäivä puuttuu';
-  }
-  return startDate
-    ? `Alkaa ${formatDate(startDate)}`
-    : 'Aloituspäivä puuttuu';
+  return endDate ? `Tavoite ${formatDate(endDate)}` : null;
 }
 
 export default function Projektit() {
@@ -185,13 +176,9 @@ export default function Projektit() {
   const formStatusSummary = statusSummary(formStatus, form.startDate, form.endDate);
   const saveProjectLabel = savingProject
     ? 'Tallennetaan…'
-    : !editingProject
-      ? 'Luo projekti'
-      : editingProject.status !== 'Valmis' && form.status === 'Valmis'
-        ? 'Tallenna ja merkitse valmiiksi'
-        : editingProject.status === 'Valmis' && form.status !== 'Valmis'
-          ? 'Tallenna ja avaa uudelleen'
-          : 'Tallenna muutokset';
+    : editingProject
+      ? 'Tallenna'
+      : 'Luo projekti';
 
   const runningProjects = projects.filter((project) => isRunningProjectStatus(project.status));
   const lateProjects = projects.filter((project) => project.status === 'Myöhässä');
@@ -456,7 +443,25 @@ export default function Projektit() {
 
       <Dialog open={dialogOpen} onOpenChange={(open) => !savingProject && setDialogOpen(open)}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader><DialogTitle>{editingProject ? 'Muokkaa projektia' : 'Uusi projekti'}</DialogTitle></DialogHeader>
+          <DialogHeader className="space-y-0 gap-2 pr-8 text-left">
+            <DialogTitle>{editingProject ? 'Muokkaa projektia' : 'Uusi projekti'}</DialogTitle>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div role="status" aria-live="polite" aria-atomic="true" className="flex min-w-0 flex-wrap items-center gap-2.5">
+                {statusIndicator(formStatus)}
+                {formStatusSummary && (
+                  <>
+                    <span aria-hidden="true" className="h-4 w-px bg-slate-300" />
+                    <span className="text-sm text-slate-600">{formStatusSummary}</span>
+                  </>
+                )}
+              </div>
+              {editingProject && (
+                formStatus === 'Valmis'
+                  ? <Button type="button" variant="outline" size="sm" onClick={reopenProject} className="w-fit shrink-0 gap-2 bg-white"><RotateCcw size={15} /> Avaa uudelleen</Button>
+                  : <Button type="button" variant="outline" size="sm" onClick={markCompleted} className="w-fit shrink-0 gap-2 border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"><CheckCircle2 size={15} /> Merkitse valmiiksi</Button>
+              )}
+            </div>
+          </DialogHeader>
           {errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
           {domainOperationError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{domainOperationError}</div>}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -465,27 +470,6 @@ export default function Projektit() {
             <div className="space-y-2"><Label htmlFor="project-location">Sijainti</Label><Input id="project-location" value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="project-start">Aloitus</Label><Input id="project-start" type="date" value={form.startDate} onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="project-end">Tavoitevalmistuminen</Label><Input id="project-end" type="date" min={form.startDate || undefined} value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div>
-
-            <div className="space-y-2 sm:col-span-2">
-              <p className="text-sm font-medium leading-none text-slate-900">Tila</p>
-              <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5 sm:min-h-12 sm:flex-row sm:items-center sm:justify-between">
-                <div role="status" aria-live="polite" aria-atomic="true" className="flex min-w-0 flex-wrap items-center gap-2.5">
-                  {statusIndicator(formStatus)}
-                  {formStatusSummary && (
-                    <>
-                      <span aria-hidden="true" className="hidden h-4 w-px bg-slate-300 sm:block" />
-                      <span className="text-sm text-slate-600">{formStatusSummary}</span>
-                    </>
-                  )}
-                </div>
-                {editingProject && (
-                  formStatus === 'Valmis'
-                    ? <Button type="button" variant="outline" size="sm" onClick={reopenProject} className="w-full shrink-0 gap-2 bg-white sm:w-auto"><RotateCcw size={15} /> Avaa uudelleen</Button>
-                    : <Button type="button" variant="outline" size="sm" onClick={markCompleted} className="w-full shrink-0 gap-2 border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 sm:w-auto"><CheckCircle2 size={15} /> Merkitse valmiiksi</Button>
-                )}
-              </div>
-            </div>
-
             {editingProject && <div className="space-y-2"><Label htmlFor="project-progress">Edistyminen %</Label><Input id="project-progress" type="number" min="0" max="100" value={form.progress} onChange={(event) => setForm((previous) => ({ ...previous, progress: event.target.value }))} /></div>}
             <div className={`space-y-2 ${editingProject ? '' : 'sm:col-span-2'}`}><Label htmlFor="project-budget">Budjetti €</Label><Input id="project-budget" type="number" min="0" step="0.01" value={form.budget} onChange={(event) => setForm((previous) => ({ ...previous, budget: event.target.value }))} /></div>
             {editingProject && <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-spent">Toteutunut €</Label><Input id="project-spent" type="number" min="0" step="0.01" value={form.spent} onChange={(event) => setForm((previous) => ({ ...previous, spent: event.target.value }))} /></div>}
