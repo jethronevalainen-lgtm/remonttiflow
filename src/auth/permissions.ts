@@ -110,7 +110,7 @@ export const ROLE_ROUTES: Record<UserRole, string[]> = {
   ],
   customer: [
     '/tilaajan-tyot', '/tilaajan-projektit', '/projektikeskustelut',
-    '/tyoturvallisuus',
+    '/tyoturvallisuus', '/viestinta',
   ],
 };
 

@@ -20,6 +20,7 @@ import {
   Gauge,
   HardHat,
   LayoutDashboard,
+  Megaphone,
   MessageCircle,
   MessageSquare,
   QrCode,
@@ -75,6 +76,7 @@ const customerGroups: NavGroup[] = [{
   key: 'customer-portal', title: 'Tilaajan työtila', items: [
     { label: 'Projektini', icon: FolderKanban, path: '/tilaajan-tyot' },
     { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
+    { label: 'Tiedotteet', icon: Megaphone, path: '/viestinta' },
     { label: 'Turvallisuushavainto', icon: ShieldCheck, path: '/tyoturvallisuus' },
   ],
 }];
@@ -202,12 +204,12 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
         onClick={() => goTo(item.path)}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'group relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all',
+          'group relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
           active ? 'bg-orange-500/15 text-orange-400 shadow-sm' : 'text-slate-400 hover:bg-slate-800 hover:text-white',
         )}
       >
         <item.icon size={19} className="flex-shrink-0" />
-        {!collapsed && <span className="truncate">{item.label}</span>}
+        {!collapsed && <span className="min-w-0 break-words text-left leading-5">{item.label}</span>}
         {collapsed && (
           <span className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
             {item.label}
@@ -226,7 +228,7 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
       <div className="flex h-14 flex-shrink-0 items-center border-b border-slate-800 px-3">
         <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-orange-500 text-sm font-bold text-white shadow-lg shadow-orange-500/20">{BRAND.shortName}</div>
-          {!collapsed && <span className="truncate font-bold tracking-tight text-white">{BRAND.name}</span>}
+          {!collapsed && <span className="break-words font-bold tracking-tight text-white">{BRAND.name}</span>}
         </div>
         {isMobile ? (
           <button type="button" onClick={onToggle} aria-label="Sulje valikko" className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800"><X size={18} /></button>
@@ -274,8 +276,8 @@ export default function Navbar({ collapsed, onToggle, isMobile }: NavbarProps) {
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-sm font-bold text-white">{initialsOf(displayName)}</div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-white">{displayName}</p>
-              <p className="truncate text-[11px] text-slate-400">{isImpersonating ? `Käyttäjänä: ${ROLE_LABELS[role]}` : ROLE_LABELS[role]}</p>
+              <p className="break-words text-sm font-semibold text-white">{displayName}</p>
+              <p className="break-words text-[11px] text-slate-400">{isImpersonating ? `Käyttäjänä: ${ROLE_LABELS[role]}` : ROLE_LABELS[role]}</p>
             </div>
           )}
         </div>
