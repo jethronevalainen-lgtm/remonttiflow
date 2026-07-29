@@ -1,8 +1,10 @@
+import { useQuery } from '@tanstack/react-query';
 import {
   Archive,
   CheckCircle2,
   Copy,
   FolderKanban,
+  ReceiptText,
   Send,
   Trash2,
   XCircle,
@@ -11,11 +13,23 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { supabase } from '@/lib/supabase/client';
 import type { Offer, OfferStatus, OfferVersion } from '@/lib/supabase/offers';
 import { cn } from '@/lib/utils';
 import { statusTone, workflowStep } from './offerUi';
 
-const STEPS = ['Luonnos', 'Lähetetty', 'Hyväksytty', 'Projekti'] as const;
+const STEPS = ['Luonnos', 'Lähetetty', 'Tilaus', 'Projekti'] as const;
+
+interface SalesOrderSummary {
+  id: string;
+  orderNumber: string;
+  status: string;
+  contractValueCents: number;
+  costBudgetCents: number;
+  targetMarginCents: number;
+  targetMarginPercent: number;
+  acceptedAt: string;
+}
 
 interface OfferWorkflowCardProps {
   offer: Offer;
@@ -30,6 +44,51 @@ interface OfferWorkflowCardProps {
   onConvertProject: () => void;
   onOpenProject: () => void;
   onDeleteDraft: () => void;
+}
+
+function numberValue(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function euroFromCents(value: number): string {
+  return new Intl.NumberFormat('fi-FI', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value / 100);
+}
+
+function finnishDate(value: string): string {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('fi-FI', { dateStyle: 'medium' }).format(new Date(value));
+}
+
+async function loadSalesOrder(offerId: string): Promise<SalesOrderSummary | null> {
+  const { data, error } = await supabase
+    .from('sales_orders')
+    .select('id, order_number, status, contract_value_cents, cost_budget_cents, target_margin_cents, target_margin_percent, accepted_at')
+    .eq('offer_id', offerId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Tilauksen haku epäonnistui: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: String(data.id),
+    orderNumber: String(data.order_number ?? ''),
+    status: String(data.status ?? 'Vahvistettu'),
+    contractValueCents: numberValue(data.contract_value_cents),
+    costBudgetCents: numberValue(data.cost_budget_cents),
+    targetMarginCents: numberValue(data.target_margin_cents),
+    targetMarginPercent: numberValue(data.target_margin_percent),
+    acceptedAt: String(data.accepted_at ?? ''),
+  };
 }
 
 export function OfferWorkflowCard({
@@ -48,6 +107,20 @@ export function OfferWorkflowCard({
 }: OfferWorkflowCardProps) {
   const step = hasConvertedProject ? 3 : workflowStep(offer.status);
   const locked = selectedVersion.status !== 'Luonnos';
+  const shouldLoadOrder = offer.status === 'Hyväksytty' || hasConvertedProject;
+  const orderQuery = useQuery({
+    queryKey: ['offer-sales-order', offer.id],
+    queryFn: () => loadSalesOrder(offer.id),
+    enabled: shouldLoadOrder,
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const salesOrder = orderQuery.data ?? null;
+  const orderError = orderQuery.error instanceof Error
+    ? orderQuery.error.message
+    : shouldLoadOrder && !orderQuery.isLoading && !salesOrder
+      ? 'Hyväksytty tarjous ei ole vielä muodostanut tilausta. Päivitä näkymä.'
+      : null;
 
   return (
     <Card className="border-slate-200/80 shadow-none">
@@ -106,6 +179,53 @@ export function OfferWorkflowCard({
           </Badge>
         </div>
 
+        {shouldLoadOrder && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+            {orderQuery.isLoading && <p className="text-sm text-emerald-900">Haetaan vahvistettua tilausta…</p>}
+            {orderError && !orderQuery.isLoading && <p className="break-words text-sm text-red-700">{orderError}</p>}
+            {salesOrder && !orderQuery.isLoading && (
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <ReceiptText size={18} className="mt-0.5 shrink-0 text-emerald-700" />
+                    <div className="min-w-0">
+                      <p className="break-words font-semibold text-emerald-950">
+                        Tilaus {salesOrder.orderNumber}
+                      </p>
+                      <p className="break-words text-xs text-emerald-800">
+                        Vahvistettu {finnishDate(salesOrder.acceptedAt)} · tarjousversio on lukittu lähtötasoksi
+                      </p>
+                    </div>
+                  </div>
+                  <Badge className="w-fit border-emerald-300 bg-white text-emerald-800">
+                    {salesOrder.status}
+                  </Badge>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg bg-white/80 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Sopimusarvo</p>
+                    <p className="mt-1 break-words font-semibold text-slate-950">
+                      {euroFromCents(salesOrder.contractValueCents)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-white/80 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Kustannusbudjetti</p>
+                    <p className="mt-1 break-words font-semibold text-slate-950">
+                      {euroFromCents(salesOrder.costBudgetCents)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-white/80 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Tavoitekate</p>
+                    <p className="mt-1 break-words font-semibold text-slate-950">
+                      {euroFromCents(salesOrder.targetMarginCents)} · {salesOrder.targetMarginPercent.toLocaleString('fi-FI', { maximumFractionDigits: 1 })} %
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           {draft && (
             <>
@@ -113,7 +233,7 @@ export function OfferWorkflowCard({
                 <Send size={15} className="mr-2" /> Merkitse lähetetyksi
               </Button>
               <Button variant="outline" disabled={saving} onClick={() => onTransition('Hyväksytty')}>
-                <CheckCircle2 size={15} className="mr-2" /> Hyväksy suoraan
+                <CheckCircle2 size={15} className="mr-2" /> Hyväksy ja muodosta tilaus
               </Button>
               <Button variant="ghost" className="text-red-600" disabled={saving} onClick={onDeleteDraft}>
                 <Trash2 size={15} className="mr-2" /> Poista luonnos
@@ -123,7 +243,7 @@ export function OfferWorkflowCard({
           {offer.status === 'Lähetetty' && (
             <>
               <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={saving} onClick={() => onTransition('Hyväksytty')}>
-                <CheckCircle2 size={15} className="mr-2" /> Merkitse hyväksytyksi
+                <CheckCircle2 size={15} className="mr-2" /> Hyväksy ja muodosta tilaus
               </Button>
               <Button variant="outline" className="text-red-600" disabled={saving} onClick={() => onTransition('Hylätty')}>
                 <XCircle size={15} className="mr-2" /> Merkitse hylätyksi
@@ -139,8 +259,8 @@ export function OfferWorkflowCard({
             </Button>
           )}
           {offer.status === 'Hyväksytty' && !hasConvertedProject && (
-            <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={saving} onClick={onConvertProject}>
-              <FolderKanban size={15} className="mr-2" /> Luo projekti
+            <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={saving || orderQuery.isLoading || !salesOrder} onClick={onConvertProject}>
+              <FolderKanban size={15} className="mr-2" /> Luo projekti tilauksesta
             </Button>
           )}
           {hasConvertedProject && (
