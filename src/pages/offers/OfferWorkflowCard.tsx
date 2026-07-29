@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Archive,
   CheckCircle2,
@@ -69,6 +69,28 @@ function finnishDate(value: string): string {
   return new Intl.DateTimeFormat('fi-FI', { dateStyle: 'medium' }).format(new Date(value));
 }
 
+async function loadSalesOrder(offerId: string): Promise<SalesOrderSummary | null> {
+  const { data, error } = await supabase
+    .from('sales_orders')
+    .select('id, order_number, status, contract_value_cents, cost_budget_cents, target_margin_cents, target_margin_percent, accepted_at')
+    .eq('offer_id', offerId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Tilauksen haku epäonnistui: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: String(data.id),
+    orderNumber: String(data.order_number ?? ''),
+    status: String(data.status ?? 'Vahvistettu'),
+    contractValueCents: numberValue(data.contract_value_cents),
+    costBudgetCents: numberValue(data.cost_budget_cents),
+    targetMarginCents: numberValue(data.target_margin_cents),
+    targetMarginPercent: numberValue(data.target_margin_percent),
+    acceptedAt: String(data.accepted_at ?? ''),
+  };
+}
+
 export function OfferWorkflowCard({
   offer,
   versions,
@@ -85,61 +107,20 @@ export function OfferWorkflowCard({
 }: OfferWorkflowCardProps) {
   const step = hasConvertedProject ? 3 : workflowStep(offer.status);
   const locked = selectedVersion.status !== 'Luonnos';
-  const [salesOrder, setSalesOrder] = useState<SalesOrderSummary | null>(null);
-  const [orderLoading, setOrderLoading] = useState(false);
-  const [orderError, setOrderError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (offer.status !== 'Hyväksytty' && !hasConvertedProject) {
-      setSalesOrder(null);
-      setOrderError(null);
-      setOrderLoading(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setOrderLoading(true);
-    setOrderError(null);
-
-    void supabase
-      .from('sales_orders')
-      .select('id, order_number, status, contract_value_cents, cost_budget_cents, target_margin_cents, target_margin_percent, accepted_at')
-      .eq('offer_id', offer.id)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          setSalesOrder(null);
-          setOrderError(`Tilauksen haku epäonnistui: ${error.message}`);
-          return;
-        }
-        if (!data) {
-          setSalesOrder(null);
-          setOrderError('Hyväksytty tarjous ei ole vielä muodostanut tilausta. Päivitä näkymä.');
-          return;
-        }
-        setSalesOrder({
-          id: String(data.id),
-          orderNumber: String(data.order_number ?? ''),
-          status: String(data.status ?? 'Vahvistettu'),
-          contractValueCents: numberValue(data.contract_value_cents),
-          costBudgetCents: numberValue(data.cost_budget_cents),
-          targetMarginCents: numberValue(data.target_margin_cents),
-          targetMarginPercent: numberValue(data.target_margin_percent),
-          acceptedAt: String(data.accepted_at ?? ''),
-        });
-      })
-      .finally(() => {
-        if (!cancelled) setOrderLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [hasConvertedProject, offer.id, offer.status]);
+  const shouldLoadOrder = offer.status === 'Hyväksytty' || hasConvertedProject;
+  const orderQuery = useQuery({
+    queryKey: ['offer-sales-order', offer.id],
+    queryFn: () => loadSalesOrder(offer.id),
+    enabled: shouldLoadOrder,
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const salesOrder = orderQuery.data ?? null;
+  const orderError = orderQuery.error instanceof Error
+    ? orderQuery.error.message
+    : shouldLoadOrder && !orderQuery.isLoading && !salesOrder
+      ? 'Hyväksytty tarjous ei ole vielä muodostanut tilausta. Päivitä näkymä.'
+      : null;
 
   return (
     <Card className="border-slate-200/80 shadow-none">
@@ -198,11 +179,11 @@ export function OfferWorkflowCard({
           </Badge>
         </div>
 
-        {(offer.status === 'Hyväksytty' || hasConvertedProject) && (
+        {shouldLoadOrder && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
-            {orderLoading && <p className="text-sm text-emerald-900">Haetaan vahvistettua tilausta…</p>}
-            {orderError && !orderLoading && <p className="break-words text-sm text-red-700">{orderError}</p>}
-            {salesOrder && !orderLoading && (
+            {orderQuery.isLoading && <p className="text-sm text-emerald-900">Haetaan vahvistettua tilausta…</p>}
+            {orderError && !orderQuery.isLoading && <p className="break-words text-sm text-red-700">{orderError}</p>}
+            {salesOrder && !orderQuery.isLoading && (
               <div className="space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex min-w-0 items-start gap-2">
@@ -278,7 +259,7 @@ export function OfferWorkflowCard({
             </Button>
           )}
           {offer.status === 'Hyväksytty' && !hasConvertedProject && (
-            <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={saving || orderLoading || !salesOrder} onClick={onConvertProject}>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={saving || orderQuery.isLoading || !salesOrder} onClick={onConvertProject}>
               <FolderKanban size={15} className="mr-2" /> Luo projekti tilauksesta
             </Button>
           )}
