@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Download,
   FolderKanban,
-  Info,
   MapPin,
   Pencil,
   Play,
@@ -113,23 +112,17 @@ function statusBadge(status: ProjectStatus) {
   return <Badge variant="outline" className={styles[status]}>{status}</Badge>;
 }
 
-function statusExplanation(status: ProjectStatus, startDate: string, endDate: string) {
-  if (status === 'Valmis') {
-    return 'Projekti on päätetty valmiiksi. Avaa se uudelleen vain, jos työtä jatketaan.';
-  }
+function statusSummary(status: ProjectStatus, startDate: string, endDate: string) {
+  if (status === 'Valmis') return 'Projekti on valmis.';
   if (status === 'Myöhässä') {
     return endDate
-      ? `Tavoitevalmistuminen ${formatDate(endDate)} on ohitettu, joten projekti näkyy automaattisesti myöhässä.`
-      : 'Projektin tavoitevalmistuminen on ohitettu.';
+      ? `Tavoiteaika ${formatDate(endDate)} on ylitetty.`
+      : 'Tavoiteaika on ylitetty.';
   }
-  if (status === 'Aktiivinen') {
-    return startDate
-      ? `Aloituspäivä ${formatDate(startDate)} on saavutettu, joten projekti on automaattisesti aktiivinen.`
-      : 'Projekti on käynnissä.';
-  }
+  if (status === 'Aktiivinen') return 'Projekti on käynnissä.';
   return startDate
-    ? `Projekti aktivoituu automaattisesti aloituspäivänä ${formatDate(startDate)}.`
-    : 'Projekti pysyy suunniteltuna, kunnes aloituspäivä määritetään.';
+    ? `Alkaa ${formatDate(startDate)}.`
+    : 'Aloituspäivää ei ole määritetty.';
 }
 
 export default function Projektit() {
@@ -443,20 +436,17 @@ export default function Projektit() {
             <div className="space-y-2"><Label htmlFor="project-start">Aloitus</Label><Input id="project-start" type="date" value={form.startDate} onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="project-end">Tavoitevalmistuminen</Label><Input id="project-end" type="date" min={form.startDate || undefined} value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div>
 
-            <div className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50/70 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 gap-3">
-                  <Info size={18} className="mt-0.5 shrink-0 text-blue-700" />
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-blue-950">Projektin tila muodostuu automaattisesti</p>{statusBadge(formStatus)}</div>
-                    <p className="mt-1 break-words text-sm leading-6 text-blue-800">{statusExplanation(formStatus, form.startDate, form.endDate)}</p>
-                    {!editingProject && <p className="mt-2 text-xs leading-5 text-blue-700">Uusi projekti alkaa aina 0 % etenemisestä ja 0 € toteutuneista kustannuksista. Myöhässä-tilaa ei valita käsin.</p>}
-                  </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Tila</Label>
+              <div aria-live="polite" className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 sm:min-h-14 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {statusBadge(formStatus)}
+                  <span className="text-sm text-slate-600">{statusSummary(formStatus, form.startDate, form.endDate)}</span>
                 </div>
                 {editingProject && (
                   formStatus === 'Valmis'
-                    ? <Button type="button" variant="outline" onClick={reopenProject} className="shrink-0 gap-2 border-blue-300 bg-white"><RotateCcw size={15} /> Avaa uudelleen</Button>
-                    : <Button type="button" onClick={markCompleted} className="shrink-0 gap-2"><CheckCircle2 size={15} /> Merkitse valmiiksi</Button>
+                    ? <Button type="button" variant="outline" onClick={reopenProject} className="w-full shrink-0 gap-2 bg-white sm:w-auto"><RotateCcw size={15} /> Avaa uudelleen</Button>
+                    : <Button type="button" onClick={markCompleted} className="w-full shrink-0 gap-2 sm:w-auto"><CheckCircle2 size={15} /> Merkitse valmiiksi</Button>
                 )}
               </div>
             </div>
