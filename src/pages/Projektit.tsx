@@ -8,10 +8,12 @@ import {
   CheckCircle2,
   Download,
   FolderKanban,
+  Info,
   MapPin,
   Pencil,
   Play,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
   UsersRound,
@@ -35,16 +37,19 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import { useRoleWorkspace } from '@/hooks/useRoleWorkspace';
+import {
+  deriveProjectStatus,
+  isRunningProjectStatus,
+  reopenProjectStatus,
+} from '@/lib/projectLifecycle';
 import { replaceProjectMembers } from '@/lib/supabase/workManagement';
 import type { Project, ProjectStatus } from '@/types';
 
 const ALL = 'Kaikki';
-const PROJECT_STATUSES: ProjectStatus[] = ['Suunniteltu', 'Aktiivinen', 'Myöhässä', 'Valmis'];
 
 interface ProjectForm {
   name: string;
@@ -92,6 +97,12 @@ function initials(name: string) {
     : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
+function formatDate(value: string) {
+  if (!value) return '';
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${Number(match[3])}.${Number(match[2])}.${match[1]}` : value;
+}
+
 function statusBadge(status: ProjectStatus) {
   const styles: Record<ProjectStatus, string> = {
     Aktiivinen: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -100,6 +111,25 @@ function statusBadge(status: ProjectStatus) {
     Myöhässä: 'border-red-200 bg-red-50 text-red-700',
   };
   return <Badge variant="outline" className={styles[status]}>{status}</Badge>;
+}
+
+function statusExplanation(status: ProjectStatus, startDate: string, endDate: string) {
+  if (status === 'Valmis') {
+    return 'Projekti on päätetty valmiiksi. Avaa se uudelleen vain, jos työtä jatketaan.';
+  }
+  if (status === 'Myöhässä') {
+    return endDate
+      ? `Tavoitevalmistuminen ${formatDate(endDate)} on ohitettu, joten projekti näkyy automaattisesti myöhässä.`
+      : 'Projektin tavoitevalmistuminen on ohitettu.';
+  }
+  if (status === 'Aktiivinen') {
+    return startDate
+      ? `Aloituspäivä ${formatDate(startDate)} on saavutettu, joten projekti on automaattisesti aktiivinen.`
+      : 'Projekti on käynnissä.';
+  }
+  return startDate
+    ? `Projekti aktivoituu automaattisesti aloituspäivänä ${formatDate(startDate)}.`
+    : 'Projekti pysyy suunniteltuna, kunnes aloituspäivä määritetään.';
 }
 
 export default function Projektit() {
@@ -131,7 +161,17 @@ export default function Projektit() {
   const [form, setForm] = useState<ProjectForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [savingProject, setSavingProject] = useState(false);
   const [savingTeam, setSavingTeam] = useState(false);
+
+  const formStatus = deriveProjectStatus({
+    status: form.status,
+    startDate: form.startDate,
+    endDate: form.endDate,
+  });
+
+  const runningProjects = projects.filter((project) => isRunningProjectStatus(project.status));
+  const lateProjects = projects.filter((project) => project.status === 'Myöhässä');
 
   const membersByProject = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -160,7 +200,7 @@ export default function Projektit() {
         project.projectNumber ?? '',
       ].some((value) => value.toLocaleLowerCase('fi').includes(query));
       const matchesFilter = activeFilter === ALL
-        || (activeFilter === 'Käynnissä' && project.status === 'Aktiivinen')
+        || (activeFilter === 'Käynnissä' && isRunningProjectStatus(project.status))
         || project.status === activeFilter;
       return matchesSearch && matchesFilter;
     });
@@ -171,14 +211,15 @@ export default function Projektit() {
   const visibleError = operationError ?? domainOperationError ?? workspaceError;
   const statusFilters = [
     { key: ALL, count: projects.length, icon: FolderKanban },
-    { key: 'Käynnissä', count: projects.filter((project) => project.status === 'Aktiivinen').length, icon: Play },
+    { key: 'Käynnissä', count: runningProjects.length, icon: Play },
     { key: 'Suunniteltu', count: projects.filter((project) => project.status === 'Suunniteltu').length, icon: Calendar },
+    { key: 'Myöhässä', count: lateProjects.length, icon: AlertTriangle },
     { key: 'Valmis', count: projects.filter((project) => project.status === 'Valmis').length, icon: CheckCircle2 },
   ];
 
   const openCreate = () => {
     setEditingProject(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM });
     setErrors([]);
     setOperationError(null);
     setDialogOpen(true);
@@ -203,35 +244,70 @@ export default function Projektit() {
     setDialogOpen(true);
   };
 
-  const saveProject = () => {
+  const markCompleted = () => {
+    setForm((previous) => ({ ...previous, status: 'Valmis', progress: '100' }));
+  };
+
+  const reopenProject = () => {
+    setForm((previous) => ({
+      ...previous,
+      status: reopenProjectStatus({
+        startDate: previous.startDate,
+        endDate: previous.endDate,
+      }),
+      progress: Number(previous.progress) >= 100 ? '99' : previous.progress,
+    }));
+  };
+
+  const saveProject = async () => {
     const nextErrors: string[] = [];
-    const progress = Number(form.progress);
+    const editing = Boolean(editingProject);
+    const progress = editing ? Number(form.progress) : 0;
     const budget = Number(form.budget);
-    const spent = Number(form.spent);
+    const spent = editing ? Number(form.spent) : 0;
+
     if (!form.name.trim()) nextErrors.push('Projektin nimi on pakollinen.');
     if (!form.customer.trim()) nextErrors.push('Asiakas on pakollinen.');
-    if (!Number.isFinite(progress) || progress < 0 || progress > 100) nextErrors.push('Edistymisen pitää olla 0–100 %.');
+    if (editing && (!Number.isFinite(progress) || progress < 0 || progress > 100)) {
+      nextErrors.push('Edistymisen pitää olla 0–100 %.');
+    }
     if (!Number.isFinite(budget) || budget < 0) nextErrors.push('Budjetti ei voi olla negatiivinen.');
-    if (!Number.isFinite(spent) || spent < 0) nextErrors.push('Toteutunut kustannus ei voi olla negatiivinen.');
-    if (form.startDate && form.endDate && form.endDate < form.startDate) nextErrors.push('Päättymispäivä ei voi olla ennen aloituspäivää.');
+    if (editing && (!Number.isFinite(spent) || spent < 0)) {
+      nextErrors.push('Toteutunut kustannus ei voi olla negatiivinen.');
+    }
+    if (form.startDate && form.endDate && form.endDate < form.startDate) {
+      nextErrors.push('Tavoitevalmistuminen ei voi olla ennen aloituspäivää.');
+    }
+
     setErrors(nextErrors);
     if (nextErrors.length > 0) return;
 
+    const status = form.status === 'Valmis'
+      ? 'Valmis'
+      : deriveProjectStatus({
+          status: 'Suunniteltu',
+          startDate: form.startDate,
+          endDate: form.endDate,
+        });
     const payload: Omit<Project, 'id'> = {
       name: form.name.trim(),
       customer: form.customer.trim(),
       location: form.location.trim() || undefined,
       startDate: form.startDate,
       endDate: form.endDate,
-      status: form.status,
-      progress,
+      status,
+      progress: status === 'Valmis' ? 100 : progress,
       budget,
       spent,
       description: form.description.trim() || undefined,
     };
-    if (editingProject) updateProject(editingProject.id, payload);
-    else addProject(payload);
-    setDialogOpen(false);
+
+    setSavingProject(true);
+    const saved = editingProject
+      ? await updateProject(editingProject.id, payload)
+      : await addProject(payload);
+    setSavingProject(false);
+    if (saved) setDialogOpen(false);
   };
 
   const openTeam = (project: Project) => {
@@ -267,7 +343,7 @@ export default function Projektit() {
 
   const removeProject = () => {
     if (!deleteTarget) return;
-    deleteProject(deleteTarget.id);
+    void deleteProject(deleteTarget.id);
     setDeleteTarget(null);
   };
 
@@ -315,7 +391,7 @@ export default function Projektit() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           { label: 'Projektit', value: projects.length, detail: 'kaikki kohteet', icon: FolderKanban },
-          { label: 'Käynnissä', value: projects.filter((project) => project.status === 'Aktiivinen').length, detail: 'aktiivista kohdetta', icon: Play },
+          { label: 'Käynnissä', value: runningProjects.length, detail: `${lateProjects.length} myöhässä`, icon: Play },
           { label: 'Budjetti', value: money(totalBudget), detail: `${money(totalSpent)} toteutunut`, icon: Calendar },
           { label: 'Tiimipaikat', value: projectMemberships.length, detail: 'käyttäjä–projekti-kohdistusta', icon: UsersRound },
         ].map((item) => <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 break-words font-mono text-2xl font-bold">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.detail}</p></div><item.icon size={20} className="text-orange-600" /></div></CardContent></Card>)}
@@ -355,23 +431,42 @@ export default function Projektit() {
         {!workspaceLoading && filteredProjects.length === 0 && <Card className="lg:col-span-2 xl:col-span-3"><CardContent className="p-12 text-center"><FolderKanban size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei projekteja</p><p className="mt-1 text-sm text-slate-500">Luo ensimmäinen projekti tai muuta hakuehtoja.</p><Button className="mt-5" onClick={openCreate}><Plus size={16} className="mr-2" /> Uusi projekti</Button></CardContent></Card>}
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => !savingProject && setDialogOpen(open)}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader><DialogTitle>{editingProject ? 'Muokkaa projektia' : 'Uusi projekti'}</DialogTitle></DialogHeader>
           {errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((error) => <p key={error}>{error}</p>)}</div>}
+          {domainOperationError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{domainOperationError}</div>}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-name">Nimi *</Label><Input id="project-name" value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="project-customer">Asiakas *</Label><Input id="project-customer" value={form.customer} onChange={(event) => setForm((previous) => ({ ...previous, customer: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="project-location">Sijainti</Label><Input id="project-location" value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="project-start">Aloitus</Label><Input id="project-start" type="date" value={form.startDate} onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="project-end">Valmistuminen</Label><Input id="project-end" type="date" value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div>
-            <div className="space-y-2"><Label>Tila</Label><Select value={form.status} onValueChange={(status: ProjectStatus) => setForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PROJECT_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2"><Label htmlFor="project-progress">Edistyminen %</Label><Input id="project-progress" type="number" min="0" max="100" value={form.progress} onChange={(event) => setForm((previous) => ({ ...previous, progress: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="project-budget">Budjetti €</Label><Input id="project-budget" type="number" min="0" step="0.01" value={form.budget} onChange={(event) => setForm((previous) => ({ ...previous, budget: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="project-spent">Toteutunut €</Label><Input id="project-spent" type="number" min="0" step="0.01" value={form.spent} onChange={(event) => setForm((previous) => ({ ...previous, spent: event.target.value }))} /></div>
+            <div className="space-y-2"><Label htmlFor="project-end">Tavoitevalmistuminen</Label><Input id="project-end" type="date" min={form.startDate || undefined} value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div>
+
+            <div className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 gap-3">
+                  <Info size={18} className="mt-0.5 shrink-0 text-blue-700" />
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-blue-950">Projektin tila muodostuu automaattisesti</p>{statusBadge(formStatus)}</div>
+                    <p className="mt-1 break-words text-sm leading-6 text-blue-800">{statusExplanation(formStatus, form.startDate, form.endDate)}</p>
+                    {!editingProject && <p className="mt-2 text-xs leading-5 text-blue-700">Uusi projekti alkaa aina 0 % etenemisestä ja 0 € toteutuneista kustannuksista. Myöhässä-tilaa ei valita käsin.</p>}
+                  </div>
+                </div>
+                {editingProject && (
+                  formStatus === 'Valmis'
+                    ? <Button type="button" variant="outline" onClick={reopenProject} className="shrink-0 gap-2 border-blue-300 bg-white"><RotateCcw size={15} /> Avaa uudelleen</Button>
+                    : <Button type="button" onClick={markCompleted} className="shrink-0 gap-2"><CheckCircle2 size={15} /> Merkitse valmiiksi</Button>
+                )}
+              </div>
+            </div>
+
+            {editingProject && <div className="space-y-2"><Label htmlFor="project-progress">Edistyminen %</Label><Input id="project-progress" type="number" min="0" max="100" value={form.progress} onChange={(event) => setForm((previous) => ({ ...previous, progress: event.target.value }))} /></div>}
+            <div className={`space-y-2 ${editingProject ? '' : 'sm:col-span-2'}`}><Label htmlFor="project-budget">Budjetti €</Label><Input id="project-budget" type="number" min="0" step="0.01" value={form.budget} onChange={(event) => setForm((previous) => ({ ...previous, budget: event.target.value }))} /></div>
+            {editingProject && <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-spent">Toteutunut €</Label><Input id="project-spent" type="number" min="0" step="0.01" value={form.spent} onChange={(event) => setForm((previous) => ({ ...previous, spent: event.target.value }))} /></div>}
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-description">Kuvaus</Label><Textarea id="project-description" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} rows={4} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Peruuta</Button><Button onClick={saveProject}>Tallenna</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)} disabled={savingProject}>Peruuta</Button><Button onClick={() => void saveProject()} disabled={savingProject}>{savingProject ? 'Tallennetaan…' : editingProject ? 'Tallenna muutokset' : 'Luo projekti'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
