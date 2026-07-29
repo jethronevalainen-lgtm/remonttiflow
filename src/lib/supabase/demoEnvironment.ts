@@ -2,6 +2,7 @@ import { administratorSupabase } from '@/lib/supabase/client';
 import type { OrganizationRole } from '@/lib/supabase/types';
 
 export const DEMO_ACCOUNT_EMAIL_SUFFIX = '@demo.vakantti.invalid';
+export const DEMO_SOURCE_ORGANIZATION_STORAGE_KEY = 'vakantti-v1-demo-source-org';
 
 export interface DemoAccountSummary {
   userId: string;
@@ -48,8 +49,30 @@ export function isDemoAccountEmail(value: string | null | undefined): boolean {
   return Boolean(value?.trim().toLowerCase().endsWith(DEMO_ACCOUNT_EMAIL_SUFFIX));
 }
 
+export function isDemoOrganizationBusinessId(value: string | null | undefined): boolean {
+  return Boolean(value?.trim().toUpperCase().startsWith('DEMO-'));
+}
+
 export function demoRoleOrder(role: OrganizationRole): number {
   return ['supervisor', 'project_coordinator', 'worker', 'customer', 'admin'].indexOf(role);
+}
+
+export function rememberDemoSourceOrganization(organizationId: string): void {
+  const normalized = organizationId.trim();
+  if (!normalized) return;
+  try {
+    window.localStorage.setItem(DEMO_SOURCE_ORGANIZATION_STORAGE_KEY, normalized);
+  } catch {
+    // Demoympäristö toimii myös ilman selaimen pysyvää tallennustilaa.
+  }
+}
+
+export function readDemoSourceOrganization(): string | null {
+  try {
+    return window.localStorage.getItem(DEMO_SOURCE_ORGANIZATION_STORAGE_KEY)?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 async function readFunctionError(error: unknown, fallback: string): Promise<string> {

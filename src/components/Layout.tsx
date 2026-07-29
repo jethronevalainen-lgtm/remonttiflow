@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  Building2,
   CalendarClock,
   ClipboardCheck,
   ClipboardList,
@@ -14,6 +15,7 @@ import {
   Menu,
   MessageCircle,
   Megaphone,
+  RotateCcw,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -24,8 +26,16 @@ import ContextAnnouncementSection from './announcements/ContextAnnouncementSecti
 import GlobalAnnouncementBanner from './announcements/GlobalAnnouncementBanner';
 import { ROLE_LABELS } from '@/contexts/AuthContext';
 import { useAppDataContext } from '@/contexts/AppDataContext';
+import {
+  CURRENT_ORG_STORAGE_KEY,
+  useOrganization,
+} from '@/contexts/OrganizationContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
+import {
+  isDemoOrganizationBusinessId,
+  readDemoSourceOrganization,
+} from '@/lib/supabase/demoEnvironment';
 
 interface BottomItem {
   path?: string;
@@ -76,6 +86,10 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const {
+    organizations,
+    currentOrg,
+  } = useOrganization();
+  const {
     effectiveRole,
     isImpersonating,
     previewTarget,
@@ -90,10 +104,23 @@ export default function Layout() {
     : effectiveRole === 'worker'
       ? workerBottomItems
       : managementBottomItems;
+  const isDemoOrganization = isDemoOrganizationBusinessId(currentOrg?.business_id);
+  const sourceOrganizationId = readDemoSourceOrganization();
+  const sourceOrganization = organizations.find((organization) => organization.id === sourceOrganizationId)
+    ?? organizations.find((organization) => !isDemoOrganizationBusinessId(organization.business_id));
 
   const returnToAdministrator = async () => {
     await stopPreview();
-    navigate('/dashboard', { replace: true });
+    navigate('/kayttajaesikatselu', { replace: true });
+  };
+
+  const returnToSourceOrganization = () => {
+    if (!sourceOrganization) return;
+    try {
+      window.localStorage.setItem(CURRENT_ORG_STORAGE_KEY, sourceOrganization.id);
+    } finally {
+      window.location.reload();
+    }
   };
 
   return (
@@ -131,15 +158,36 @@ export default function Layout() {
           </div>
         )}
 
+        {isDemoOrganization && !isImpersonating && (
+          <div className="flex flex-col gap-2 border-b border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950 sm:flex-row sm:items-center sm:px-4">
+            <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center">
+              <Building2 size={17} className="mt-0.5 flex-shrink-0 text-emerald-700 sm:mt-0" />
+              <p className="min-w-0 leading-5">
+                <span className="font-semibold">Eristetty demoympäristö.</span>{' '}
+                Täällä tehdyt muutokset eivät sekoitu oikean organisaation tietoihin.
+              </p>
+            </div>
+            {sourceOrganization && (
+              <button
+                type="button"
+                onClick={returnToSourceOrganization}
+                className="flex min-h-10 flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-emerald-400 bg-white px-3 py-2 font-semibold text-emerald-900 transition-colors hover:bg-emerald-100"
+              >
+                <RotateCcw size={16} /> Palaa: {sourceOrganization.name}
+              </button>
+            )}
+          </div>
+        )}
+
         {isImpersonating && previewTarget && (
           <div className="flex flex-col gap-2 border-b border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 sm:flex-row sm:items-center sm:px-4">
             <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center">
               <Eye size={17} className="mt-0.5 flex-shrink-0 text-amber-700 sm:mt-0" />
               <p className="min-w-0 leading-5">
-                <span className="font-semibold">Toimit käyttäjänä:</span>{' '}
+                <span className="font-semibold">Rooliesikatselu:</span>{' '}
                 <span className="font-medium">{previewTarget.displayName || previewTarget.email}</span>{' '}
                 <span className="text-amber-800">({ROLE_LABELS[previewTarget.role]})</span>.
-                <span className="hidden sm:inline"> Kaikki toiminnot ja tallennukset ovat oikeita ja ne suoritetaan tämän käyttäjän oikeuksilla.</span>
+                <span className="hidden sm:inline"> Kaikki toiminnot ja tallennukset tehdään tämän käyttäjän oikeuksilla.</span>
               </p>
             </div>
             <button
@@ -148,7 +196,7 @@ export default function Layout() {
               onClick={() => void returnToAdministrator()}
               className="flex min-h-10 flex-shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-400 bg-white px-3 py-2 font-semibold text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
             >
-              <X size={16} /> {switching ? 'Palautetaan…' : 'Lopeta käyttäjänä toimiminen'}
+              <X size={16} /> {switching ? 'Palautetaan…' : 'Palaa roolivalintaan'}
             </button>
           </div>
         )}
