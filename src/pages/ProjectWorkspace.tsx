@@ -17,7 +17,6 @@ import {
   Loader2,
   MapPin,
   Paperclip,
-  Plus,
   RefreshCw,
   ShieldCheck,
   Trash2,
@@ -49,25 +48,14 @@ import {
 import { supabase } from '@/lib/supabase/client';
 import {
   archiveProjectDocument,
-  createChangeOrder,
   createProjectDocumentUrl,
-  updateChangeOrderStatus,
   uploadProjectDocument,
-  type ChangeOrderStatus,
   type ProjectActivityEvent,
 } from '@/lib/supabase/projectWorkspace';
 import { cn } from '@/lib/utils';
+import ChangeOrderManager from './projectFinance/ChangeOrderManager';
 import ProjectContactsFilesPanel from './projectWorks/ProjectContactsFilesPanel';
 import ProjectWorks from './ProjectWorks';
-
-const CHANGE_ORDER_STATUSES: ChangeOrderStatus[] = [
-  'Luonnos',
-  'Lähetetty',
-  'Hyväksytty',
-  'Hylätty',
-  'Toteutuksessa',
-  'Valmis',
-];
 
 const WORKSPACE_TABS = new Set([
   'overview',
@@ -150,7 +138,7 @@ function activityIcon(type: ProjectActivityEvent['eventType']) {
 
 function statusClass(status: string) {
   if (['Valmis', 'Hyväksytty'].includes(status)) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-  if (['Hylätty'].includes(status)) return 'border-red-200 bg-red-50 text-red-700';
+  if (status === 'Hylätty') return 'border-red-200 bg-red-50 text-red-700';
   if (['Toteutuksessa', 'Käynnissä', 'Lähetetty'].includes(status)) return 'border-amber-200 bg-amber-50 text-amber-700';
   return 'border-slate-200 bg-slate-50 text-slate-700';
 }
@@ -175,21 +163,15 @@ export default function ProjectWorkspace() {
       ? 'finance'
       : requestedTab;
   const activeTab = WORKSPACE_TABS.has(normalizedTab) ? normalizedTab : 'overview';
+
   const [documentDialog, setDocumentDialog] = useState(false);
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [documentTitle, setDocumentTitle] = useState('');
   const [documentType, setDocumentType] = useState('Muu');
   const [documentDescription, setDocumentDescription] = useState('');
-  const [changeDialog, setChangeDialog] = useState(false);
-  const [changeNumber, setChangeNumber] = useState('');
-  const [changeTitle, setChangeTitle] = useState('');
-  const [changeDescription, setChangeDescription] = useState('');
-  const [changeStatus, setChangeStatus] = useState<ChangeOrderStatus>('Luonnos');
-  const [changeAmount, setChangeAmount] = useState('0');
-  const [changeCost, setChangeCost] = useState('0');
-  const [changeRequestedAt, setChangeRequestedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+
   const salesOrderQuery = useQuery({
     queryKey: ['project-sales-order', projectId ?? 'none'],
     queryFn: () => loadProjectSalesOrder(projectId as string),
@@ -283,67 +265,6 @@ export default function ProjectWorkspace() {
       await workspace.refresh();
     } catch (caught) {
       setOperationError(caught instanceof Error ? caught.message : 'Dokumentin arkistointi epäonnistui.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const openChange = () => {
-    setChangeNumber('');
-    setChangeTitle('');
-    setChangeDescription('');
-    setChangeStatus('Luonnos');
-    setChangeAmount('0');
-    setChangeCost('0');
-    setChangeRequestedAt(new Date().toISOString().slice(0, 10));
-    setOperationError(null);
-    setChangeDialog(true);
-  };
-
-  const saveChange = async () => {
-    const amount = Number(changeAmount.replace(',', '.'));
-    const cost = Number(changeCost.replace(',', '.'));
-    if (!currentOrg || !projectId || !changeTitle.trim()) {
-      setOperationError('Muutostyön otsikko on pakollinen.');
-      return;
-    }
-    if (![amount, cost].every((value) => Number.isFinite(value) && value >= 0)) {
-      setOperationError('Myynti- ja kustannussummien pitää olla nollaa suurempia tai nolla.');
-      return;
-    }
-    setSaving(true);
-    setOperationError(null);
-    try {
-      await createChangeOrder({
-        organizationId: currentOrg.id,
-        projectId,
-        userId: user?.id,
-        changeNumber,
-        title: changeTitle,
-        description: changeDescription,
-        status: changeStatus,
-        amountCents: Math.round(amount * 100),
-        costCents: Math.round(cost * 100),
-        requestedAt: changeRequestedAt,
-      });
-      await workspace.refresh();
-      setChangeDialog(false);
-    } catch (caught) {
-      setOperationError(caught instanceof Error ? caught.message : 'Muutostyön tallennus epäonnistui.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const changeState = async (id: string, status: ChangeOrderStatus) => {
-    if (!currentOrg) return;
-    setSaving(true);
-    setOperationError(null);
-    try {
-      await updateChangeOrderStatus(currentOrg.id, id, status);
-      await workspace.refresh();
-    } catch (caught) {
-      setOperationError(caught instanceof Error ? caught.message : 'Muutostyön päivitys epäonnistui.');
     } finally {
       setSaving(false);
     }
@@ -489,72 +410,24 @@ export default function ProjectWorkspace() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="works">
-          <ProjectWorks embedded />
-        </TabsContent>
+        <TabsContent value="works"><ProjectWorks embedded /></TabsContent>
 
         <TabsContent value="schedule" className="space-y-4">
-          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Projektin työaikataulu</h2>
-              <p className="mt-1 text-sm text-text-secondary">Työmääräysten suunnitellut työjaksot ja määräajat.</p>
-            </div>
-            <Button variant="outline" onClick={() => navigate('/aikataulutus')}>Avaa tuotannon aikataulu</Button>
-          </div>
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-semibold">Projektin työaikataulu</h2><p className="mt-1 text-sm text-text-secondary">Työmääräysten suunnitellut työjaksot ja määräajat.</p></div><Button variant="outline" onClick={() => navigate('/aikataulutus')}>Avaa tuotannon aikataulu</Button></div>
           <div className="space-y-3">
-            {[...projectOrders]
-              .sort((left, right) => (
-                (left.plannedStartDate || left.dueDate || '9999')
-                  .localeCompare(right.plannedStartDate || right.dueDate || '9999')
-              ))
-              .map((order) => (
-                <Card key={order.id}>
-                  <CardContent className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="break-words font-semibold">{order.title}</p>
-                        <Badge variant="outline" className={statusClass(order.status)}>{order.status}</Badge>
-                      </div>
-                      <p className="mt-1 break-words text-sm text-text-secondary">{order.location || project?.location || 'Kohdetta ei määritetty'}</p>
-                    </div>
-                    <div className="text-left text-sm sm:text-right">
-                      <p className="font-medium">{order.plannedStartDate ? `${order.plannedStartDate}–${order.plannedEndDate}` : 'Työjaksoa ei määritetty'}</p>
-                      <p className="mt-1 text-xs text-text-secondary">Määräpäivä {order.dueDate || 'puuttuu'}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+            {[...projectOrders].sort((left, right) => ((left.plannedStartDate || left.dueDate || '9999').localeCompare(right.plannedStartDate || right.dueDate || '9999'))).map((order) => (
+              <Card key={order.id}><CardContent className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="break-words font-semibold">{order.title}</p><Badge variant="outline" className={statusClass(order.status)}>{order.status}</Badge></div><p className="mt-1 break-words text-sm text-text-secondary">{order.location || project?.location || 'Kohdetta ei määritetty'}</p></div><div className="text-left text-sm sm:text-right"><p className="font-medium">{order.plannedStartDate ? `${order.plannedStartDate}–${order.plannedEndDate}` : 'Työjaksoa ei määritetty'}</p><p className="mt-1 text-xs text-text-secondary">Määräpäivä {order.dueDate || 'puuttuu'}</p></div></CardContent></Card>
+            ))}
             {projectOrders.length === 0 && <Card><CardContent className="p-10 text-center text-sm text-text-secondary">Projektilla ei ole vielä aikataulutettuja töitä.</CardContent></Card>}
           </div>
         </TabsContent>
 
         <TabsContent value="quality" className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><CheckCircle2 size={19} /> Tarkastukset ja luovutukset</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{summary?.openFindings ?? 0}</p>
-                <p className="mt-1 text-sm text-text-secondary">avointa tarkastuspuutetta</p>
-                <Button className="mt-4 w-full" onClick={() => navigate(`/tarkastukset?project=${encodeURIComponent(projectId)}`)}>Avaa projektin tarkastukset</Button>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck size={19} /> Turvallisuus</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{projectSafety.filter((item) => !['Korjattu', 'Suljettu'].includes(item.status)).length}</p>
-                <p className="mt-1 text-sm text-text-secondary">avointa turvallisuusasiaa</p>
-                <Button variant="outline" className="mt-4 w-full" onClick={() => navigate('/tyoturvallisuus')}>Avaa turvallisuus</Button>
-              </CardContent>
-            </Card>
+            <Card><CardHeader><CardTitle className="flex items-center gap-2"><CheckCircle2 size={19} /> Tarkastukset ja luovutukset</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{summary?.openFindings ?? 0}</p><p className="mt-1 text-sm text-text-secondary">avointa tarkastuspuutetta</p><Button className="mt-4 w-full" onClick={() => navigate(`/tarkastukset?project=${encodeURIComponent(projectId)}`)}>Avaa projektin tarkastukset</Button></CardContent></Card>
+            <Card><CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck size={19} /> Turvallisuus</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{projectSafety.filter((item) => !['Korjattu', 'Suljettu'].includes(item.status)).length}</p><p className="mt-1 text-sm text-text-secondary">avointa turvallisuusasiaa</p><Button variant="outline" className="mt-4 w-full" onClick={() => navigate('/tyoturvallisuus')}>Avaa turvallisuus</Button></CardContent></Card>
           </div>
-          {projectSafety.map((item) => (
-            <Card key={item.id}>
-              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div><p className="font-semibold">{item.title}</p><p className="mt-1 text-sm text-text-secondary">{item.description}</p></div>
-                <div className="flex flex-wrap gap-2"><Badge variant="outline">{item.severity}</Badge><Badge variant="outline">{item.status}</Badge></div>
-              </CardContent>
-            </Card>
-          ))}
+          {projectSafety.map((item) => <Card key={item.id}><CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold">{item.title}</p><p className="mt-1 text-sm text-text-secondary">{item.description}</p></div><div className="flex flex-wrap gap-2"><Badge variant="outline">{item.severity}</Badge><Badge variant="outline">{item.status}</Badge></div></CardContent></Card>)}
         </TabsContent>
 
         <TabsContent value="documents" className="space-y-4">
@@ -567,24 +440,8 @@ export default function ProjectWorkspace() {
 
         <TabsContent value="finance" className="space-y-4">
           {salesOrderQuery.isLoading && <div className="flex items-center gap-2 rounded-xl border bg-white p-4 text-sm text-text-secondary"><Loader2 size={17} className="animate-spin" />Haetaan projektin vahvistettua tilausta…</div>}
-          {!salesOrderQuery.isLoading && !salesOrder && canManage && (
-            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              <AlertTriangle size={17} className="mt-0.5 shrink-0" />
-              <p className="break-words">Projektilla ei ole vahvistettuun tarjoukseen perustuvaa tilausta. Myyntiarvo näytetään vanhasta projektibudjetista, mutta kustannusbudjettia ja tavoitekatetta ei voida todentaa.</p>
-            </div>
-          )}
-          {salesOrder && (
-            <Card className="border-emerald-200 bg-emerald-50/60">
-              <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Vahvistettu tilaus</p>
-                  <p className="mt-1 break-words text-lg font-bold text-emerald-950">{salesOrder.orderNumber}</p>
-                  <p className="mt-1 break-words text-sm text-emerald-800">Taloudellinen lähtötaso lukittu {dateTime(salesOrder.lockedAt)}. Muutokset tehdään lisä- ja muutostöinä.</p>
-                </div>
-                <Badge className="w-fit border-emerald-300 bg-white text-emerald-800">{salesOrder.status}</Badge>
-              </CardContent>
-            </Card>
-          )}
+          {!salesOrderQuery.isLoading && !salesOrder && canManage && <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><p className="break-words">Projektilla ei ole vahvistettuun tarjoukseen perustuvaa tilausta. Myyntiarvo näytetään vanhasta projektibudjetista, mutta kustannusbudjettia ja tavoitekatetta ei voida todentaa.</p></div>}
+          {salesOrder && <Card className="border-emerald-200 bg-emerald-50/60"><CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Vahvistettu tilaus</p><p className="mt-1 break-words text-lg font-bold text-emerald-950">{salesOrder.orderNumber}</p><p className="mt-1 break-words text-sm text-emerald-800">Taloudellinen lähtötaso lukittu {dateTime(salesOrder.lockedAt)}. Muutokset tehdään lisä- ja muutostöinä.</p></div><Badge className="w-fit border-emerald-300 bg-white text-emerald-800">{salesOrder.status}</Badge></CardContent></Card>}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Alkuperäinen sopimusarvo</p><p className="mt-2 break-words text-2xl font-bold">{euro(originalContractValueCents / 100)}</p></CardContent></Card>
             <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Hyväksytyt muutostyöt</p><p className="mt-2 break-words text-2xl font-bold">{euro(approvedChangeAmountCents / 100)}</p></CardContent></Card>
@@ -596,38 +453,12 @@ export default function ProjectWorkspace() {
             <Card className="border-emerald-200"><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-emerald-700">Nykyinen tavoitekate</p><p className="mt-2 break-words text-2xl font-bold text-emerald-950">{salesOrder ? euro(currentTargetMarginCents / 100) : 'Ei asetettu'}</p><p className="mt-1 text-xs text-text-secondary">Muutostöiden kate {euro(marginCents / 100)}</p></CardContent></Card>
             <Card><CardContent className="p-5"><p className="text-xs uppercase tracking-wide text-text-muted">Toteutuneet kustannukset</p><p className="mt-2 break-words text-2xl font-bold">{euro(actualCostCents / 100)}</p></CardContent></Card>
           </div>
-          {canManage && <div className="flex justify-end"><Button onClick={openChange}><Plus size={16} className="mr-2" /> Uusi muutostyö</Button></div>}
-          <Card><CardContent className="p-0"><div className="hidden grid-cols-[120px_1.3fr_140px_140px_170px] gap-3 border-b bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 lg:grid"><span>Tunnus</span><span>Muutostyö</span><span>Myynti</span><span>Kustannus</span><span>Tila</span></div>{workspace.changeOrders.map((change) => <div key={change.id} className="grid gap-3 border-b border-slate-100 px-5 py-4 lg:grid-cols-[120px_1.3fr_140px_140px_170px] lg:items-center"><span className="font-mono text-sm">{change.changeNumber || '—'}</span><div><p className="font-semibold">{change.title}</p><p className="break-words text-xs text-text-secondary">{change.description || 'Ei lisätietoja'}</p></div><span className="font-mono text-sm">{euro(change.amountCents / 100)}</span><span className="font-mono text-sm">{euro(change.costCents / 100)}</span><div>{canManage ? <Select value={change.status} onValueChange={(value: ChangeOrderStatus) => void changeState(change.id, value)} disabled={saving}><SelectTrigger className={cn('min-h-11', statusClass(change.status))}><SelectValue /></SelectTrigger><SelectContent>{CHANGE_ORDER_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select> : <Badge variant="outline" className={statusClass(change.status)}>{change.status}</Badge>}</div></div>)}{!workspace.loading && workspace.changeOrders.length === 0 && <div className="p-12 text-center"><BriefcaseBusiness size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold">Ei muutostöitä</p></div>}</CardContent></Card>
+          {currentOrg && <ChangeOrderManager organizationId={currentOrg.id} projectId={projectId} enabled={canManage} onChanged={() => workspace.refresh()} />}
         </TabsContent>
 
         <TabsContent value="more" className="space-y-4">
-          {project && currentOrg && (
-            <ProjectContactsFilesPanel
-              organizationId={currentOrg.id}
-              project={project}
-              people={roleWorkspace.people}
-              projectPeople={projectPeople}
-              currentUserId={user?.id}
-              canManage={canManage}
-              onError={setOperationError}
-              onSuccess={() => setOperationError(null)}
-              onNavigateWorkspaceDocuments={() => {
-                const next = new URLSearchParams(searchParams);
-                next.set('tab', 'documents');
-                setSearchParams(next);
-              }}
-            />
-          )}
-          <Card>
-            <CardHeader><CardTitle>Projektin tapahtumahistoria</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              {workspace.activity.map((event) => {
-                const Icon = activityIcon(event.eventType);
-                return <div key={`${event.eventType}-${event.id}`} className="flex flex-col gap-2 border-b border-slate-100 py-3 sm:flex-row sm:items-start"><Icon size={18} className="mt-0.5 shrink-0 text-orange-600" /><div className="min-w-0 flex-1"><p className="font-medium">{event.title}</p><p className="text-sm text-text-secondary">{event.detail}</p></div><span className="text-xs text-text-muted">{dateTime(event.eventAt)}</span></div>;
-              })}
-              {!workspace.loading && workspace.activity.length === 0 && <p className="py-10 text-center text-sm text-text-secondary">Ei tapahtumia.</p>}
-            </CardContent>
-          </Card>
+          {project && currentOrg && <ProjectContactsFilesPanel organizationId={currentOrg.id} project={project} people={roleWorkspace.people} projectPeople={projectPeople} currentUserId={user?.id} canManage={canManage} onError={setOperationError} onSuccess={() => setOperationError(null)} onNavigateWorkspaceDocuments={() => { const next = new URLSearchParams(searchParams); next.set('tab', 'documents'); setSearchParams(next); }} />}
+          <Card><CardHeader><CardTitle>Projektin tapahtumahistoria</CardTitle></CardHeader><CardContent className="space-y-2">{workspace.activity.map((event) => { const Icon = activityIcon(event.eventType); return <div key={`${event.eventType}-${event.id}`} className="flex flex-col gap-2 border-b border-slate-100 py-3 sm:flex-row sm:items-start"><Icon size={18} className="mt-0.5 shrink-0 text-orange-600" /><div className="min-w-0 flex-1"><p className="font-medium">{event.title}</p><p className="text-sm text-text-secondary">{event.detail}</p></div><span className="text-xs text-text-muted">{dateTime(event.eventAt)}</span></div>; })}{!workspace.loading && workspace.activity.length === 0 && <p className="py-10 text-center text-sm text-text-secondary">Ei tapahtumia.</p>}</CardContent></Card>
         </TabsContent>
       </Tabs>
 
@@ -642,22 +473,6 @@ export default function ProjectWorkspace() {
             <div className="space-y-2"><Label htmlFor="document-description">Kuvaus</Label><Textarea id="document-description" value={documentDescription} onChange={(event) => setDocumentDescription(event.target.value)} rows={3} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setDocumentDialog(false)}>Peruuta</Button><Button onClick={() => void saveDocument()} disabled={saving || !documentFile}>{saving ? 'Tallennetaan…' : 'Tallenna dokumentti'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={changeDialog} onOpenChange={setChangeDialog}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Uusi muutostyö</DialogTitle></DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2"><Label htmlFor="change-number">Tunnus</Label><Input id="change-number" value={changeNumber} onChange={(event) => setChangeNumber(event.target.value)} placeholder="MT-001" /></div>
-            <div className="space-y-2"><Label>Tila</Label><Select value={changeStatus} onValueChange={(value: ChangeOrderStatus) => setChangeStatus(value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{CHANGE_ORDER_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="change-title">Otsikko *</Label><Input id="change-title" value={changeTitle} onChange={(event) => setChangeTitle(event.target.value)} /></div>
-            <div className="space-y-2 sm:col-span-2"><Label htmlFor="change-description">Kuvaus</Label><Textarea id="change-description" value={changeDescription} onChange={(event) => setChangeDescription(event.target.value)} rows={4} /></div>
-            <div className="space-y-2"><Label htmlFor="change-amount">Myyntihinta €</Label><Input id="change-amount" inputMode="decimal" value={changeAmount} onChange={(event) => setChangeAmount(event.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor="change-cost">Arvioitu kustannus €</Label><Input id="change-cost" inputMode="decimal" value={changeCost} onChange={(event) => setChangeCost(event.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor="change-requested">Pyydetty</Label><Input id="change-requested" type="date" value={changeRequestedAt} onChange={(event) => setChangeRequestedAt(event.target.value)} /></div>
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setChangeDialog(false)}>Peruuta</Button><Button onClick={() => void saveChange()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna muutostyö'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
