@@ -38,12 +38,14 @@ module.exports = {
       // shadcn/ui primitives export variants/helpers alongside components, and
       // context modules export hooks + providers by design; fast-refresh
       // component-only-export does not apply to these file kinds. The customer
-      // order dialog and time-workspace component module intentionally export
-      // shared immutable defaults and formatters alongside their components.
+      // order dialog, time-workspace module and project rich-text editor
+      // intentionally export shared immutable defaults, serializers or
+      // formatters alongside their components.
       files: [
         'src/components/ui/**',
         'src/contexts/**',
         'src/components/customer/CustomerOrderCreateDialog.tsx',
+        'src/components/projects/ProjectDescription.tsx',
         'src/pages/time/TimeWorkspaceComponents.tsx',
       ],
       rules: {
