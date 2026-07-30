@@ -1,0 +1,357 @@
+name: Apply project description formatting
+
+on:
+  push:
+    branches:
+      - feature/project-description-formatting
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/project-description-formatting
+
+      - name: Apply source changes
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return text.replace(old, new, 1)
+
+          project_description = r'''import { useRef, type ReactNode } from 'react';
+          import {
+            AlertTriangle,
+            Bold,
+            Heading2,
+            Highlighter,
+            Info,
+            List,
+            ListOrdered,
+          } from 'lucide-react';
+
+          import { Button } from '@/components/ui/button';
+          import { Textarea } from '@/components/ui/textarea';
+          import { cn } from '@/lib/utils';
+
+          type HighlightColor = 'orange' | 'blue' | 'green' | 'red';
+
+          const HIGHLIGHT_CLASSES: Record<HighlightColor, string> = {
+            orange: 'font-semibold text-orange-700',
+            blue: 'font-semibold text-blue-700',
+            green: 'font-semibold text-emerald-700',
+            red: 'font-semibold text-red-700',
+          };
+
+          const INLINE_TOKEN = /(\*\*.+?\*\*|\{\{(?:orange|blue|green|red):.+?\}\})/g;
+
+          function inlineContent(value: string): ReactNode[] {
+            return value.split(INLINE_TOKEN).filter(Boolean).map((part, index) => {
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
+              }
+
+              const colorMatch = /^\{\{(orange|blue|green|red):(.+)\}\}$/.exec(part);
+              if (colorMatch) {
+                const color = colorMatch[1] as HighlightColor;
+                return <span key={`${part}-${index}`} className={HIGHLIGHT_CLASSES[color]}>{colorMatch[2]}</span>;
+              }
+
+              return <span key={`${part}-${index}`}>{part}</span>;
+            });
+          }
+
+          export function ProjectDescription({ value, className }: { value: string; className?: string }) {
+            const nodes: ReactNode[] = [];
+            let listType: 'ul' | 'ol' | null = null;
+            let listItems: string[] = [];
+
+            const flushList = () => {
+              if (!listType || listItems.length === 0) return;
+              const Tag = listType;
+              nodes.push(
+                <Tag
+                  key={`list-${nodes.length}`}
+                  className={listType === 'ul' ? 'ml-5 list-disc space-y-1' : 'ml-5 list-decimal space-y-1'}
+                >
+                  {listItems.map((item, index) => <li key={`${item}-${index}`}>{inlineContent(item)}</li>)}
+                </Tag>,
+              );
+              listType = null;
+              listItems = [];
+            };
+
+            value.replace(/\r\n/g, '\n').split('\n').forEach((rawLine) => {
+              const line = rawLine.trim();
+              if (!line) {
+                flushList();
+                return;
+              }
+
+              const bullet = /^[-*]\s+(.+)$/.exec(line);
+              const ordered = /^\d+[.)]\s+(.+)$/.exec(line);
+              if (bullet || ordered) {
+                const nextType = bullet ? 'ul' : 'ol';
+                if (listType && listType !== nextType) flushList();
+                listType = nextType;
+                listItems.push((bullet ?? ordered)?.[1] ?? '');
+                return;
+              }
+
+              flushList();
+
+              const callout = /^>\s*\[!(HUOMIO|VAROITUS|ONNISTUI)\]\s*(.*)$/i.exec(line);
+              if (callout) {
+                const type = callout[1].toUpperCase();
+                const isWarning = type === 'VAROITUS';
+                const isSuccess = type === 'ONNISTUI';
+                nodes.push(
+                  <div
+                    key={`callout-${nodes.length}`}
+                    className={cn(
+                      'flex items-start gap-3 rounded-xl border px-4 py-3',
+                      isWarning && 'border-red-200 bg-red-50 text-red-800',
+                      isSuccess && 'border-emerald-200 bg-emerald-50 text-emerald-800',
+                      !isWarning && !isSuccess && 'border-orange-200 bg-orange-50 text-orange-900',
+                    )}
+                  >
+                    {isWarning ? <AlertTriangle size={18} className="mt-0.5 shrink-0" /> : <Info size={18} className="mt-0.5 shrink-0" />}
+                    <div><p className="text-xs font-bold uppercase tracking-wide">{type === 'ONNISTUI' ? 'Valmis' : type}</p><p className="mt-0.5 leading-6">{inlineContent(callout[2])}</p></div>
+                  </div>,
+                );
+                return;
+              }
+
+              if (line.startsWith('### ')) {
+                nodes.push(<h4 key={`h4-${nodes.length}`} className="pt-1 text-sm font-bold uppercase tracking-wide text-slate-700">{inlineContent(line.slice(4))}</h4>);
+              } else if (line.startsWith('## ')) {
+                nodes.push(<h3 key={`h3-${nodes.length}`} className="pt-1 text-base font-bold text-slate-950">{inlineContent(line.slice(3))}</h3>);
+              } else if (line.startsWith('# ')) {
+                nodes.push(<h2 key={`h2-${nodes.length}`} className="pt-1 text-lg font-bold text-slate-950">{inlineContent(line.slice(2))}</h2>);
+              } else {
+                nodes.push(<p key={`p-${nodes.length}`} className="leading-6 text-slate-700">{inlineContent(line)}</p>);
+              }
+            });
+            flushList();
+
+            return <div className={cn('space-y-2 text-sm', className)}>{nodes}</div>;
+          }
+
+          interface ProjectDescriptionEditorProps {
+            id?: string;
+            value: string;
+            onChange: (value: string) => void;
+          }
+
+          export function ProjectDescriptionEditor({ id, value, onChange }: ProjectDescriptionEditorProps) {
+            const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+            const replaceSelection = (before: string, after: string, fallback: string) => {
+              const element = textareaRef.current;
+              if (!element) return;
+              const start = element.selectionStart;
+              const end = element.selectionEnd;
+              const selected = value.slice(start, end) || fallback;
+              const replacement = `${before}${selected}${after}`;
+              onChange(`${value.slice(0, start)}${replacement}${value.slice(end)}`);
+              requestAnimationFrame(() => {
+                element.focus();
+                element.setSelectionRange(start + before.length, start + before.length + selected.length);
+              });
+            };
+
+            const prefixSelection = (prefix: string, fallback: string) => {
+              const element = textareaRef.current;
+              if (!element) return;
+              const start = element.selectionStart;
+              const end = element.selectionEnd;
+              const selected = value.slice(start, end) || fallback;
+              const replacement = selected.split('\n').map((line) => `${prefix}${line}`).join('\n');
+              onChange(`${value.slice(0, start)}${replacement}${value.slice(end)}`);
+              requestAnimationFrame(() => {
+                element.focus();
+                element.setSelectionRange(start, start + replacement.length);
+              });
+            };
+
+            const insertCallout = (type: 'HUOMIO' | 'VAROITUS') => {
+              const element = textareaRef.current;
+              if (!element) return;
+              const start = element.selectionStart;
+              const end = element.selectionEnd;
+              const selected = value.slice(start, end) || (type === 'HUOMIO' ? 'Kirjoita tärkeä huomio' : 'Kirjoita varoitus');
+              const replacement = `> [!${type}] ${selected}`;
+              onChange(`${value.slice(0, start)}${replacement}${value.slice(end)}`);
+              requestAnimationFrame(() => {
+                element.focus();
+                element.setSelectionRange(start + replacement.length, start + replacement.length);
+              });
+            };
+
+            return (
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="flex flex-wrap gap-1.5 border-b border-slate-200 bg-slate-50 p-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => prefixSelection('## ', 'Väliotsikko')} title="Väliotsikko"><Heading2 size={15} /> Otsikko</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => replaceSelection('**', '**', 'lihavoitu teksti')} title="Lihavointi"><Bold size={15} /> Lihavoi</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => prefixSelection('- ', 'Luettelokohta')} title="Luettelo"><List size={15} /> Luettelo</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => prefixSelection('1. ', 'Luettelokohta')} title="Numeroitu luettelo"><ListOrdered size={15} /> Numerointi</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => insertCallout('HUOMIO')} title="Huomiolaatikko"><Info size={15} /> Huomio</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => insertCallout('VAROITUS')} title="Varoituslaatikko"><AlertTriangle size={15} /> Varoitus</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => replaceSelection('{{orange:', '}}', 'korostettu teksti')} title="Oranssi korostus"><Highlighter size={15} className="text-orange-600" /> Korosta</Button>
+                  <Button type="button" variant="outline" size="sm" className="text-blue-700" onClick={() => replaceSelection('{{blue:', '}}', 'sininen teksti')}>Sininen</Button>
+                  <Button type="button" variant="outline" size="sm" className="text-emerald-700" onClick={() => replaceSelection('{{green:', '}}', 'vihreä teksti')}>Vihreä</Button>
+                  <Button type="button" variant="outline" size="sm" className="text-red-700" onClick={() => replaceSelection('{{red:', '}}', 'punainen teksti')}>Punainen</Button>
+                </div>
+                <Textarea
+                  ref={textareaRef}
+                  id={id}
+                  value={value}
+                  onChange={(event) => onChange(event.target.value)}
+                  rows={10}
+                  className="min-h-[260px] resize-y rounded-none border-0 px-4 py-3 leading-6 shadow-none focus-visible:ring-0"
+                  placeholder={'## Aikataulu\n- A1: 20.7.–31.7.2026 — Marko\n\n> [!HUOMIO] Huoneistoa A2 voidaan käyttää taukotilana.'}
+                />
+                <div className="border-t border-slate-200 bg-slate-50/70 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Esikatselu</p>
+                  {value.trim() ? <ProjectDescription value={value} /> : <p className="text-sm text-slate-500">Muotoiltu kuvaus näkyy tässä.</p>}
+                </div>
+              </div>
+            );
+          }
+          '''
+          project_description = '\n'.join(line[10:] if line.startswith('          ') else line for line in project_description.splitlines()) + '\n'
+          Path('src/components/projects').mkdir(parents=True, exist_ok=True)
+          Path('src/components/projects/ProjectDescription.tsx').write_text(project_description, encoding='utf-8')
+
+          project_progress = r'''import type { Project, WorkOrder } from '@/types';
+
+          export interface ProjectProgressSummary {
+            total: number;
+            completed: number;
+            percent: number;
+          }
+
+          export function calculateProjectProgress(
+            project: Pick<Project, 'id' | 'name' | 'status'>,
+            workOrders: WorkOrder[],
+          ): ProjectProgressSummary {
+            const relevant = workOrders.filter((workOrder) => (
+              workOrder.status !== 'Peruttu'
+              && (workOrder.projectId === project.id || workOrder.project === project.name)
+            ));
+            const completed = relevant.filter((workOrder) => workOrder.status === 'Valmis').length;
+            const percent = project.status === 'Valmis'
+              ? 100
+              : relevant.length > 0
+                ? Math.round((completed / relevant.length) * 100)
+                : 0;
+
+            return { total: relevant.length, completed, percent };
+          }
+          '''
+          project_progress = '\n'.join(line[10:] if line.startswith('          ') else line for line in project_progress.splitlines()) + '\n'
+          Path('src/lib/projectProgress.ts').write_text(project_progress, encoding='utf-8')
+
+          project_progress_test = r'''import { describe, expect, it } from 'vitest';
+
+          import { calculateProjectProgress } from './projectProgress';
+          import type { Project, WorkOrder } from '@/types';
+
+          const project: Pick<Project, 'id' | 'name' | 'status'> = {
+            id: 'project-1',
+            name: 'Kohde A',
+            status: 'Aktiivinen',
+          };
+
+          const order = (id: string, status: WorkOrder['status'], projectId = 'project-1'): WorkOrder => ({
+            id,
+            title: id,
+            projectId,
+            project: 'Kohde A',
+            assignee: '',
+            dueDate: '2026-08-01',
+            priority: 'Normaali',
+            status,
+          });
+
+          describe('calculateProjectProgress', () => {
+            it('laskee etenemisen valmiista työmääräyksistä ja ohittaa perutut', () => {
+              expect(calculateProjectProgress(project, [
+                order('1', 'Valmis'),
+                order('2', 'Valmis'),
+                order('3', 'Käynnissä'),
+                order('4', 'Peruttu'),
+              ])).toEqual({ total: 3, completed: 2, percent: 67 });
+            });
+
+            it('palauttaa valmiille projektille 100 prosenttia', () => {
+              expect(calculateProjectProgress({ ...project, status: 'Valmis' }, [])).toEqual({
+                total: 0,
+                completed: 0,
+                percent: 100,
+              });
+            });
+          });
+          '''
+          project_progress_test = '\n'.join(line[10:] if line.startswith('          ') else line for line in project_progress_test.splitlines()) + '\n'
+          Path('src/lib/projectProgress.test.ts').write_text(project_progress_test, encoding='utf-8')
+
+          projects_path = Path('src/pages/Projektit.tsx')
+          text = projects_path.read_text(encoding='utf-8')
+          text = replace_once(text, "import { Progress } from '@/components/ui/progress';\nimport { Textarea } from '@/components/ui/textarea';\n", "import { Progress } from '@/components/ui/progress';\nimport { ProjectDescriptionEditor } from '@/components/projects/ProjectDescription';\n", 'Projektit imports')
+          text = replace_once(text, "} from '@/lib/projectLifecycle';\n", "} from '@/lib/projectLifecycle';\nimport { calculateProjectProgress } from '@/lib/projectProgress';\n", 'Projektit progress import')
+          text = replace_once(text, "  progress: string;\n", "", 'ProjectForm progress')
+          text = replace_once(text, "  progress: '0',\n", "", 'EMPTY_FORM progress')
+          text = replace_once(text, "    people,\n    projectMemberships,\n", "    people,\n    projectMemberships,\n    workOrders,\n", 'role workspace work orders')
+          text = replace_once(text, "  const formStatusSummary = statusSummary(formStatus, form.startDate, form.endDate);\n", "  const formStatusSummary = statusSummary(formStatus, form.startDate, form.endDate);\n  const editingProgress = editingProject\n    ? calculateProjectProgress(editingProject, workOrders)\n    : null;\n", 'editing progress summary')
+          text = replace_once(text, "      progress: String(project.progress),\n", "", 'openEdit progress')
+          text = replace_once(text, "  const markCompleted = () => {\n    setForm((previous) => ({ ...previous, status: 'Valmis', progress: '100' }));\n  };\n\n  const reopenProject = () => {\n    setForm((previous) => ({\n      ...previous,\n      status: reopenProjectStatus({\n        startDate: previous.startDate,\n        endDate: previous.endDate,\n      }),\n      progress: Number(previous.progress) >= 100 ? '99' : previous.progress,\n    }));\n  };\n", "  const markCompleted = () => {\n    setForm((previous) => ({ ...previous, status: 'Valmis' }));\n  };\n\n  const reopenProject = () => {\n    setForm((previous) => ({\n      ...previous,\n      status: reopenProjectStatus({\n        startDate: previous.startDate,\n        endDate: previous.endDate,\n      }),\n    }));\n  };\n", 'completion actions')
+          text = replace_once(text, "    const progress = editing ? Number(form.progress) : 0;\n", "", 'save progress parsing')
+          text = replace_once(text, "    if (editing && (!Number.isFinite(progress) || progress < 0 || progress > 100)) {\n      nextErrors.push('Edistymisen pitää olla 0–100 %.');\n    }\n", "", 'save progress validation')
+          text = replace_once(text, "    const payload: Omit<Project, 'id'> = {\n", "    const automaticProgress = editingProject\n      ? calculateProjectProgress(editingProject, workOrders).percent\n      : 0;\n    const payload: Omit<Project, 'id'> = {\n", 'automatic progress payload')
+          text = replace_once(text, "      progress: status === 'Valmis' ? 100 : progress,\n", "      progress: status === 'Valmis' ? 100 : automaticProgress,\n", 'payload progress')
+          text = replace_once(text, "      project.progress,\n", "      calculateProjectProgress(project, workOrders).percent,\n", 'CSV progress')
+          text = replace_once(text, "          const budgetUsage = project.budget > 0 ? Math.min(100, Math.round(project.spent / project.budget * 100)) : 0;\n", "          const budgetUsage = project.budget > 0 ? Math.min(100, Math.round(project.spent / project.budget * 100)) : 0;\n          const projectProgress = calculateProjectProgress(project, workOrders);\n", 'card progress calculation')
+          text = replace_once(text, "                  <div className=\"mt-5\"><div className=\"mb-2 flex justify-between text-xs\"><span className=\"text-slate-500\">Eteneminen</span><strong>{project.progress}%</strong></div><Progress value={project.progress} className=\"h-2\" /></div>\n", "                  <div className=\"mt-5\"><div className=\"mb-2 flex justify-between gap-3 text-xs\"><span className=\"text-slate-500\">Työmääräykset valmiina</span><strong>{projectProgress.total > 0 ? `${projectProgress.completed}/${projectProgress.total} · ${projectProgress.percent}%` : 'Ei työmääräyksiä'}</strong></div><Progress value={projectProgress.percent} className=\"h-2\" /></div>\n", 'card progress UI')
+          text = replace_once(text, "        <DialogContent className=\"max-h-[92vh] overflow-y-auto sm:max-w-2xl\">\n", "        <DialogContent className=\"max-h-[92vh] overflow-y-auto sm:max-w-3xl\">\n", 'project dialog width')
+          old_fields = """            {editingProject && <div className=\"space-y-2\"><Label htmlFor=\"project-progress\">Edistyminen %</Label><Input id=\"project-progress\" type=\"number\" min=\"0\" max=\"100\" value={form.progress} onChange={(event) => setForm((previous) => ({ ...previous, progress: event.target.value }))} /></div>}\n            <div className={`space-y-2 ${editingProject ? '' : 'sm:col-span-2'}`}><Label htmlFor=\"project-budget\">Budjetti €</Label><Input id=\"project-budget\" type=\"number\" min=\"0\" step=\"0.01\" value={form.budget} onChange={(event) => setForm((previous) => ({ ...previous, budget: event.target.value }))} /></div>\n            {editingProject && <div className=\"space-y-2 sm:col-span-2\"><Label htmlFor=\"project-spent\">Toteutunut €</Label><Input id=\"project-spent\" type=\"number\" min=\"0\" step=\"0.01\" value={form.spent} onChange={(event) => setForm((previous) => ({ ...previous, spent: event.target.value }))} /></div>}\n            <div className=\"space-y-2 sm:col-span-2\"><Label htmlFor=\"project-description\">Kuvaus</Label><Textarea id=\"project-description\" value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} rows={4} /></div>\n"""
+          new_fields = """            <div className=\"sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900\">\n              <p className=\"font-semibold\">Eteneminen lasketaan automaattisesti</p>\n              <p className=\"mt-1 text-blue-800\">\n                {editingProject && editingProgress\n                  ? editingProgress.total > 0\n                    ? `${editingProgress.completed}/${editingProgress.total} työmääräystä valmiina · ${editingProgress.percent} %`\n                    : 'Projektilla ei ole vielä työmääräyksiä.'\n                  : 'Uusi projekti alkaa 0 prosentista ja päivittyy työmääräysten valmistuessa.'}\n              </p>\n            </div>\n            <div className={`space-y-2 ${editingProject ? '' : 'sm:col-span-2'}`}><Label htmlFor=\"project-budget\">Budjetti €</Label><Input id=\"project-budget\" type=\"number\" min=\"0\" step=\"0.01\" value={form.budget} onChange={(event) => setForm((previous) => ({ ...previous, budget: event.target.value }))} /></div>\n            {editingProject && <div className=\"space-y-2\"><Label htmlFor=\"project-spent\">Toteutunut €</Label><Input id=\"project-spent\" type=\"number\" min=\"0\" step=\"0.01\" value={form.spent} onChange={(event) => setForm((previous) => ({ ...previous, spent: event.target.value }))} /></div>}\n            <div className=\"space-y-2 sm:col-span-2\">\n              <div><Label htmlFor=\"project-description\">Projektin kuvaus</Label><p className=\"mt-1 text-xs leading-5 text-slate-500\">Jäsennä aikataulu, vastuut ja tärkeät huomiot otsikoilla, listoilla ja korostuksilla.</p></div>\n              <ProjectDescriptionEditor id=\"project-description\" value={form.description} onChange={(description) => setForm((previous) => ({ ...previous, description }))} />\n            </div>\n"""
+          text = replace_once(text, old_fields, new_fields, 'project form fields')
+          if 'form.progress' in text:
+              raise SystemExit('Projektit still contains form.progress')
+          projects_path.write_text(text, encoding='utf-8')
+
+          workspace_path = Path('src/pages/ProjectWorkspace.tsx')
+          workspace = workspace_path.read_text(encoding='utf-8')
+          workspace = replace_once(workspace, "import { Progress } from '@/components/ui/progress';\n", "import { Progress } from '@/components/ui/progress';\nimport { ProjectDescription } from '@/components/projects/ProjectDescription';\n", 'workspace description import')
+          workspace = replace_once(workspace, "import { cn } from '@/lib/utils';\n", "import { calculateProjectProgress } from '@/lib/projectProgress';\nimport { cn } from '@/lib/utils';\n", 'workspace progress import')
+          project_orders_block = """  const projectOrders = useMemo(\n    () => roleWorkspace.workOrders.filter((item) => item.projectId === projectId || item.project === project?.name),\n    [project?.name, projectId, roleWorkspace.workOrders],\n  );\n"""
+          workspace = replace_once(workspace, project_orders_block, project_orders_block + "  const projectProgress = project\n    ? calculateProjectProgress(project, roleWorkspace.workOrders)\n    : { total: 0, completed: 0, percent: 0 };\n", 'workspace calculated progress')
+          workspace = replace_once(workspace, "              <p className=\"mt-2 max-w-3xl text-sm leading-6 text-slate-300\">{project?.customer}{project?.description ? ` · ${project.description}` : ''}</p>\n", "              <p className=\"mt-2 max-w-3xl text-sm leading-6 text-slate-300\">{project?.customer}</p>\n", 'workspace header description')
+          old_progress = "          {project && <div className=\"mt-6\"><div className=\"mb-2 flex justify-between text-xs text-slate-300\"><span>Projektin eteneminen</span><strong>{project.progress}%</strong></div><Progress value={project.progress} className=\"h-2 bg-slate-700\" /></div>}\n"
+          new_progress = """          {project && (\n            <div className=\"mt-6\">\n              <div className=\"mb-2 flex justify-between gap-3 text-xs text-slate-300\">\n                <span>{projectProgress.total > 0 ? `${projectProgress.completed}/${projectProgress.total} työmääräystä valmiina` : 'Ei työmääräyksiä'}</span>\n                <strong>{projectProgress.percent}%</strong>\n              </div>\n              <Progress value={projectProgress.percent} className=\"h-2 bg-slate-700\" />\n            </div>\n          )}\n"""
+          workspace = replace_once(workspace, old_progress, new_progress, 'workspace progress UI')
+          loading_line = "      {workspace.loading && <div className=\"flex items-center gap-2 rounded-xl border bg-white p-4 text-sm text-text-secondary\"><Loader2 size={17} className=\"animate-spin\" />Ladataan projektin tilannekuvaa…</div>}\n"
+          description_card = """\n      {project?.description && (\n        <Card className=\"border-slate-200 shadow-sm\">\n          <CardHeader className=\"pb-3\"><CardTitle className=\"flex items-center gap-2\"><FileText size={19} /> Projektin kuvaus</CardTitle></CardHeader>\n          <CardContent><ProjectDescription value={project.description} /></CardContent>\n        </Card>\n      )}\n"""
+          workspace = replace_once(workspace, loading_line, loading_line + description_card, 'workspace description card')
+          workspace_path.write_text(workspace, encoding='utf-8')
+          PY
+
+      - name: Commit patch
+        run: |
+          rm .github/workflows/apply-project-description-formatting.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Paranna projektikuvausta ja automatisoi eteneminen"
+          git push origin HEAD:feature/project-description-formatting
