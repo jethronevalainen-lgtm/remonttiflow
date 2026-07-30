@@ -402,6 +402,24 @@ export default function Tarjoukset() {
   }, [crmLeads, customers, projects, searchParams, setSearchParams]);
 
   useEffect(() => {
+    const importTakeoffId = searchParams.get('importTakeoff');
+    if (!importTakeoffId) return;
+    if (finance.loading) return;
+    const exists = finance.takeoffs.some((takeoff) => takeoff.id === importTakeoffId);
+    setTab('offers');
+    setDetailTab('lines');
+    if (exists) {
+      setTakeoffId(importTakeoffId);
+      setImportDialog(true);
+    } else {
+      setOperationError('Määrälaskelmaa ei löytynyt tuotavaksi.');
+    }
+    const cleaned = new URLSearchParams(searchParams);
+    cleaned.delete('importTakeoff');
+    setSearchParams(cleaned, { replace: true });
+  }, [finance.loading, finance.takeoffs, searchParams, setSearchParams]);
+
+  useEffect(() => {
     if (!selectedVersion) return;
     setSettings({
       vatRate: String(selectedVersion.vatRate),
