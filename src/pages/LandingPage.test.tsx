@@ -14,11 +14,14 @@ describe('LandingPage', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: 'Työmaa, työnjohto ja hallinto yhdessä järjestelmässä.',
+        name: 'Johda koko urakka tarjouksesta luovutukseen.',
       }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /kirjaudu sisään/i }).length).toBeGreaterThan(0);
-    expect(screen.getByText('Projektit ja työvaiheet')).toBeInTheDocument();
-    expect(screen.getByText('Työaika ja matkakulut')).toBeInTheDocument();
+    expect(screen.getByText('Projektit ja työkokonaisuudet')).toBeInTheDocument();
+    expect(screen.getByText('Tarjoukset ja määrälaskenta')).toBeInTheDocument();
+    expect(screen.getByText('Tilaajayhteistyö ja viestintä')).toBeInTheDocument();
+    expect(screen.getByText('Projektikoordinaattori')).toBeInTheDocument();
+    expect(screen.getByText('Tilaaja')).toBeInTheDocument();
   });
 });
