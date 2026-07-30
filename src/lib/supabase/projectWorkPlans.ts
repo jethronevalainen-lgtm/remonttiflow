@@ -76,6 +76,8 @@ export async function createProjectWorkPlan(values: {
       key: target.key,
       title: target.title.trim(),
       location: target.location.trim() || target.title.trim(),
+      description: target.description.trim() || null,
+      assignee_user_ids: target.assigneeUserIds,
     })),
     p_phases: values.phases.map((phase, index) => ({
       title: phase.title.trim(),

@@ -5,6 +5,10 @@ export interface ProjectWorkTargetDraft {
   key: string;
   title: string;
   location: string;
+  /** Mitä tässä kohteessa / huoneistossa tehdään. */
+  description: string;
+  /** Kohteen tekijät; jos asetettu, ohittaa työvaiheen tekijät. */
+  assigneeUserIds: string[];
 }
 
 export interface ProjectWorkPhaseDraft {
@@ -28,6 +32,45 @@ function normalizedKey(value: string, index: number): string {
   return `${String(index + 1).padStart(3, '0')}-${slug || 'kohde'}`;
 }
 
+function targetId(title: string, index: number): string {
+  return `target-${index}-${normalizedKey(title, index)}`;
+}
+
+/** Resolves assignees for one target × phase cell. Target wins when set. */
+export function resolveWorkPlanAssignees(
+  target: Pick<ProjectWorkTargetDraft, 'assigneeUserIds'>,
+  phase: Pick<ProjectWorkPhaseDraft, 'assigneeUserIds'>,
+): string[] {
+  if (target.assigneeUserIds.length > 0) return [...new Set(target.assigneeUserIds)];
+  return [...new Set(phase.assigneeUserIds)];
+}
+
+export function combineWorkPlanDescription(
+  target: Pick<ProjectWorkTargetDraft, 'title' | 'description'>,
+  phase: Pick<ProjectWorkPhaseDraft, 'title' | 'description'>,
+): string {
+  const parts = [
+    target.description.trim()
+      ? `Kohde ${target.title}: ${target.description.trim()}`
+      : '',
+    phase.description.trim()
+      ? `Työvaihe ${phase.title}: ${phase.description.trim()}`
+      : '',
+  ].filter(Boolean);
+  return parts.join('\n\n');
+}
+
+export function workOrderTitleForPlan(
+  target: Pick<ProjectWorkTargetDraft, 'title'>,
+  phase: Pick<ProjectWorkPhaseDraft, 'title'>,
+): string {
+  const targetTitle = target.title.trim();
+  const phaseTitle = phase.title.trim();
+  if (!targetTitle) return phaseTitle;
+  if (!phaseTitle) return targetTitle;
+  return `${targetTitle} – ${phaseTitle}`;
+}
+
 export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDraft[] {
   const seen = new Set<string>();
   const result: ProjectWorkTargetDraft[] = [];
@@ -36,21 +79,24 @@ export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDra
     const line = rawLine.trim();
     if (!line) continue;
 
-    const [rawTitle, ...rawLocationParts] = line.split('|');
-    const title = rawTitle.trim();
-    const location = rawLocationParts.join('|').trim() || title;
+    const parts = line.split('|').map((part) => part.trim());
+    const title = parts[0] ?? '';
+    const location = parts[1] || title;
+    const description = parts.slice(2).join(' | ').trim();
     if (!title) continue;
 
-    const duplicateKey = `${title}|${location}`.toLocaleLowerCase('fi');
+    const duplicateKey = `${title}|${location}|${description}`.toLocaleLowerCase('fi');
     if (seen.has(duplicateKey)) continue;
     seen.add(duplicateKey);
 
     const index = result.length;
     result.push({
-      id: `target-${index}-${normalizedKey(title, index)}`,
+      id: targetId(title, index),
       key: normalizedKey(title, index),
       title,
       location,
+      description,
+      assigneeUserIds: [],
     });
     if (result.length === 100) break;
   }
@@ -63,6 +109,7 @@ export function generateProjectWorkTargets(values: {
   start: number;
   count: number;
   padLength?: number;
+  locationPrefix?: string;
 }): ProjectWorkTargetDraft[] {
   const prefix = values.prefix.trim();
   const separator = prefix && /[a-z0-9åäö]$/i.test(prefix) ? ' ' : '';
@@ -71,15 +118,18 @@ export function generateProjectWorkTargets(values: {
   const padLength = Number.isFinite(values.padLength)
     ? Math.min(6, Math.max(0, Math.floor(values.padLength ?? 0)))
     : 0;
+  const locationPrefix = values.locationPrefix?.trim() ?? '';
 
   return Array.from({ length: count }, (_, index) => {
     const number = String(start + index).padStart(padLength, '0');
     const title = `${prefix}${separator}${number}`.trim();
     return {
-      id: `target-${index}-${normalizedKey(title, index)}`,
+      id: targetId(title, index),
       key: normalizedKey(title, index),
       title,
-      location: title,
+      location: locationPrefix ? `${locationPrefix} ${title}`.trim() : title,
+      description: '',
+      assigneeUserIds: [],
     };
   });
 }
@@ -160,4 +210,12 @@ export function createGenericProjectPhases(values: {
 
 export function projectWorkPlanSize(targetCount: number, phaseCount: number): number {
   return Math.max(0, targetCount) * Math.max(0, phaseCount);
+}
+
+export function applyAssigneesToAllTargets(
+  targets: ProjectWorkTargetDraft[],
+  assigneeUserIds: string[],
+): ProjectWorkTargetDraft[] {
+  const unique = [...new Set(assigneeUserIds)];
+  return targets.map((target) => ({ ...target, assigneeUserIds: unique }));
 }
