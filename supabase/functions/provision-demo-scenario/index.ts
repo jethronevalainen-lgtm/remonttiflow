@@ -1,7 +1,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.110.8';
 
-const DATASET_VERSION = 3;
+const DATASET_VERSION = 4;
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -189,6 +189,11 @@ async function scenarioIds(ownerUserId: string) {
       worker: await id('employee:worker'),
       supervisor: await id('employee:supervisor'),
       coordinator: await id('employee:coordinator'),
+      installerA: await id('employee:installer-a'),
+      installerB: await id('employee:installer-b'),
+      electrician: await id('employee:electrician'),
+      painter: await id('employee:painter'),
+      apprentice: await id('employee:apprentice'),
     },
     workOrders: await Promise.all(Array.from({ length: 10 }, (_, index) => id(`work-order:${index + 1}`))),
     legacyWorkOrders: [
@@ -223,6 +228,13 @@ async function clearDemoBusinessData(
   await deleteIds(admin, 'project_phases', [...ids.phases, ...ids.legacyPhases]);
   await deleteIds(admin, 'work_orders', [...ids.workOrders, ...ids.legacyWorkOrders]);
   await deleteIds(admin, 'projects', [...ids.projects, ...ids.legacyProjects]);
+
+  const { error: teamError } = await admin
+    .from('supervisor_team_members')
+    .delete()
+    .eq('organization_id', organizationId);
+  if (teamError) throw new Error(`Demotiimin siivous epäonnistui: ${teamError.message}`);
+
   await deleteIds(admin, 'employees', Object.values(ids.employees));
 
   const { error: accessError } = await admin
@@ -416,21 +428,90 @@ async function seedScenario(
       id: ids.employees.worker, organization_id: organizationId, created_by: ownerUserId,
       user_id: worker.userId, name: worker.displayName, role: 'Rakennustyöntekijä', department: 'Tuotanto',
       email: worker.email, phone: '040 111 1111', start_date: addDays(today, -365), status: 'Aktiivinen',
-      hourly_cost_cents: 2850, employment_type: 'Vakituinen', employment_category: 'employee', archived_at: null,
+      hourly_cost_cents: 2850, employment_type: 'Vakituinen', employment_category: 'employee',
+      emergency_contact_name: 'Mari Rantanen', emergency_contact_phone: '040 111 0000',
+      tax_number: '1234567-D', archived_at: null,
     },
     {
       id: ids.employees.supervisor, organization_id: organizationId, created_by: ownerUserId,
       user_id: supervisor.userId, name: supervisor.displayName, role: 'Työnjohtaja', department: 'Työnjohto',
-      email: supervisor.email, start_date: addDays(today, -700), status: 'Aktiivinen',
-      employment_type: 'Vakituinen', employment_category: 'employee', archived_at: null,
+      email: supervisor.email, phone: '040 222 2222', start_date: addDays(today, -700), status: 'Aktiivinen',
+      hourly_cost_cents: 4200, employment_type: 'Vakituinen', employment_category: 'employee',
+      emergency_contact_name: 'Sari Heikkinen', emergency_contact_phone: '040 222 0000',
+      tax_number: '2234567-D', archived_at: null,
     },
     {
       id: ids.employees.coordinator, organization_id: organizationId, created_by: ownerUserId,
       user_id: coordinator.userId, name: coordinator.displayName, role: 'Projektikoordinaattori', department: 'Projektit',
-      email: coordinator.email, start_date: addDays(today, -200), status: 'Aktiivinen',
-      employment_type: 'Vakituinen', employment_category: 'employee', archived_at: null,
+      email: coordinator.email, phone: '040 333 3333', start_date: addDays(today, -200), status: 'Aktiivinen',
+      hourly_cost_cents: 3600, employment_type: 'Vakituinen', employment_category: 'employee',
+      emergency_contact_name: 'Antti Saarinen', emergency_contact_phone: '040 333 0000',
+      tax_number: '3234567-D', archived_at: null,
+    },
+    {
+      id: ids.employees.installerA, organization_id: organizationId, created_by: ownerUserId,
+      user_id: null, name: 'Aino Virtanen', role: 'Asentaja', department: 'Tuotanto',
+      email: `aino.virtanen.${ownerUserId.slice(0, 8)}@demo.vakantti.invalid`,
+      phone: '040 444 1001', start_date: addDays(today, -520), status: 'Aktiivinen',
+      hourly_cost_cents: 2750, employment_type: 'Vakituinen', employment_category: 'employee',
+      emergency_contact_name: 'Pekka Virtanen', emergency_contact_phone: '040 444 0001',
+      tax_number: '4234567-D', archived_at: null,
+    },
+    {
+      id: ids.employees.installerB, organization_id: organizationId, created_by: ownerUserId,
+      user_id: null, name: 'Mikko Korhonen', role: 'Asentaja', department: 'Tuotanto',
+      email: `mikko.korhonen.${ownerUserId.slice(0, 8)}@demo.vakantti.invalid`,
+      phone: '040 444 1002', start_date: addDays(today, -410), status: 'Aktiivinen',
+      hourly_cost_cents: 2800, employment_type: 'Vakituinen', employment_category: 'employee',
+      emergency_contact_name: 'Liisa Korhonen', emergency_contact_phone: '040 444 0002',
+      tax_number: '5234567-D', archived_at: null,
+    },
+    {
+      id: ids.employees.electrician, organization_id: organizationId, created_by: ownerUserId,
+      user_id: null, name: 'Elias Nieminen', role: 'Sähköasentaja', department: 'Sähkö',
+      email: `elias.nieminen.${ownerUserId.slice(0, 8)}@demo.vakantti.invalid`,
+      phone: '040 555 1003', start_date: addDays(today, -640), status: 'Aktiivinen',
+      hourly_cost_cents: 3200, employment_type: 'Vakituinen', employment_category: 'employee',
+      emergency_contact_name: 'Noora Nieminen', emergency_contact_phone: '040 555 0003',
+      tax_number: '6234567-D', archived_at: null,
+    },
+    {
+      id: ids.employees.painter, organization_id: organizationId, created_by: ownerUserId,
+      user_id: null, name: 'Sofia Laine', role: 'Maalari', department: 'Pintatyöt',
+      email: `sofia.laine.${ownerUserId.slice(0, 8)}@demo.vakantti.invalid`,
+      phone: '040 666 1004', start_date: addDays(today, -290), status: 'Aktiivinen',
+      hourly_cost_cents: 2650, employment_type: 'Määräaikainen', employment_category: 'employee',
+      emergency_contact_name: 'Kalle Laine', emergency_contact_phone: '040 666 0004',
+      tax_number: '7234567-D', archived_at: null,
+    },
+    {
+      id: ids.employees.apprentice, organization_id: organizationId, created_by: ownerUserId,
+      user_id: null, name: 'Onni Mäkinen', role: 'Harjoittelija', department: 'Tuotanto',
+      email: `onni.makinen.${ownerUserId.slice(0, 8)}@demo.vakantti.invalid`,
+      phone: '040 777 1005', start_date: addDays(today, -60), status: 'Aktiivinen',
+      hourly_cost_cents: 1800, employment_type: 'Harjoittelu', employment_category: 'employee',
+      emergency_contact_name: 'Helena Mäkinen', emergency_contact_phone: '040 777 0005',
+      tax_number: '8234567-D', archived_at: null,
     },
   ]);
+
+  const teamEmployeeIds = [
+    ids.employees.worker,
+    ids.employees.installerA,
+    ids.employees.installerB,
+    ids.employees.electrician,
+    ids.employees.painter,
+    ids.employees.apprentice,
+  ];
+  await upsertRows(admin, 'supervisor_team_members', teamEmployeeIds.map((employeeId) => ({
+    organization_id: organizationId,
+    supervisor_user_id: supervisor.userId,
+    employee_id: employeeId,
+    assigned_by: ownerUserId,
+    is_active: true,
+    assigned_at: new Date().toISOString(),
+    removed_at: null,
+  })), 'organization_id,supervisor_user_id,employee_id');
 
   await upsertRows(admin, 'projects', projects.map((project) => ({
     id: project.id,
@@ -588,7 +669,7 @@ async function seedScenario(
     date: addDays(today, -1),
     weather: 'Puolipilvinen',
     temperature: 18,
-    workers: scenario === 'busy' ? 8 : 4,
+    workers: scenario === 'busy' ? 8 : 6,
     work_phases: `${scenario}-skenaarion päivän työvaiheet.`,
     deliveries: 'Materiaalitoimitus saapui klo 09.30.',
     issues: scenario === 'late' ? 'Aikataulu ja materiaalisaatavuus vaativat välittömiä toimenpiteitä.' : 'Ei vakavia poikkeamia.',
