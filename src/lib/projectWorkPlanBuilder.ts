@@ -1,5 +1,7 @@
 import type { WorkOrderPriority } from '@/types';
 
+export type WorkPlanWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
 export interface ProjectWorkTargetDraft {
   id: string;
   key: string;
@@ -7,29 +9,62 @@ export interface ProjectWorkTargetDraft {
   location: string;
   /** Mitä tässä kohteessa / huoneistossa tehdään. */
   description: string;
-  /** Kohteen suunniteltu aloitus. Jaetaan kohteen työvaiheille järjestyksessä. */
+  /** Kohteen aikaisin sallittu aloitus. */
   startDate: string;
-  /** Kohteen suunniteltu valmistuminen. */
+  /** Kohteen tavoitevalmistuminen. */
   endDate: string;
-  /** Kohteen tekijät; jos asetettu, ohittaa työvaiheen tekijät. */
+  /** Kohteen oletustekijät; solukohtainen valinta ohittaa tämän. */
   assigneeUserIds: string[];
 }
 
 export interface ProjectWorkPhaseDraft {
   id: string;
+  /** Vakaa tunniste tietokantaan ja kohdistusmatriisiin. */
+  key?: string;
   title: string;
   type: string;
   description: string;
-  /** Työvaiheen oletusaikataulu, jota käytetään ilman kohdekohtaista aikataulua. */
+  /** Vanhan luonnin yhteensopivuuspäivät. */
   startDate: string;
   endDate: string;
+  /** Uuden mallin oletuskesto työpäivinä. */
+  durationWorkdays?: number;
+  startTime?: string;
+  endTime?: string;
+  weekdays?: WorkPlanWeekday[];
   priority: WorkOrderPriority;
   assigneeUserIds: string[];
+}
+
+export interface ProjectWorkAssignmentDraft {
+  id: string;
+  targetId: string;
+  phaseId: string;
+  enabled: boolean;
+  startDate: string;
+  endDate: string;
+  /** Tyhjä lista tarkoittaa: käytä kohteen tai työvaiheen oletusta. */
+  assigneeUserIds: string[];
+  /** Manuaalista aikataulua ei korvata automaattijaksotuksessa. */
+  manualSchedule: boolean;
 }
 
 export interface ProjectWorkPhaseSchedule {
   startDate: string;
   endDate: string;
+}
+
+export interface WorkPlanScheduleWarning {
+  targetId: string;
+  targetTitle: string;
+  message: string;
+}
+
+export interface WorkPlanInternalConflict {
+  userId: string;
+  date: string;
+  firstAssignmentId: string;
+  secondAssignmentId: string;
 }
 
 function normalizedKey(value: string, index: number): string {
@@ -46,10 +81,93 @@ function targetId(title: string, index: number): string {
   return `target-${index}-${normalizedKey(title, index)}`;
 }
 
+export function phaseKey(phase: Pick<ProjectWorkPhaseDraft, 'id' | 'key' | 'title'>, index = 0): string {
+  if (phase.key?.trim()) return phase.key.trim();
+  const id = phase.id.trim();
+  if (id) return id;
+  return normalizedKey(phase.title, index);
+}
+
+export function workAssignmentId(targetIdValue: string, phaseIdValue: string): string {
+  return `${targetIdValue}::${phaseIdValue}`;
+}
+
 export function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T12:00:00Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function parseDate(value: string): Date | null {
+  if (!isIsoDate(value)) return null;
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateText(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizedWeekdays(value?: WorkPlanWeekday[]): WorkPlanWeekday[] {
+  const weekdays = value?.filter((day): day is WorkPlanWeekday => day >= 1 && day <= 7) ?? [];
+  return weekdays.length > 0 ? [...new Set(weekdays)] : [1, 2, 3, 4, 5];
+}
+
+function isAllowedWorkday(date: Date, weekdays: WorkPlanWeekday[]): boolean {
+  const jsDay = date.getUTCDay();
+  const isoDay = (jsDay === 0 ? 7 : jsDay) as WorkPlanWeekday;
+  return weekdays.includes(isoDay);
+}
+
+export function addWorkdays(
+  value: string,
+  offset: number,
+  weekdays: WorkPlanWeekday[] = [1, 2, 3, 4, 5],
+): string {
+  const date = parseDate(value);
+  if (!date) return '';
+  const allowed = normalizedWeekdays(weekdays);
+  const direction = offset < 0 ? -1 : 1;
+  let remaining = Math.abs(Math.trunc(offset));
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + direction);
+    if (isAllowedWorkday(date, allowed)) remaining -= 1;
+  }
+  return dateText(date);
+}
+
+export function firstAllowedWorkday(
+  value: string,
+  weekdays: WorkPlanWeekday[] = [1, 2, 3, 4, 5],
+): string {
+  const date = parseDate(value);
+  if (!date) return '';
+  const allowed = normalizedWeekdays(weekdays);
+  while (!isAllowedWorkday(date, allowed)) date.setUTCDate(date.getUTCDate() + 1);
+  return dateText(date);
+}
+
+export function workdayDates(
+  startDate: string,
+  endDate: string,
+  weekdays: WorkPlanWeekday[] = [1, 2, 3, 4, 5],
+): string[] {
+  const start = parseDate(startDate);
+  const end = parseDate(endDate);
+  if (!start || !end || end < start) return [];
+  const allowed = normalizedWeekdays(weekdays);
+  const result: string[] = [];
+  for (const cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    if (isAllowedWorkday(cursor, allowed)) result.push(dateText(cursor));
+  }
+  return result;
+}
+
+export function defaultPhaseDuration(phase: ProjectWorkPhaseDraft): number {
+  const explicit = Number(phase.durationWorkdays);
+  if (Number.isFinite(explicit) && explicit >= 1) return Math.min(60, Math.floor(explicit));
+  const legacyDates = workdayDates(phase.startDate, phase.endDate, phase.weekdays);
+  return Math.max(1, legacyDates.length || 1);
 }
 
 /** Resolves assignees for one target × phase cell. Target wins when set. */
@@ -61,17 +179,22 @@ export function resolveWorkPlanAssignees(
   return [...new Set(phase.assigneeUserIds)];
 }
 
+export function resolveWorkItemAssignees(
+  item: Pick<ProjectWorkAssignmentDraft, 'assigneeUserIds'>,
+  target: Pick<ProjectWorkTargetDraft, 'assigneeUserIds'>,
+  phase: Pick<ProjectWorkPhaseDraft, 'assigneeUserIds'>,
+): string[] {
+  if (item.assigneeUserIds.length > 0) return [...new Set(item.assigneeUserIds)];
+  return resolveWorkPlanAssignees(target, phase);
+}
+
 export function combineWorkPlanDescription(
   target: Pick<ProjectWorkTargetDraft, 'title' | 'description'>,
   phase: Pick<ProjectWorkPhaseDraft, 'title' | 'description'>,
 ): string {
   const parts = [
-    target.description.trim()
-      ? `Kohde ${target.title}: ${target.description.trim()}`
-      : '',
-    phase.description.trim()
-      ? `Työvaihe ${phase.title}: ${phase.description.trim()}`
-      : '',
+    target.description.trim() ? `Kohde ${target.title}: ${target.description.trim()}` : '',
+    phase.description.trim() ? `Työvaihe ${phase.title}: ${phase.description.trim()}` : '',
   ].filter(Boolean);
   return parts.join('\n\n');
 }
@@ -124,29 +247,6 @@ export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDra
   return result;
 }
 
-function parseDate(value: string): Date | null {
-  if (!isIsoDate(value)) return null;
-  const date = new Date(`${value}T12:00:00Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function dateText(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function addWorkdays(value: string, offset: number): string {
-  const date = parseDate(value);
-  if (!date) return '';
-  const direction = offset < 0 ? -1 : 1;
-  let remaining = Math.abs(Math.trunc(offset));
-  while (remaining > 0) {
-    date.setUTCDate(date.getUTCDate() + direction);
-    const day = date.getUTCDay();
-    if (day !== 0 && day !== 6) remaining -= 1;
-  }
-  return dateText(date);
-}
-
 export function generateProjectWorkTargets(values: {
   prefix: string;
   start: number;
@@ -165,19 +265,19 @@ export function generateProjectWorkTargets(values: {
     ? Math.min(6, Math.max(0, Math.floor(values.padLength ?? 0)))
     : 0;
   const locationPrefix = values.locationPrefix?.trim() ?? '';
-  const firstStartDate = isIsoDate(values.firstStartDate ?? '') ? values.firstStartDate as string : '';
+  const firstStartDateValue = isIsoDate(values.firstStartDate ?? '') ? values.firstStartDate as string : '';
   const workdayDuration = Number.isFinite(values.workdayDuration)
     ? Math.max(1, Math.min(60, Math.floor(values.workdayDuration ?? 1)))
     : 1;
   const gapWorkdays = Number.isFinite(values.gapWorkdays)
     ? Math.max(0, Math.min(20, Math.floor(values.gapWorkdays ?? 0)))
     : 0;
-  let nextStartDate = firstStartDate;
+  let nextStartDate = firstStartDateValue;
 
   return Array.from({ length: count }, (_, index) => {
     const number = String(start + index).padStart(padLength, '0');
     const title = `${prefix}${separator}${number}`.trim();
-    const targetStartDate = nextStartDate;
+    const targetStartDate = nextStartDate ? firstAllowedWorkday(nextStartDate) : '';
     const targetEndDate = targetStartDate ? addWorkdays(targetStartDate, workdayDuration - 1) : '';
     if (targetEndDate) nextStartDate = addWorkdays(targetEndDate, gapWorkdays + 1);
     return {
@@ -214,23 +314,199 @@ export function spreadProjectPhaseDates(
   });
 }
 
-/**
- * Builds the exact dates sent to work orders. A target-level window overrides
- * phase defaults and is divided in phase order. With one phase the target dates
- * are used unchanged.
- */
+/** Vanhan mallin yhteensopiva aikataulun jako. */
 export function buildTargetPhaseSchedule(
   target: Pick<ProjectWorkTargetDraft, 'startDate' | 'endDate'>,
   phases: Array<Pick<ProjectWorkPhaseDraft, 'startDate' | 'endDate'>>,
 ): ProjectWorkPhaseSchedule[] {
-  if (
-    isIsoDate(target.startDate)
-    && isIsoDate(target.endDate)
-    && target.endDate >= target.startDate
-  ) {
+  if (isIsoDate(target.startDate) && isIsoDate(target.endDate) && target.endDate >= target.startDate) {
     return spreadProjectPhaseDates(target.startDate, target.endDate, phases.length);
   }
   return phases.map((phase) => ({ startDate: phase.startDate, endDate: phase.endDate }));
+}
+
+export function synchronizeWorkAssignments(
+  targets: ProjectWorkTargetDraft[],
+  phases: ProjectWorkPhaseDraft[],
+  current: ProjectWorkAssignmentDraft[] = [],
+  enableNew = true,
+): ProjectWorkAssignmentDraft[] {
+  const existing = new Map(current.map((item) => [workAssignmentId(item.targetId, item.phaseId), item]));
+  return targets.flatMap((target) => phases.map((phase) => {
+    const id = workAssignmentId(target.id, phase.id);
+    return existing.get(id) ?? {
+      id,
+      targetId: target.id,
+      phaseId: phase.id,
+      enabled: enableNew,
+      startDate: '',
+      endDate: '',
+      assigneeUserIds: [],
+      manualSchedule: false,
+    };
+  }));
+}
+
+export function setPhaseForAllTargets(
+  assignments: ProjectWorkAssignmentDraft[],
+  phaseIdValue: string,
+  enabled: boolean,
+): ProjectWorkAssignmentDraft[] {
+  return assignments.map((item) => item.phaseId === phaseIdValue ? { ...item, enabled } : item);
+}
+
+export function setAllPhasesForTarget(
+  assignments: ProjectWorkAssignmentDraft[],
+  targetIdValue: string,
+  enabled: boolean,
+): ProjectWorkAssignmentDraft[] {
+  return assignments.map((item) => item.targetId === targetIdValue ? { ...item, enabled } : item);
+}
+
+export function copyTargetPhaseSelection(
+  assignments: ProjectWorkAssignmentDraft[],
+  sourceTargetId: string,
+  targetIds: string[],
+): ProjectWorkAssignmentDraft[] {
+  const source = new Map(
+    assignments.filter((item) => item.targetId === sourceTargetId).map((item) => [item.phaseId, item.enabled]),
+  );
+  const selectedTargets = new Set(targetIds);
+  return assignments.map((item) => selectedTargets.has(item.targetId)
+    ? { ...item, enabled: source.get(item.phaseId) ?? false }
+    : item);
+}
+
+export function scheduleTargetAssignments(
+  target: ProjectWorkTargetDraft,
+  phases: ProjectWorkPhaseDraft[],
+  assignments: ProjectWorkAssignmentDraft[],
+  options: { overwriteManual?: boolean } = {},
+): ProjectWorkAssignmentDraft[] {
+  let cursor = firstAllowedWorkday(target.startDate);
+  const phaseIndex = new Map(phases.map((phase, index) => [phase.id, index]));
+  const targetItems = assignments
+    .filter((item) => item.targetId === target.id && item.enabled)
+    .sort((a, b) => (phaseIndex.get(a.phaseId) ?? 0) - (phaseIndex.get(b.phaseId) ?? 0));
+  const scheduled = new Map<string, ProjectWorkAssignmentDraft>();
+
+  for (const item of targetItems) {
+    const phase = phases.find((candidate) => candidate.id === item.phaseId);
+    if (!phase) continue;
+    if (item.manualSchedule && !options.overwriteManual && isIsoDate(item.startDate) && isIsoDate(item.endDate)) {
+      scheduled.set(item.id, item);
+      cursor = addWorkdays(item.endDate, 1, phase.weekdays);
+      continue;
+    }
+    const startDate = firstAllowedWorkday(cursor || target.startDate, phase.weekdays);
+    const endDate = startDate
+      ? addWorkdays(startDate, defaultPhaseDuration(phase) - 1, phase.weekdays)
+      : '';
+    scheduled.set(item.id, {
+      ...item,
+      startDate,
+      endDate,
+      manualSchedule: false,
+    });
+    cursor = endDate ? addWorkdays(endDate, 1, phase.weekdays) : '';
+  }
+
+  return assignments.map((item) => scheduled.get(item.id) ?? item);
+}
+
+export function scheduleAllAssignments(
+  targets: ProjectWorkTargetDraft[],
+  phases: ProjectWorkPhaseDraft[],
+  assignments: ProjectWorkAssignmentDraft[],
+  options: { overwriteManual?: boolean } = {},
+): ProjectWorkAssignmentDraft[] {
+  return targets.reduce(
+    (current, target) => scheduleTargetAssignments(target, phases, current, options),
+    assignments,
+  );
+}
+
+export function selectedWorkAssignments(assignments: ProjectWorkAssignmentDraft[]): ProjectWorkAssignmentDraft[] {
+  return assignments.filter((item) => item.enabled);
+}
+
+export function buildScheduleWarnings(
+  targets: ProjectWorkTargetDraft[],
+  phases: ProjectWorkPhaseDraft[],
+  assignments: ProjectWorkAssignmentDraft[],
+): WorkPlanScheduleWarning[] {
+  const warnings: WorkPlanScheduleWarning[] = [];
+  for (const target of targets) {
+    const selected = assignments.filter((item) => item.targetId === target.id && item.enabled);
+    if (selected.length === 0) {
+      warnings.push({ targetId: target.id, targetTitle: target.title, message: 'Kohteelle ei ole valittu työvaiheita.' });
+      continue;
+    }
+    const missingSchedule = selected.some((item) => !isIsoDate(item.startDate) || !isIsoDate(item.endDate));
+    if (missingSchedule) {
+      warnings.push({ targetId: target.id, targetTitle: target.title, message: 'Kaikilla valituilla työvaiheilla ei ole aikataulua.' });
+      continue;
+    }
+    const latestEnd = selected.reduce((latest, item) => item.endDate > latest ? item.endDate : latest, '');
+    if (isIsoDate(target.endDate) && latestEnd > target.endDate) {
+      warnings.push({
+        targetId: target.id,
+        targetTitle: target.title,
+        message: `Työvaiheet valmistuvat ${latestEnd}, joka ylittää kohteen tavoitepäivän ${target.endDate}.`,
+      });
+    }
+    const ordered = [...selected].sort((a, b) => {
+      const aIndex = phases.findIndex((phase) => phase.id === a.phaseId);
+      const bIndex = phases.findIndex((phase) => phase.id === b.phaseId);
+      return aIndex - bIndex;
+    });
+    for (let index = 1; index < ordered.length; index += 1) {
+      if (ordered[index].startDate <= ordered[index - 1].endDate) {
+        warnings.push({
+          targetId: target.id,
+          targetTitle: target.title,
+          message: 'Peräkkäiset työvaiheet menevät ajallisesti päällekkäin.',
+        });
+        break;
+      }
+    }
+  }
+  return warnings;
+}
+
+export function buildInternalResourceConflicts(
+  targets: ProjectWorkTargetDraft[],
+  phases: ProjectWorkPhaseDraft[],
+  assignments: ProjectWorkAssignmentDraft[],
+): WorkPlanInternalConflict[] {
+  const targetMap = new Map(targets.map((target) => [target.id, target]));
+  const phaseMap = new Map(phases.map((phase) => [phase.id, phase]));
+  const occupied = new Map<string, string>();
+  const conflicts: WorkPlanInternalConflict[] = [];
+
+  for (const item of assignments.filter((candidate) => candidate.enabled)) {
+    const target = targetMap.get(item.targetId);
+    const phase = phaseMap.get(item.phaseId);
+    if (!target || !phase) continue;
+    const users = resolveWorkItemAssignees(item, target, phase);
+    for (const date of workdayDates(item.startDate, item.endDate, phase.weekdays)) {
+      for (const userId of users) {
+        const key = `${userId}:${date}`;
+        const previous = occupied.get(key);
+        if (previous && previous !== item.id) {
+          conflicts.push({
+            userId,
+            date,
+            firstAssignmentId: previous,
+            secondAssignmentId: item.id,
+          });
+        } else {
+          occupied.set(key, item.id);
+        }
+      }
+    }
+  }
+  return conflicts;
 }
 
 export function createGenericProjectPhases(values: {
@@ -239,38 +515,51 @@ export function createGenericProjectPhases(values: {
 }): ProjectWorkPhaseDraft[] {
   const definitions = [
     {
+      key: 'valmistelu',
       title: 'Aloitus, suojaus ja valmistelu',
       type: 'Valmistelu',
       description: 'Varmista lähtötiedot, kulkureitit, suojaukset, materiaalit ja työn turvallinen aloitus.',
+      durationWorkdays: 1,
     },
     {
+      key: 'purku-pohjatyot',
       title: 'Purku tai pohjatyöt',
       type: 'Pohjatyö',
       description: 'Tee kohteen edellyttämät purku-, avaus-, mittaus- ja pohjatyöt ennen varsinaista toteutusta.',
+      durationWorkdays: 2,
     },
     {
+      key: 'toteutus-asennus',
       title: 'Varsinainen toteutus tai asennus',
       type: 'Toteutus',
       description: 'Toteuta kohteen varsinainen rakennus-, asennus- tai korjaustyö suunnitelmien mukaisesti.',
+      durationWorkdays: 4,
     },
     {
+      key: 'viimeistely',
       title: 'Viimeistely ja toimintakokeet',
       type: 'Viimeistely',
       description: 'Tee liittymät, säädöt, puhdistus, toimintakokeet ja muut viimeistelytyöt.',
+      durationWorkdays: 1,
     },
     {
+      key: 'luovutus',
       title: 'Tarkastus, dokumentointi ja luovutus',
       type: 'Luovutus',
       description: 'Tarkasta laatu, käsittele puutteet, lisää dokumentit ja varmista luovutusvalmius.',
+      durationWorkdays: 1,
     },
   ];
   const ranges = spreadProjectPhaseDates(values.startDate, values.endDate, definitions.length);
 
   return definitions.map((definition, index) => ({
-    id: `phase-${index + 1}`,
+    id: `phase-${definition.key}`,
     ...definition,
     startDate: ranges[index]?.startDate ?? '',
     endDate: ranges[index]?.endDate ?? '',
+    startTime: '07:00',
+    endTime: '15:30',
+    weekdays: [1, 2, 3, 4, 5],
     priority: 'Normaali',
     assigneeUserIds: [],
   }));
