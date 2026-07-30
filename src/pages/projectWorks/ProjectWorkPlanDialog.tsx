@@ -159,6 +159,7 @@ export default function ProjectWorkPlanDialog({
   const [sequenceStart, setSequenceStart] = useState('1');
   const [sequenceCount, setSequenceCount] = useState('10');
   const [bulkAssigneeId, setBulkAssigneeId] = useState('');
+  const [activeTargetId, setActiveTargetId] = useState('');
   const [phases, setPhases] = useState<ProjectWorkPhaseDraft[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -174,6 +175,7 @@ export default function ProjectWorkPlanDialog({
     setSequenceStart('1');
     setSequenceCount('10');
     setBulkAssigneeId('');
+    setActiveTargetId('');
     setPhases([]);
     setErrors([]);
     setSaving(false);
@@ -187,6 +189,17 @@ export default function ProjectWorkPlanDialog({
 
   const personName = (userId: string) =>
     availablePeople.find((person) => person.userId === userId)?.name ?? userId;
+  const activeTarget = targets.find((target) => target.id === activeTargetId) ?? targets[0];
+
+  useEffect(() => {
+    if (targets.length === 0) {
+      if (activeTargetId) setActiveTargetId('');
+      return;
+    }
+    if (!targets.some((target) => target.id === activeTargetId)) {
+      setActiveTargetId(targets[0].id);
+    }
+  }, [activeTargetId, targets]);
 
   const appendTargets = (next: ProjectWorkTargetDraft[]) => {
     setTargets((current) => {
@@ -346,9 +359,15 @@ export default function ProjectWorkPlanDialog({
   };
 
   const continueFromStepTwo = () => {
-    const nextErrors = validateStepTwo();
+    const nextErrors = validateStepOne();
     setErrors(nextErrors);
     if (nextErrors.length === 0) setStep(3);
+  };
+
+  const continueFromStepThree = () => {
+    const nextErrors = validateStepTwo();
+    setErrors(nextErrors);
+    if (nextErrors.length === 0) setStep(4);
   };
 
   const save = async () => {
@@ -388,13 +407,25 @@ export default function ProjectWorkPlanDialog({
           </p>
         </DialogHeader>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
           {[
-            { number: 1, title: 'Huoneistot / kohteet', description: `${targets.length} kohdetta`, icon: ClipboardList },
-            { number: 2, title: 'Työvaiheet', description: `${phases.length} vaihetta`, icon: UsersRound },
-            { number: 3, title: 'Tarkista ja luo', description: `${workOrderCount} työmääräystä`, icon: CheckCircle2 },
+            { number: 1, title: 'Lisää kohteet', description: `${targets.length} kohdetta`, icon: ClipboardList },
+            { number: 2, title: 'Kohteiden tiedot', description: 'sisältö ja tekijät', icon: Users },
+            { number: 3, title: 'Työvaiheet', description: `${phases.length} vaihetta`, icon: CalendarDays },
+            { number: 4, title: 'Tarkista ja luo', description: `${workOrderCount} työmääräystä`, icon: CheckCircle2 },
           ].map((item) => (
-            <div key={item.number} className={stepClasses(step === item.number, step > item.number)}>
+            <button
+              type="button"
+              key={item.number}
+              className={stepClasses(step === item.number, step > item.number)}
+              onClick={() => {
+                if (item.number < step) {
+                  setErrors([]);
+                  setStep(item.number);
+                }
+              }}
+              disabled={item.number > step}
+            >
               <span
                 className={cn(
                   'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold',
@@ -411,7 +442,7 @@ export default function ProjectWorkPlanDialog({
                 <p className="font-semibold break-words">{item.title}</p>
                 <p className="text-xs text-text-secondary break-words">{item.description}</p>
               </div>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -525,130 +556,37 @@ export default function ProjectWorkPlanDialog({
               </div>
             </section>
 
-            <section className="space-y-4 rounded-2xl border border-slate-200 p-4 sm:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <section className="rounded-2xl border border-slate-200 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold break-words">2. Tekijä ja työseloste per huoneisto</h3>
+                  <h3 className="font-semibold break-words">Luodut huoneistot / kohteet</h3>
                   <p className="mt-1 text-sm text-text-secondary break-words">
-                    Huoneiston tekijä siirtyy kaikkiin sen työmääräyksiin. Työseloste yhdistetään
-                    työmääräyksen kuvaukseen.
+                    Tarkista määrä. Tiedot ja tekijät lisätään seuraavassa vaiheessa.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">{targets.length}/100</Badge>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setTargets((current) => [...current, emptyTarget()])}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTargets((current) => [...current, emptyTarget()])}
+                  >
                     <Plus size={16} className="mr-1.5" />
-                    Lisää yksi
+                    Lisää yksittäin
                   </Button>
                 </div>
               </div>
-
-              {targets.length > 0 && (
-                <div className="flex flex-wrap items-end gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
-                  <div className="min-w-[220px] flex-1 space-y-1">
-                    <Label className="text-xs">Sama tekijä kaikille huoneistoille</Label>
-                    <Select value={bulkAssigneeId || undefined} onValueChange={setBulkAssigneeId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Valitse henkilö" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availablePeople.map((person) => (
-                          <SelectItem key={person.userId} value={person.userId}>
-                            {person.name} ({roleLabel(person.role)})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="button" variant="secondary" onClick={applyBulkAssignee}>
-                    <Users size={16} className="mr-2" />
-                    Aseta kaikille
-                  </Button>
-                </div>
-              )}
-
               {targets.length === 0 ? (
-                <div className="rounded-xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-text-secondary break-words">
+                <div className="mt-4 rounded-xl border-2 border-dashed border-slate-200 p-6 text-center text-sm text-text-secondary break-words">
                   Ei vielä huoneistoja. Liitä lista, muodosta numerosarja tai lisää yksi kohde.
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="mt-4 flex flex-wrap gap-2">
                   {targets.map((target, index) => (
-                    <div key={target.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
-                          Huoneisto / kohde {index + 1}
-                        </p>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600"
-                          onClick={() =>
-                            setTargets((current) => current.filter((item) => item.id !== target.id))
-                          }
-                          aria-label={`Poista ${target.title || `kohde ${index + 1}`}`}
-                        >
-                          <Trash2 size={16} />
-                        </Button>
-                      </div>
-                      <div className="grid gap-3 lg:grid-cols-2">
-                        <div className="space-y-3">
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="space-y-1.5">
-                              <Label>Nimi *</Label>
-                              <Input
-                                value={target.title}
-                                onChange={(event) =>
-                                  updateTarget(target.id, { title: event.target.value })
-                                }
-                                placeholder="Esim. A12 tai Huoneisto 3"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <Label>Sijainti</Label>
-                              <Input
-                                value={target.location}
-                                onChange={(event) =>
-                                  updateTarget(target.id, { location: event.target.value })
-                                }
-                                placeholder="Esim. 2. kerros, rappu B"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label>Mitä tässä huoneistossa tehdään</Label>
-                            <Textarea
-                              value={target.description}
-                              onChange={(event) =>
-                                updateTarget(target.id, { description: event.target.value })
-                              }
-                              rows={3}
-                              placeholder="Esim. Keittiökaapistot + liedet, ei kylpyhuonetta"
-                            />
-                          </div>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold">Tekijä(t)</p>
-                              <p className="text-xs text-text-secondary break-words">
-                                Voit jättää tyhjäksi ja asettaa tekijän työvaiheelle.
-                              </p>
-                            </div>
-                            <Badge variant="secondary">{target.assigneeUserIds.length}</Badge>
-                          </div>
-                          <AssigneesList
-                            people={availablePeople}
-                            value={target.assigneeUserIds}
-                            onToggle={(userId, checked) =>
-                              toggleTargetAssignee(target.id, userId, checked)
-                            }
-                            emptyMessage="Projektitiimissä ei ole valittavia käyttäjiä."
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    <Badge key={target.id} variant="outline" className="whitespace-normal break-words px-3 py-1.5">
+                      {target.title.trim() || `Nimetön kohde ${index + 1}`}
+                    </Badge>
                   ))}
                 </div>
               )}
@@ -657,6 +595,164 @@ export default function ProjectWorkPlanDialog({
         )}
 
         {step === 2 && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <p className="font-semibold text-blue-950 break-words">
+                Täydennä huoneistokohtaiset tiedot
+              </p>
+              <p className="mt-1 text-sm text-blue-900 break-words">
+                Valitse vasemmalta kohde ja muokkaa sen tietoja oikealla. Tekijä on valinnainen:
+                jos sitä ei aseteta tässä, käytetään seuraavassa vaiheessa valittua työvaiheen tekijää.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="min-w-[220px] flex-1 space-y-1">
+                <Label className="text-xs">Aseta sama tekijä kaikille kohteille</Label>
+                <Select value={bulkAssigneeId || undefined} onValueChange={setBulkAssigneeId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Valitse henkilö" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availablePeople.map((person) => (
+                      <SelectItem key={person.userId} value={person.userId}>
+                        {person.name} ({roleLabel(person.role)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="button" variant="secondary" onClick={applyBulkAssignee}>
+                <Users size={16} className="mr-2" />
+                Aseta kaikille
+              </Button>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <p className="font-semibold">Kohteet</p>
+                  <Badge variant="secondary">{targets.length}</Badge>
+                </div>
+                <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+                  {targets.map((target, index) => (
+                    <button
+                      type="button"
+                      key={target.id}
+                      className={cn(
+                        'w-full rounded-lg border p-3 text-left transition',
+                        activeTarget?.id === target.id
+                          ? 'border-primary/40 bg-white shadow-sm'
+                          : 'border-transparent hover:border-slate-200 hover:bg-white',
+                      )}
+                      onClick={() => setActiveTargetId(target.id)}
+                    >
+                      <span className="block text-xs font-semibold text-text-muted">
+                        Kohde {index + 1}
+                      </span>
+                      <span className="mt-1 block font-medium break-words">
+                        {target.title.trim() || 'Nimetön kohde'}
+                      </span>
+                      <span className="mt-1 block text-xs text-text-secondary break-words">
+                        {target.assigneeUserIds.length > 0
+                          ? target.assigneeUserIds.map(personName).join(', ')
+                          : 'Tekijä työvaiheelta'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {activeTarget && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                        Muokattava kohde
+                      </p>
+                      <h3 className="mt-1 text-lg font-semibold break-words">
+                        {activeTarget.title.trim() || 'Nimetön kohde'}
+                      </h3>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600"
+                      onClick={() =>
+                        setTargets((current) =>
+                          current.filter((item) => item.id !== activeTarget.id),
+                        )
+                      }
+                    >
+                      <Trash2 size={16} className="mr-1.5" />
+                      Poista kohde
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <div className="space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label>Nimi *</Label>
+                          <Input
+                            value={activeTarget.title}
+                            onChange={(event) =>
+                              updateTarget(activeTarget.id, { title: event.target.value })
+                            }
+                            placeholder="Esim. A12 tai Huoneisto 3"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Sijainti</Label>
+                          <Input
+                            value={activeTarget.location}
+                            onChange={(event) =>
+                              updateTarget(activeTarget.id, { location: event.target.value })
+                            }
+                            placeholder="Esim. 2. kerros, rappu B"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Mitä tässä huoneistossa tehdään</Label>
+                        <Textarea
+                          value={activeTarget.description}
+                          onChange={(event) =>
+                            updateTarget(activeTarget.id, { description: event.target.value })
+                          }
+                          rows={5}
+                          placeholder="Esim. Keittiökaapistot + liedet, ei kylpyhuonetta"
+                        />
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <div>
+                          <p className="font-semibold">Kohteen tekijä(t)</p>
+                          <p className="mt-1 text-xs text-text-secondary break-words">
+                            Valinta ohittaa työvaiheen oletustekijän.
+                          </p>
+                        </div>
+                        <Badge variant="secondary">{activeTarget.assigneeUserIds.length}</Badge>
+                      </div>
+                      <AssigneesList
+                        people={availablePeople}
+                        value={activeTarget.assigneeUserIds}
+                        onToggle={(userId, checked) =>
+                          toggleTargetAssignee(activeTarget.id, userId, checked)
+                        }
+                        emptyMessage="Projektitiimissä ei ole valittavia käyttäjiä."
+                      />
+                    </div>
+                  </div>
+                </section>
+              )}
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
           <div className="space-y-5">
             <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -839,7 +935,7 @@ export default function ProjectWorkPlanDialog({
           </div>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <div className="space-y-5">
             <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {[
@@ -944,17 +1040,23 @@ export default function ProjectWorkPlanDialog({
             </Button>
             {step === 1 && (
               <Button onClick={continueFromStepOne}>
-                Jatka työvaiheisiin
+                Jatka kohteiden tietoihin
                 <ArrowRight size={16} className="ml-2" />
               </Button>
             )}
             {step === 2 && (
               <Button onClick={continueFromStepTwo}>
-                Tarkista kokonaisuus
+                Jatka työvaiheisiin
                 <ArrowRight size={16} className="ml-2" />
               </Button>
             )}
             {step === 3 && (
+              <Button onClick={continueFromStepThree}>
+                Tarkista kokonaisuus
+                <ArrowRight size={16} className="ml-2" />
+              </Button>
+            )}
+            {step === 4 && (
               <Button disabled={saving} onClick={() => void save()}>
                 {saving ? (
                   <Loader2 size={16} className="mr-2 animate-spin" />
