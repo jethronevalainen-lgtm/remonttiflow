@@ -17,6 +17,26 @@ export interface ProjectWorkTargetDraft {
   assigneeUserIds: string[];
 }
 
+export interface ProjectUnitImportSource {
+  id: string;
+  unitCode: string;
+  buildingName?: string;
+  stairwellName?: string;
+  floor?: string;
+  unitType?: string;
+  areaM2?: number;
+  renovationScope?: string;
+  plannedCompletionDate?: string;
+  notes?: string;
+}
+
+export interface AppendProjectWorkTargetsResult {
+  targets: ProjectWorkTargetDraft[];
+  addedCount: number;
+  duplicateCount: number;
+  limitReached: boolean;
+}
+
 export interface ProjectWorkPhaseDraft {
   id: string;
   /** Vakaa tunniste tietokantaan ja kohdistusmatriisiin. */
@@ -210,6 +230,108 @@ export function workOrderTitleForPlan(
   return `${targetTitle} – ${phaseTitle}`;
 }
 
+export function normalizeProjectWorkTargetIdentity(
+  target: Pick<ProjectWorkTargetDraft, 'title' | 'location'>,
+): string {
+  const normalize = (value: string) => value
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('fi');
+  const title = normalize(target.title);
+  const location = normalize(target.location || target.title);
+  return `${title}|${location}`;
+}
+
+export function projectUnitImportToTarget(
+  unit: ProjectUnitImportSource,
+  projectDates: { startDate: string; endDate: string },
+): ProjectWorkTargetDraft {
+  const floor = unit.floor?.trim();
+  const location = [
+    unit.buildingName?.trim(),
+    unit.stairwellName?.trim(),
+    floor ? (/kerros/i.test(floor) ? floor : `${floor}. kerros`) : '',
+  ].filter(Boolean).join(' · ') || unit.unitCode.trim();
+  const details = [
+    unit.renovationScope?.trim(),
+    unit.unitType?.trim(),
+    Number.isFinite(unit.areaM2) ? `${unit.areaM2} m²` : '',
+    unit.notes?.trim(),
+  ].filter(Boolean).join(' · ');
+  return {
+    id: `unit-${unit.id}`,
+    key: `unit-${unit.id}`,
+    title: unit.unitCode.trim(),
+    location,
+    description: details,
+    startDate: projectDates.startDate,
+    endDate: unit.plannedCompletionDate || projectDates.endDate || projectDates.startDate,
+    assigneeUserIds: [],
+  };
+}
+
+export function appendProjectWorkTargets(
+  current: ProjectWorkTargetDraft[],
+  incoming: ProjectWorkTargetDraft[],
+  maxTargets = 100,
+): AppendProjectWorkTargetsResult {
+  const limit = Math.min(100, Math.max(0, Math.floor(maxTargets)));
+  const targets = [...current];
+  const seen = new Set(current.map(normalizeProjectWorkTargetIdentity));
+  const usedIds = new Set(current.map((target) => target.id));
+  let addedCount = 0;
+  let duplicateCount = 0;
+  let limitReached = current.length >= limit;
+
+  for (const target of incoming) {
+    const identity = normalizeProjectWorkTargetIdentity(target);
+    if (!target.title.trim() || seen.has(identity)) {
+      duplicateCount += 1;
+      continue;
+    }
+    if (targets.length >= limit) {
+      limitReached = true;
+      break;
+    }
+
+    const index = targets.length;
+    const baseId = target.id.trim() || `target-${index}`;
+    let id = baseId;
+    let suffix = 2;
+    while (usedIds.has(id)) {
+      id = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(id);
+    seen.add(identity);
+
+    const keyTail = (target.key.trim() || normalizedKey(target.title, index)).replace(/^\d+-/, '');
+    targets.push({
+      ...target,
+      id,
+      key: `${String(index + 1).padStart(3, '0')}-${keyTail || 'kohde'}`,
+      assigneeUserIds: [...target.assigneeUserIds],
+    });
+    addedCount += 1;
+  }
+
+  return { targets, addedCount, duplicateCount, limitReached };
+}
+
+export function moveProjectWorkTarget(
+  targets: ProjectWorkTargetDraft[],
+  targetIdValue: string,
+  direction: -1 | 1,
+): ProjectWorkTargetDraft[] {
+  const index = targets.findIndex((target) => target.id === targetIdValue);
+  const destination = index + direction;
+  if (index < 0 || destination < 0 || destination >= targets.length) return targets;
+  const reordered = [...targets];
+  [reordered[index], reordered[destination]] = [reordered[destination], reordered[index]];
+  return reordered;
+}
+
 export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDraft[] {
   const seen = new Set<string>();
   const result: ProjectWorkTargetDraft[] = [];
@@ -226,7 +348,7 @@ export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDra
     const endDate = isIsoDate(parts[4] ?? '') ? parts[4] : '';
     if (!title) continue;
 
-    const duplicateKey = `${title}|${location}|${description}`.toLocaleLowerCase('fi');
+    const duplicateKey = normalizeProjectWorkTargetIdentity({ title, location });
     if (seen.has(duplicateKey)) continue;
     seen.add(duplicateKey);
 

@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  appendProjectWorkTargets,
   applyAssigneesToAllTargets,
   combineWorkPlanDescription,
   createGenericProjectPhases,
   generateProjectWorkTargets,
+  moveProjectWorkTarget,
   normalizeProjectWorkTargets,
+  projectUnitImportToTarget,
   projectWorkPlanSize,
   resolveWorkPlanAssignees,
   spreadProjectPhaseDates,
@@ -97,5 +100,61 @@ describe('project work plan builder', () => {
       ['u1'],
       ['u1'],
     ]);
+  });
+
+  it('converts a project unit into a work target with project and unit dates', () => {
+    expect(projectUnitImportToTarget({
+      id: 'unit-1',
+      unitCode: 'A12',
+      buildingName: 'Talo 1',
+      stairwellName: 'A',
+      floor: '2',
+      unitType: '3h+k',
+      areaM2: 72.5,
+      renovationScope: 'Keittiöremontti',
+      plannedCompletionDate: '2026-08-14',
+      notes: 'Asuttu',
+    }, { startDate: '2026-08-03', endDate: '2026-08-28' })).toEqual(expect.objectContaining({
+      title: 'A12',
+      location: 'Talo 1 · A · 2. kerros',
+      description: 'Keittiöremontti · 3h+k · 72.5 m² · Asuttu',
+      startDate: '2026-08-03',
+      endDate: '2026-08-14',
+    }));
+  });
+
+  it('deduplicates appended targets by normalized title and location', () => {
+    const current = normalizeProjectWorkTargets('A1 | 1. kerros');
+    const incoming = normalizeProjectWorkTargets(' a1 |  1. KERROS  \nA1 | 2. kerros');
+    const result = appendProjectWorkTargets(current, incoming);
+    expect(result.targets.map((target) => `${target.title}|${target.location}`)).toEqual([
+      'A1|1. kerros',
+      'A1|2. kerros',
+    ]);
+    expect(result.addedCount).toBe(1);
+    expect(result.duplicateCount).toBe(1);
+  });
+
+  it('keeps the target list at one hundred entries when importing', () => {
+    const current = generateProjectWorkTargets({ prefix: 'H', start: 1, count: 99 });
+    const incoming = generateProjectWorkTargets({ prefix: 'U', start: 1, count: 3 });
+    const result = appendProjectWorkTargets(current, incoming);
+    expect(result.targets).toHaveLength(100);
+    expect(result.addedCount).toBe(1);
+    expect(result.limitReached).toBe(true);
+  });
+
+  it('reorders targets without changing their dates, assignees or identity', () => {
+    const targets = generateProjectWorkTargets({ prefix: 'H', start: 1, count: 3 });
+    const middle = {
+      ...targets[1],
+      startDate: '2026-08-03',
+      endDate: '2026-08-14',
+      assigneeUserIds: ['u1'],
+    };
+    const source = [targets[0], middle, targets[2]];
+    const moved = moveProjectWorkTarget(source, middle.id, -1);
+    expect(moved.map((target) => target.id)).toEqual([middle.id, targets[0].id, targets[2].id]);
+    expect(moved[0]).toEqual(middle);
   });
 });

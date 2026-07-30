@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   CalendarCheck2,
   CalendarDays,
   CheckCircle2,
@@ -30,6 +32,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  appendProjectWorkTargets,
   applyAssigneesToAllTargets,
   applyScheduleToAllTargets,
   buildInternalResourceConflicts,
@@ -38,6 +41,7 @@ import {
   defaultPhaseDuration,
   generateProjectWorkTargets,
   isIsoDate,
+  moveProjectWorkTarget,
   normalizeProjectWorkTargets,
   resolveWorkItemAssignees,
   scheduleAllAssignments,
@@ -54,6 +58,7 @@ import {
   type ProjectWorkPlanConflict,
 } from '@/lib/supabase/projectWorkPlans';
 import type { OrganizationPerson } from '@/lib/supabase/workManagement';
+import ProjectUnitImportPanel from './ProjectUnitImportPanel';
 import type { Project, WorkOrderPriority } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -278,22 +283,13 @@ export default function TargetFirstProjectWorkPlanDialog({
   const selectedForPhase = (phaseId: string) => assignments.filter((item) => item.phaseId === phaseId && item.enabled).length;
 
   const appendTargets = (next: ProjectWorkTargetDraft[]) => {
-    setTargets((current) => {
-      const seen = new Set(current.map((target) => target.title.trim().toLocaleLowerCase('fi')));
-      const merged = [...current];
-      for (const target of next) {
-        const duplicateKey = target.title.trim().toLocaleLowerCase('fi');
-        if (!duplicateKey || seen.has(duplicateKey)) continue;
-        seen.add(duplicateKey);
-        merged.push({
-          ...target,
-          id: uniqueId('target'),
-          key: `${String(merged.length + 1).padStart(3, '0')}-${target.key.replace(/^\d+-/, '')}`,
-        });
-        if (merged.length >= 100) break;
-      }
-      return merged;
-    });
+    const result = appendProjectWorkTargets(targets, next, 100);
+    setTargets(result.targets);
+    return result;
+  };
+
+  const moveTarget = (targetId: string, direction: -1 | 1) => {
+    setTargets((current) => moveProjectWorkTarget(current, targetId, direction));
   };
 
   const buildTargetsFromText = () => {
@@ -628,6 +624,13 @@ export default function TargetFirstProjectWorkPlanDialog({
               <div className="space-y-2"><Label>Kuvaus</Label><Input value={planDescription} onChange={(event) => setPlanDescription(event.target.value)} placeholder="Esim. Keittiöremontit, 14 huoneistoa" /></div>
             </section>
 
+            <ProjectUnitImportPanel
+              organizationId={organizationId}
+              project={project}
+              currentTargets={targets}
+              onImport={appendTargets}
+            />
+
             <section className="grid gap-4 lg:grid-cols-2">
               <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
                 <div><h3 className="font-semibold">Liitä kohdelista</h3><p className="mt-1 text-xs text-text-secondary">Yksi kohde per rivi.</p></div>
@@ -677,15 +680,19 @@ export default function TargetFirstProjectWorkPlanDialog({
               ) : (
                 <div className="space-y-3">
                   {targets.map((target, index) => (
-                    <div key={target.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 lg:grid-cols-[48px_1fr_1fr_150px_150px_180px_40px] lg:items-end">
+                    <div key={target.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 lg:grid-cols-[48px_1fr_1fr_150px_150px_180px_96px_40px] lg:items-end">
                       <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white lg:flex">{index + 1}</div>
                       <div className="space-y-1"><Label className="text-xs">Kohde *</Label><Input value={target.title} onChange={(event) => updateTarget(target.id, { title: event.target.value })} placeholder="A1" /></div>
                       <div className="space-y-1"><Label className="text-xs">Sijainti</Label><Input value={target.location} onChange={(event) => updateTarget(target.id, { location: event.target.value })} placeholder="1. kerros" /></div>
                       <div className="space-y-1"><Label className="text-xs">Aikaisin aloitus *</Label><Input type="date" value={target.startDate} onChange={(event) => updateTarget(target.id, { startDate: event.target.value })} /></div>
                       <div className="space-y-1"><Label className="text-xs">Tavoite valmis *</Label><Input type="date" min={target.startDate || undefined} value={target.endDate} onChange={(event) => updateTarget(target.id, { endDate: event.target.value })} /></div>
                       <div className="space-y-1"><Label className="text-xs">Oletustekijä</Label><AssigneeSelect value={target.assigneeUserIds} people={availablePeople} fallbackText="Työkohtainen" onChange={(value) => updateTarget(target.id, { assigneeUserIds: value })} /></div>
+                      <div className="flex items-center gap-1">
+                        <Button type="button" variant="outline" size="sm" disabled={index === 0} onClick={() => moveTarget(target.id, -1)} aria-label={`Siirrä ${target.title || `kohde ${index + 1}`} ylös`}><ArrowUp size={16} /></Button>
+                        <Button type="button" variant="outline" size="sm" disabled={index === targets.length - 1} onClick={() => moveTarget(target.id, 1)} aria-label={`Siirrä ${target.title || `kohde ${index + 1}`} alas`}><ArrowDown size={16} /></Button>
+                      </div>
                       <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => setTargets((current) => current.filter((item) => item.id !== target.id))} aria-label="Poista kohde"><Trash2 size={16} /></Button>
-                      <div className="space-y-1 lg:col-start-2 lg:col-span-5"><Label className="text-xs">Kohteen työseloste</Label><Input value={target.description} onChange={(event) => updateTarget(target.id, { description: event.target.value })} placeholder="Esim. Keittiö + vinyyli, ei kylpyhuonetta" /></div>
+                      <div className="space-y-1 lg:col-start-2 lg:col-span-6"><Label className="text-xs">Kohteen työseloste</Label><Input value={target.description} onChange={(event) => updateTarget(target.id, { description: event.target.value })} placeholder="Esim. Keittiö + vinyyli, ei kylpyhuonetta" /></div>
                     </div>
                   ))}
                 </div>
