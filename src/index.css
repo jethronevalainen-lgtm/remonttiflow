@@ -107,6 +107,13 @@
     touch-action: manipulation;
   }
 
+  [role="dialog"] input:not([type="checkbox"]):not([type="radio"]),
+  [role="dialog"] button[role="combobox"] {
+    width: 100%;
+    min-height: 2.75rem;
+    height: 2.75rem;
+  }
+
   @media (max-width: 767px) {
     input,
     select,
