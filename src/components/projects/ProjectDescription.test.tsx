@@ -66,4 +66,14 @@ describe('ProjectDescription rich text format', () => {
       },
     ]);
   });
+
+  it('säilyttää viallisen versionoidun arvon näkyvänä tekstinä', () => {
+    const invalidValue = `${RICH_DESCRIPTION_PREFIX}{not-json}`;
+    const documentValue = decodeRichDescription(invalidValue);
+
+    expect(documentValue.blocks[0]).toEqual({
+      type: 'paragraph',
+      runs: [{ text: invalidValue }],
+    });
+  });
 });
