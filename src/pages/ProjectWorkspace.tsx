@@ -131,6 +131,14 @@ function euro(value: number) {
   }).format(value);
 }
 
+function formatDate(value: string) {
+  if (!value) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (match) return `${match[3]}.${match[2]}.${match[1]}`;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('fi-FI');
+}
+
 function dateTime(value: string) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime())
@@ -479,11 +487,11 @@ export default function ProjectWorkspace() {
                 {[
                   ['Asiakas', project?.customer || '—'],
                   ['Sijainti', project?.location || '—'],
-                  ['Aloitus', project?.startDate || '—'],
-                  ['Valmistuminen', project?.endDate || '—'],
+                  ['Aloitus', formatDate(project?.startDate || '')],
+                  ['Valmistuminen', formatDate(project?.endDate || '')],
                   ['Nykyinen tilausarvo', euro(currentContractValueCents / 100)],
                   ['Toteutuneet kustannukset', euro(actualCostCents / 100)],
-                ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 p-4"><p className="text-xs uppercase tracking-wider text-slate-500">{label}</p><p className="mt-1 font-semibold text-slate-900">{value}</p></div>)}
+                ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 p-4"><p className="text-xs uppercase tracking-wider text-slate-500">{label}</p><p className="mt-1 break-words font-semibold text-slate-900">{value}</p></div>)}
               </CardContent>
             </Card>
             <Card>
