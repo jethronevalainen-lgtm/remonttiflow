@@ -7,7 +7,7 @@ export type DemoReviewStatus = 'not_tested' | 'passed' | 'failed';
 export type DemoFindingSeverity = 'info' | 'warning' | 'critical';
 export type DemoFindingStatus = 'open' | 'resolved';
 
-export const DEMO_DATASET_VERSION = 3;
+export const DEMO_DATASET_VERSION = 4;
 
 export interface DemoScenarioDefinition {
   id: DemoScenario;
