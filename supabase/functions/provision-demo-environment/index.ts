@@ -94,7 +94,18 @@ async function deterministicUuid(seed: string): Promise<string> {
 }
 
 function randomPassword(): string {
-  return `VaKantti-demo-${crypto.randomUUID()}-${crypto.randomUUID()}`;
+  // bcrypt accepts at most 72 bytes; keep the demo password clearly under that.
+  return `VkDemo-${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`;
+}
+
+function authErrorMessage(error: { message?: string; code?: string; status?: number } | null | undefined, fallback: string): string {
+  if (!error) return fallback;
+  const message = typeof error.message === 'string' ? error.message.trim() : '';
+  if (message && message !== '{}' && message !== '[object Object]') return message;
+  const code = typeof error.code === 'string' ? error.code.trim() : '';
+  if (code) return code;
+  if (typeof error.status === 'number' && error.status > 0) return `HTTP ${error.status}`;
+  return fallback;
 }
 
 async function findAuthUserByEmail(admin: SupabaseClient, email: string): Promise<User | null> {
@@ -130,10 +141,20 @@ async function ensureDemoUser(
       },
     });
     if (error || !data.user) {
-      throw new Error(`Roolin ${definition.displayName} demotilin luonti epäonnistui: ${error?.message ?? 'käyttäjää ei palautettu'}`);
+      // Race / prior partial create: if the email already exists, continue with it.
+      const existing = await findAuthUserByEmail(admin, email);
+      if (!existing) {
+        throw new Error(
+          `Roolin ${definition.displayName} demotilin luonti epäonnistui: ${authErrorMessage(error, 'käyttäjää ei palautettu')}`,
+        );
+      }
+      user = existing;
+    } else {
+      user = data.user;
     }
-    user = data.user;
-  } else if (!user.email_confirmed_at) {
+  }
+
+  if (!user.email_confirmed_at) {
     const { data, error } = await admin.auth.admin.updateUserById(user.id, {
       email_confirm: true,
       user_metadata: {
@@ -144,8 +165,23 @@ async function ensureDemoUser(
         demo_role: definition.role,
       },
     });
-    if (error || !data.user) throw new Error(`Demotilin aktivointi epäonnistui: ${error?.message ?? 'tuntematon virhe'}`);
+    if (error || !data.user) {
+      throw new Error(`Demotilin aktivointi epäonnistui: ${authErrorMessage(error, 'tuntematon virhe')}`);
+    }
     user = data.user;
+  } else {
+    const { error: metadataError } = await admin.auth.admin.updateUserById(user.id, {
+      user_metadata: {
+        ...user.user_metadata,
+        full_name: definition.displayName,
+        demo_account: true,
+        demo_owner_user_id: ownerUserId,
+        demo_role: definition.role,
+      },
+    });
+    if (metadataError) {
+      throw new Error(`Demotilin metatietojen päivitys epäonnistui: ${authErrorMessage(metadataError, 'tuntematon virhe')}`);
+    }
   }
 
   const { error: profileError } = await admin.from('profiles').upsert({
