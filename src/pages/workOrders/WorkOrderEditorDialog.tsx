@@ -384,7 +384,7 @@ export default function WorkOrderEditorDialog({
 
               {form.assignmentScope === 'people' && (
                 <div className="space-y-2">
-                  <Label>{form.projectId ? 'Vastuuhenkilöt projektitiimistä *' : 'Vastuuhenkilöt organisaatiosta *'}</Label>
+                  <Label>{form.projectId ? 'Vastuuhenkilöt projektitiimistä' : 'Vastuuhenkilöt organisaatiosta'}</Label>
                   <div className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:grid-cols-2">
                     {availablePeople.map((person) => (
                       <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-slate-50">
@@ -409,6 +409,11 @@ export default function WorkOrderEditorDialog({
                       </p>
                     )}
                   </div>
+                  {form.assigneeUserIds.length === 0 && availablePeople.length > 0 && (
+                    <p className="mt-2 break-words text-xs text-slate-500">
+                      Voit jättää tekijän valitsematta. Työmääräys menee listalle, josta se jaetaan myöhemmin.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -426,7 +431,7 @@ export default function WorkOrderEditorDialog({
                 <div>
                   <h3 className="font-semibold text-blue-950">Työn aikataulu</h3>
                   <p className="mt-1 text-xs leading-5 text-blue-800">
-                    Valittu työjakso muodostaa vastuuhenkilöille resurssivarauksen.
+                    Valittu työjakso muodostaa valituille vastuuhenkilöille resurssivarauksen.
                   </p>
                 </div>
               </div>
