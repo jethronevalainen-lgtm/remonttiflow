@@ -7,6 +7,10 @@ export interface ProjectWorkTargetDraft {
   location: string;
   /** Mitä tässä kohteessa / huoneistossa tehdään. */
   description: string;
+  /** Kohteen suunniteltu aloitus. Jaetaan kohteen työvaiheille järjestyksessä. */
+  startDate: string;
+  /** Kohteen suunniteltu valmistuminen. */
+  endDate: string;
   /** Kohteen tekijät; jos asetettu, ohittaa työvaiheen tekijät. */
   assigneeUserIds: string[];
 }
@@ -16,10 +20,16 @@ export interface ProjectWorkPhaseDraft {
   title: string;
   type: string;
   description: string;
+  /** Työvaiheen oletusaikataulu, jota käytetään ilman kohdekohtaista aikataulua. */
   startDate: string;
   endDate: string;
   priority: WorkOrderPriority;
   assigneeUserIds: string[];
+}
+
+export interface ProjectWorkPhaseSchedule {
+  startDate: string;
+  endDate: string;
 }
 
 function normalizedKey(value: string, index: number): string {
@@ -34,6 +44,12 @@ function normalizedKey(value: string, index: number): string {
 
 function targetId(title: string, index: number): string {
   return `target-${index}-${normalizedKey(title, index)}`;
+}
+
+export function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 /** Resolves assignees for one target × phase cell. Target wins when set. */
@@ -82,7 +98,9 @@ export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDra
     const parts = line.split('|').map((part) => part.trim());
     const title = parts[0] ?? '';
     const location = parts[1] || title;
-    const description = parts.slice(2).join(' | ').trim();
+    const description = parts[2] ?? '';
+    const startDate = isIsoDate(parts[3] ?? '') ? parts[3] : '';
+    const endDate = isIsoDate(parts[4] ?? '') ? parts[4] : '';
     if (!title) continue;
 
     const duplicateKey = `${title}|${location}|${description}`.toLocaleLowerCase('fi');
@@ -96,6 +114,8 @@ export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDra
       title,
       location,
       description,
+      startDate,
+      endDate,
       assigneeUserIds: [],
     });
     if (result.length === 100) break;
@@ -104,12 +124,38 @@ export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDra
   return result;
 }
 
+function parseDate(value: string): Date | null {
+  if (!isIsoDate(value)) return null;
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateText(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function addWorkdays(value: string, offset: number): string {
+  const date = parseDate(value);
+  if (!date) return '';
+  const direction = offset < 0 ? -1 : 1;
+  let remaining = Math.abs(Math.trunc(offset));
+  while (remaining > 0) {
+    date.setUTCDate(date.getUTCDate() + direction);
+    const day = date.getUTCDay();
+    if (day !== 0 && day !== 6) remaining -= 1;
+  }
+  return dateText(date);
+}
+
 export function generateProjectWorkTargets(values: {
   prefix: string;
   start: number;
   count: number;
   padLength?: number;
   locationPrefix?: string;
+  firstStartDate?: string;
+  workdayDuration?: number;
+  gapWorkdays?: number;
 }): ProjectWorkTargetDraft[] {
   const prefix = values.prefix.trim();
   const separator = prefix && /[a-z0-9åäö]$/i.test(prefix) ? ' ' : '';
@@ -119,36 +165,39 @@ export function generateProjectWorkTargets(values: {
     ? Math.min(6, Math.max(0, Math.floor(values.padLength ?? 0)))
     : 0;
   const locationPrefix = values.locationPrefix?.trim() ?? '';
+  const firstStartDate = isIsoDate(values.firstStartDate ?? '') ? values.firstStartDate as string : '';
+  const workdayDuration = Number.isFinite(values.workdayDuration)
+    ? Math.max(1, Math.min(60, Math.floor(values.workdayDuration ?? 1)))
+    : 1;
+  const gapWorkdays = Number.isFinite(values.gapWorkdays)
+    ? Math.max(0, Math.min(20, Math.floor(values.gapWorkdays ?? 0)))
+    : 0;
+  let nextStartDate = firstStartDate;
 
   return Array.from({ length: count }, (_, index) => {
     const number = String(start + index).padStart(padLength, '0');
     const title = `${prefix}${separator}${number}`.trim();
+    const targetStartDate = nextStartDate;
+    const targetEndDate = targetStartDate ? addWorkdays(targetStartDate, workdayDuration - 1) : '';
+    if (targetEndDate) nextStartDate = addWorkdays(targetEndDate, gapWorkdays + 1);
     return {
       id: targetId(title, index),
       key: normalizedKey(title, index),
       title,
       location: locationPrefix ? `${locationPrefix} ${title}`.trim() : title,
       description: '',
+      startDate: targetStartDate,
+      endDate: targetEndDate,
       assigneeUserIds: [],
     };
   });
-}
-
-function parseDate(value: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}T12:00:00Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function dateText(date: Date): string {
-  return date.toISOString().slice(0, 10);
 }
 
 export function spreadProjectPhaseDates(
   startDate: string,
   endDate: string,
   count: number,
-): Array<{ startDate: string; endDate: string }> {
+): ProjectWorkPhaseSchedule[] {
   const start = parseDate(startDate);
   const end = parseDate(endDate);
   if (!start || !end || end < start || count < 1) {
@@ -163,6 +212,25 @@ export function spreadProjectPhaseDates(
     const phaseEnd = new Date(start.getTime() + Math.max(startOffset, nextOffset - 1) * 86_400_000);
     return { startDate: dateText(phaseStart), endDate: dateText(phaseEnd) };
   });
+}
+
+/**
+ * Builds the exact dates sent to work orders. A target-level window overrides
+ * phase defaults and is divided in phase order. With one phase the target dates
+ * are used unchanged.
+ */
+export function buildTargetPhaseSchedule(
+  target: Pick<ProjectWorkTargetDraft, 'startDate' | 'endDate'>,
+  phases: Array<Pick<ProjectWorkPhaseDraft, 'startDate' | 'endDate'>>,
+): ProjectWorkPhaseSchedule[] {
+  if (
+    isIsoDate(target.startDate)
+    && isIsoDate(target.endDate)
+    && target.endDate >= target.startDate
+  ) {
+    return spreadProjectPhaseDates(target.startDate, target.endDate, phases.length);
+  }
+  return phases.map((phase) => ({ startDate: phase.startDate, endDate: phase.endDate }));
 }
 
 export function createGenericProjectPhases(values: {
@@ -218,4 +286,12 @@ export function applyAssigneesToAllTargets(
 ): ProjectWorkTargetDraft[] {
   const unique = [...new Set(assigneeUserIds)];
   return targets.map((target) => ({ ...target, assigneeUserIds: unique }));
+}
+
+export function applyScheduleToAllTargets(
+  targets: ProjectWorkTargetDraft[],
+  startDate: string,
+  endDate: string,
+): ProjectWorkTargetDraft[] {
+  return targets.map((target) => ({ ...target, startDate, endDate }));
 }
