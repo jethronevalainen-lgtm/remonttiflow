@@ -1,4 +1,4 @@
-import type { Project, WorkOrder } from '@/types';
+import type { Project, WorkOrderStatus } from '@/types';
 
 export interface ProjectProgressSummary {
   total: number;
@@ -6,9 +6,15 @@ export interface ProjectProgressSummary {
   percent: number;
 }
 
+interface ProgressWorkOrder {
+  projectId?: string;
+  project: string;
+  status: WorkOrderStatus;
+}
+
 export function calculateProjectProgress(
   project: Pick<Project, 'id' | 'name' | 'status'>,
-  workOrders: WorkOrder[],
+  workOrders: ProgressWorkOrder[],
 ): ProjectProgressSummary {
   const relevant = workOrders.filter((workOrder) => (
     workOrder.status !== 'Peruttu'
