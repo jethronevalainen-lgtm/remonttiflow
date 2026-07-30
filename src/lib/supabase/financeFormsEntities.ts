@@ -118,11 +118,21 @@ function takeoffPayload(value: Omit<QuantityTakeoff, 'id'> | Partial<QuantityTak
   return payload;
 }
 
-export const createTakeoff = (
+export async function createTakeoff(
   organizationId: string,
   userId: string | undefined,
   takeoff: Omit<QuantityTakeoff, 'id'>,
-) => insert('quantity_takeoffs', { ...base(organizationId, userId), ...takeoffPayload(takeoff) });
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('quantity_takeoffs')
+    .insert({ ...base(organizationId, userId), ...takeoffPayload(takeoff) })
+    .select('id')
+    .single();
+  if (error || !data?.id) {
+    throw new Error(`Tallennus epäonnistui: ${error?.message ?? 'tunnistetta ei palautettu'}`);
+  }
+  return String(data.id);
+}
 
 export const updateTakeoff = (
   organizationId: string,
@@ -152,6 +162,20 @@ export const createTakeoffLine = (
   userId: string | undefined,
   line: Omit<QuantityTakeoffLine, 'id'>,
 ) => insert('quantity_takeoff_lines', { ...base(organizationId, userId), ...takeoffLinePayload(line) });
+
+export async function createTakeoffLines(
+  organizationId: string,
+  userId: string | undefined,
+  lines: Array<Omit<QuantityTakeoffLine, 'id'>>,
+): Promise<void> {
+  if (lines.length === 0) return;
+  const payload = lines.map((line) => ({
+    ...base(organizationId, userId),
+    ...takeoffLinePayload(line),
+  }));
+  const { error } = await supabase.from('quantity_takeoff_lines').insert(payload);
+  if (error) throw new Error(`Tallennus epäonnistui: ${error.message}`);
+}
 
 export const updateTakeoffLine = (
   organizationId: string,
