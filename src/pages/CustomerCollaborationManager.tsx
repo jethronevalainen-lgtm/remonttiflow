@@ -9,6 +9,7 @@ import {
   FileText,
   Loader2,
   MessageCircle,
+  Pencil,
   Send,
   ShieldCheck,
   UserPlus,
@@ -129,6 +130,7 @@ export default function CustomerCollaborationManager() {
   };
 
   const sendChangeOrder = async (changeOrder: CustomerProjectChangeOrder) => {
+    if (changeOrder.status !== 'Luonnos') return;
     setSavingId(changeOrder.id);
     try {
       await submitChangeOrderToCustomer(changeOrder.id);
@@ -239,13 +241,28 @@ export default function CustomerCollaborationManager() {
               <CardContent className="p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs text-slate-500">{changeOrder.changeNumber || 'Ei tunnusta'}</span><Badge variant="outline" className={decisionBadge(changeOrder.customerDecision)}>{changeOrder.customerDecision || 'Ei lähetetty'}</Badge></div>
-                    <h3 className="mt-2 text-lg font-semibold text-slate-950">{changeOrder.title}</h3>
-                    {changeOrder.description && <p className="mt-2 text-sm leading-6 text-slate-700">{changeOrder.description}</p>}
-                    <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm"><span><strong>Tilaajahinta:</strong> {euro(changeOrder.amountCents)}</span><span><strong>Lähetetty:</strong> {dateTime(changeOrder.submittedToCustomerAt)}</span></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-slate-500">{changeOrder.changeNumber || 'Ei tunnusta'}</span>
+                      <Badge variant="outline" className={decisionBadge(changeOrder.customerDecision)}>{changeOrder.customerDecision || changeOrder.status}</Badge>
+                    </div>
+                    <h3 className="mt-2 break-words text-lg font-semibold text-slate-950">{changeOrder.title}</h3>
+                    {changeOrder.description && <p className="mt-2 break-words text-sm leading-6 text-slate-700">{changeOrder.description}</p>}
+                    <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                      <span><strong>Tilaajahinta:</strong> {euro(changeOrder.amountCents)}</span>
+                      <span><strong>Lähetetty:</strong> {dateTime(changeOrder.submittedToCustomerAt)}</span>
+                    </div>
                     {changeOrder.customerDecisionNote && <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"><strong>Tilaajan kommentti:</strong> {changeOrder.customerDecisionNote}</div>}
                   </div>
-                  <Button className="shrink-0" disabled={savingId === changeOrder.id || changeOrder.customerDecision === 'Odottaa'} onClick={() => void sendChangeOrder(changeOrder)}><Send size={15} className="mr-2" />{changeOrder.customerDecision ? 'Lähetä uudelleen' : 'Lähetä hyväksyttäväksi'}</Button>
+                  {changeOrder.status === 'Luonnos' && (
+                    <Button className="shrink-0" disabled={savingId === changeOrder.id} onClick={() => void sendChangeOrder(changeOrder)}>
+                      <Send size={15} className="mr-2" /> Lähetä hyväksyttäväksi
+                    </Button>
+                  )}
+                  {changeOrder.status === 'Hylätty' && (
+                    <Button variant="outline" className="shrink-0" onClick={() => navigate(`/projektit/${projectId}?tab=finance`)}>
+                      <Pencil size={15} className="mr-2" /> Tee uusi versio
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
