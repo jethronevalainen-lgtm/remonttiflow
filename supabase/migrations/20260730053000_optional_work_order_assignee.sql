@@ -33,7 +33,7 @@ begin
   if auth.uid() is null then
     raise exception 'Kirjautuminen vaaditaan.' using errcode = '42501';
   end if;
-  if not private.has_org_role(p_organization_id, array['admin', 'supervisor']) then
+  if not private.has_org_role(p_organization_id, array['admin', 'supervisor', 'project_coordinator']) then
     raise exception 'Vain työnjohto voi tallentaa työmääräyksiä.' using errcode = '42501';
   end if;
   if nullif(trim(p_title), '') is null then
