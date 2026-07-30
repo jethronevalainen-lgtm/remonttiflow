@@ -72,6 +72,10 @@
     min-width: 0;
   }
 
+  [hidden] {
+    display: none !important;
+  }
+
   html,
   body,
   #root {
