@@ -1,5 +1,9 @@
 import { supabase } from '@/lib/supabase/client';
-import type { ProjectWorkPhaseDraft, ProjectWorkTargetDraft } from '@/lib/projectWorkPlanBuilder';
+import {
+  buildTargetPhaseSchedule,
+  type ProjectWorkPhaseDraft,
+  type ProjectWorkTargetDraft,
+} from '@/lib/projectWorkPlanBuilder';
 
 export interface ProjectWorkPlanSummary {
   id: string;
@@ -77,6 +81,12 @@ export async function createProjectWorkPlan(values: {
       title: target.title.trim(),
       location: target.location.trim() || target.title.trim(),
       description: target.description.trim() || null,
+      start_date: target.startDate || null,
+      end_date: target.endDate || null,
+      phase_schedules: buildTargetPhaseSchedule(target, values.phases).map((schedule) => ({
+        start_date: schedule.startDate,
+        end_date: schedule.endDate,
+      })),
       assignee_user_ids: target.assigneeUserIds,
     })),
     p_phases: values.phases.map((phase, index) => ({
