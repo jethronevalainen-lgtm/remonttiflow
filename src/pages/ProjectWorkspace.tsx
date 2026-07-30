@@ -33,6 +33,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { ProjectDescription } from '@/components/projects/ProjectDescription';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -56,6 +57,7 @@ import {
   type ChangeOrderStatus,
   type ProjectActivityEvent,
 } from '@/lib/supabase/projectWorkspace';
+import { calculateProjectProgress } from '@/lib/projectProgress';
 import { cn } from '@/lib/utils';
 import ProjectContactsFilesPanel from './projectWorks/ProjectContactsFilesPanel';
 import ProjectWorks from './ProjectWorks';
@@ -202,6 +204,9 @@ export default function ProjectWorkspace() {
     () => roleWorkspace.workOrders.filter((item) => item.projectId === projectId || item.project === project?.name),
     [project?.name, projectId, roleWorkspace.workOrders],
   );
+  const projectProgress = project
+    ? calculateProjectProgress(project, roleWorkspace.workOrders)
+    : { total: 0, completed: 0, percent: 0 };
   const projectHours = useMemo(
     () => timeEntries.filter((item) => item.projectId === projectId || item.project === project?.name),
     [project?.name, projectId, timeEntries],
@@ -393,7 +398,7 @@ export default function ProjectWorkspace() {
                 {project?.location && <span className="flex items-center gap-1 text-sm text-slate-300"><MapPin size={14} />{project.location}</span>}
               </div>
               <h1 className="break-words text-2xl font-bold sm:text-4xl">{project?.name ?? 'Projektityötila'}</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{project?.customer}{project?.description ? ` · ${project.description}` : ''}</p>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{project?.customer}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" className="border-slate-600 bg-white/5 text-white hover:bg-white/10" onClick={() => void workspace.refresh()} disabled={workspace.refreshing}>
@@ -402,7 +407,15 @@ export default function ProjectWorkspace() {
               {canManage && <Button className="bg-orange-500 text-white hover:bg-orange-600" onClick={() => navigate(`/tyomaaraykset?project=${encodeURIComponent(projectId)}&new=1`)}><ClipboardList size={16} className="mr-2" /> Uusi työmääräys</Button>}
             </div>
           </div>
-          {project && <div className="mt-6"><div className="mb-2 flex justify-between text-xs text-slate-300"><span>Projektin eteneminen</span><strong>{project.progress}%</strong></div><Progress value={project.progress} className="h-2 bg-slate-700" /></div>}
+          {project && (
+            <div className="mt-6">
+              <div className="mb-2 flex justify-between gap-3 text-xs text-slate-300">
+                <span>{projectProgress.total > 0 ? `${projectProgress.completed}/${projectProgress.total} työmääräystä valmiina` : 'Ei työmääräyksiä'}</span>
+                <strong>{projectProgress.percent}%</strong>
+              </div>
+              <Progress value={projectProgress.percent} className="h-2 bg-slate-700" />
+            </div>
+          )}
         </div>
       </div>
 
@@ -412,6 +425,13 @@ export default function ProjectWorkspace() {
         </div>
       )}
       {workspace.loading && <div className="flex items-center gap-2 rounded-xl border bg-white p-4 text-sm text-text-secondary"><Loader2 size={17} className="animate-spin" />Ladataan projektin tilannekuvaa…</div>}
+
+      {project?.description && (
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2"><FileText size={19} /> Projektin kuvaus</CardTitle></CardHeader>
+          <CardContent><ProjectDescription value={project.description} /></CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {[
