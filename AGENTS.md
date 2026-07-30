@@ -33,6 +33,8 @@ Safety rules:
 - Start from current `main`. Compare old branches semantically against current `main`; a conflict-free merge can still regress newer behavior.
 - Add or update tests for business rules, permissions, calculations and status transitions. Verify mobile layouts for changed user-facing flows.
 - After database changes, verify the resulting schema and policies with read-only SQL and run Supabase security advisors.
+- Do not report a release as production-ready until commit status `vakantti/production` is successful and `https://vakantti.pages.dev/version.json` identifies the same full commit SHA on branch `main` in environment `production`.
+- If a merged `main` commit does not receive a production status, investigate or retrigger the deployment; do not assume Cloudflare published it merely because the pull-request checks passed.
 
 ## UI rule: never hide or truncate text
 
