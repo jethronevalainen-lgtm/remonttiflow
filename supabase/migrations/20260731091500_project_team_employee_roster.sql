@@ -29,7 +29,13 @@ create policy project_team_members_select on public.project_team_members
 for select to authenticated
 using (
   private.has_org_role(organization_id, array['admin', 'supervisor', 'project_coordinator']::text[])
-  or private.can_access_project(project_id)
+  or exists (
+    select 1
+    from public.employees e
+    where e.id = project_team_members.employee_id
+      and e.organization_id = project_team_members.organization_id
+      and e.user_id = (select auth.uid())
+  )
 );
 
 -- Writes go through SECURITY DEFINER RPC only (no insert/update/delete policies).
