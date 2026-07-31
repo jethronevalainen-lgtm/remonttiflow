@@ -56,7 +56,7 @@ begin
     completed_count := completed_count + 1;
   end if;
 
-  if weather_count < case when coalesce(settings.require_two_weather_observations, true) then 2 else 1 end then
+  if weather_count < (case when coalesce(settings.require_two_weather_observations, true) then 2 else 1 end) then
     missing := array_append(missing, 'Säähavainnot');
   else
     completed_count := completed_count + 1;
