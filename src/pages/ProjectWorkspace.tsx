@@ -205,16 +205,6 @@ export default function ProjectWorkspace() {
     () => safetyItems.filter((item) => item.projectId === projectId || item.project === project?.name),
     [project?.name, projectId, safetyItems],
   );
-  const projectMemberIds = useMemo(
-    () => new Set(roleWorkspace.projectMemberships
-      .filter((membership) => membership.projectId === projectId)
-      .map((membership) => membership.userId)),
-    [projectId, roleWorkspace.projectMemberships],
-  );
-  const projectPeople = useMemo(
-    () => roleWorkspace.people.filter((person) => projectMemberIds.has(person.userId)),
-    [projectMemberIds, roleWorkspace.people],
-  );
 
   const openDocument = () => {
     setDocumentFile(null);
@@ -485,7 +475,7 @@ export default function ProjectWorkspace() {
         </TabsContent>
 
         <TabsContent value="more" className="space-y-4">
-          {project && currentOrg && <ProjectContactsFilesPanel organizationId={currentOrg.id} project={project} people={roleWorkspace.people} projectPeople={projectPeople} currentUserId={user?.id} canManage={canManage} onError={setOperationError} onSuccess={() => setOperationError(null)} onNavigateWorkspaceDocuments={() => { const next = new URLSearchParams(searchParams); next.set('tab', 'documents'); setSearchParams(next); }} />}
+          {project && currentOrg && <ProjectContactsFilesPanel organizationId={currentOrg.id} project={project} people={roleWorkspace.people} projectMemberships={roleWorkspace.projectMemberships} projectTeamMemberships={roleWorkspace.projectTeamMemberships} currentUserId={user?.id} canManage={canManage} onError={setOperationError} onSuccess={() => setOperationError(null)} onNavigateWorkspaceDocuments={() => { const next = new URLSearchParams(searchParams); next.set('tab', 'documents'); setSearchParams(next); }} />}
           <Card><CardHeader><CardTitle>Projektin tapahtumahistoria</CardTitle></CardHeader><CardContent className="space-y-2">{workspace.activity.map((event) => { const Icon = activityIcon(event.eventType); return <div key={`${event.eventType}-${event.id}`} className="flex flex-col gap-2 border-b border-slate-100 py-3 sm:flex-row sm:items-start"><Icon size={18} className="mt-0.5 shrink-0 text-orange-600" /><div className="min-w-0 flex-1"><p className="font-medium">{event.title}</p><p className="text-sm text-text-secondary">{event.detail}</p></div><span className="text-xs text-text-muted">{dateTime(event.eventAt)}</span></div>; })}{!workspace.loading && workspace.activity.length === 0 && <p className="py-10 text-center text-sm text-text-secondary">Ei tapahtumia.</p>}</CardContent></Card>
         </TabsContent>
       </Tabs>

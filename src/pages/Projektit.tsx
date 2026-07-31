@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -47,7 +47,13 @@ import {
   reopenProjectStatus,
 } from '@/lib/projectLifecycle';
 import { calculateProjectProgress } from '@/lib/projectProgress';
-import { replaceProjectMembers } from '@/lib/supabase/workManagement';
+import { replaceProjectTeamMembers } from '@/lib/supabase/workManagement';
+import {
+  buildProjectTeamCandidates,
+  displayNamesForProjectTeam,
+  partitionTeamSelection,
+  selectedKeysForProject,
+} from '@/lib/projectTeamRoster';
 import type { Project, ProjectStatus } from '@/types';
 
 const ALL = 'Kaikki';
@@ -145,6 +151,7 @@ export default function Projektit() {
   const {
     projects,
     customers,
+    employees,
     addProject,
     updateProject,
     deleteProject,
@@ -154,6 +161,7 @@ export default function Projektit() {
   const {
     people,
     projectMemberships,
+    projectTeamMemberships,
     workOrders,
     loading: workspaceLoading,
     error: workspaceError,
@@ -166,7 +174,7 @@ export default function Projektit() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [teamProject, setTeamProject] = useState<Project | null>(null);
-  const [teamUserIds, setTeamUserIds] = useState<string[]>([]);
+  const [teamKeys, setTeamKeys] = useState<string[]>([]);
   const [form, setForm] = useState<ProjectForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<string[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
@@ -191,21 +199,27 @@ export default function Projektit() {
   const runningProjects = projects.filter((project) => isRunningProjectStatus(project.status));
   const lateProjects = projects.filter((project) => project.status === 'Myöhässä');
 
+  const teamCandidates = useMemo(
+    () => buildProjectTeamCandidates(employees, people),
+    [employees, people],
+  );
+
   const membersByProject = useMemo(() => {
     const map = new Map<string, string[]>();
-    projectMemberships.forEach((membership) => {
-      map.set(membership.projectId, [
-        ...(map.get(membership.projectId) ?? []),
-        membership.userId,
-      ]);
+    projects.forEach((project) => {
+      map.set(
+        project.id,
+        displayNamesForProjectTeam({
+          projectId: project.id,
+          teamMemberships: projectTeamMemberships,
+          projectMemberships,
+          employees,
+          people,
+        }),
+      );
     });
     return map;
-  }, [projectMemberships]);
-
-  const personById = useMemo(
-    () => new Map(people.map((person) => [person.userId, person])),
-    [people],
-  );
+  }, [employees, people, projectMemberships, projectTeamMemberships, projects]);
 
   const filteredProjects = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fi');
@@ -329,14 +343,19 @@ export default function Projektit() {
 
   const openTeam = (project: Project) => {
     setTeamProject(project);
-    setTeamUserIds(membersByProject.get(project.id) ?? []);
+    setTeamKeys(selectedKeysForProject({
+      projectId: project.id,
+      teamMemberships: projectTeamMemberships,
+      projectMemberships,
+      candidates: teamCandidates,
+    }));
     setOperationError(null);
   };
 
-  const toggleTeamUser = (userId: string, checked: boolean) => {
-    setTeamUserIds((previous) => checked
-      ? [...new Set([...previous, userId])]
-      : previous.filter((id) => id !== userId));
+  const toggleTeamKey = (key: string, checked: boolean) => {
+    setTeamKeys((previous) => checked
+      ? [...new Set([...previous, key])]
+      : previous.filter((item) => item !== key));
   };
 
   const saveTeam = async () => {
@@ -344,10 +363,12 @@ export default function Projektit() {
     setSavingTeam(true);
     setOperationError(null);
     try {
-      await replaceProjectMembers({
+      const { employeeIds, extraUserIds } = partitionTeamSelection(teamKeys, teamCandidates);
+      await replaceProjectTeamMembers({
         organizationId: currentOrg.id,
         projectId: teamProject.id,
-        userIds: teamUserIds,
+        employeeIds,
+        extraUserIds,
       });
       await Promise.all([refreshWorkspace(), refreshDomain()]);
       setTeamProject(null);
@@ -410,7 +431,7 @@ export default function Projektit() {
           { label: 'Projektit', value: projects.length, detail: 'kaikki kohteet', icon: FolderKanban },
           { label: 'Käynnissä', value: runningProjects.length, detail: `${lateProjects.length} myöhässä`, icon: Play },
           { label: 'Budjetti', value: money(totalBudget), detail: `${money(totalSpent)} toteutunut`, icon: Calendar },
-          { label: 'Tiimijäsenyyksiä', value: projectMemberships.length, detail: 'nykyisiä käyttäjä–projekti-kohdistuksia', icon: UsersRound },
+          { label: 'Tiimijäsenyyksiä', value: projectTeamMemberships.length, detail: 'henkilöstö–projekti-kohdistuksia', icon: UsersRound },
         ].map((item) => <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 break-words font-mono text-2xl font-bold">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.detail}</p></div><item.icon size={20} className="text-orange-600" /></div></CardContent></Card>)}
       </div>
 
@@ -421,8 +442,7 @@ export default function Projektit() {
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {filteredProjects.map((project) => {
-          const memberIds = membersByProject.get(project.id) ?? [];
-          const memberNames = memberIds.map((id) => personById.get(id)?.name).filter(Boolean) as string[];
+          const memberNames = membersByProject.get(project.id) ?? [];
           const budgetUsage = project.budget > 0 ? Math.min(100, Math.round(project.spent / project.budget * 100)) : 0;
           const projectProgress = calculateProjectProgress(project, workOrders);
           return (
@@ -542,22 +562,29 @@ export default function Projektit() {
         <DialogContent className="sm:max-w-xl">
           <DialogHeader><DialogTitle>Projektitiimi · {teamProject?.name}</DialogTitle></DialogHeader>
           <p className="break-words text-sm text-slate-600">
-            Projektitiimi määrittää, kenelle työmääräyksiä voi kohdistaa tälle projektille.
-            Se on eri asia kuin resurssikalenterin “oma tiimi” (työnjohtajan HR-tiimi).
-          </p>
-          <p className="break-words rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-            Listassa näkyvät vain kirjautuvat käyttäjät, joille on lähetetty VaKantti-kutsu.
-            Pelkkä henkilöstökortti ei riitä — kutsu henkilö ensin{' '}
-            <Link to="/henkilosto" className="font-semibold text-orange-800 underline underline-offset-2" onClick={() => setTeamProject(null)}>
-              Henkilöstö
-            </Link>
-            -näkymässä (“Luo tili ja lähetä kutsu”).
+            Lisää henkilöstökortit projektitiimiin suoraan — kutsua ei tarvita.
+            Työmääräysten kohdistus ja kalenterisync edellyttävät lisäksi sovellustunnusta.
           </p>
           <div className="max-h-[55vh] space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-2">
-            {people.map((person) => { const checked = teamUserIds.includes(person.userId); return <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-3 hover:bg-slate-50"><Checkbox checked={checked} onCheckedChange={(value) => toggleTeamUser(person.userId, value === true)} /><div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div><div><p className="font-medium">{person.name}</p><p className="text-xs text-slate-500">{person.role}</p></div></label>; })}
-            {people.length === 0 && (
+            {teamCandidates.map((candidate) => {
+              const checked = teamKeys.includes(candidate.key);
+              return (
+                <label key={candidate.key} className="flex cursor-pointer items-center gap-3 rounded-lg p-3 hover:bg-slate-50">
+                  <Checkbox checked={checked} onCheckedChange={(value) => toggleTeamKey(candidate.key, value === true)} />
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(candidate.name)}</div>
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">{candidate.name}</p>
+                    <p className="break-words text-xs text-slate-500">
+                      {candidate.detail}
+                      {candidate.hasLogin ? '' : ' · Ei sovellustunnusta'}
+                    </p>
+                  </div>
+                </label>
+              );
+            })}
+            {teamCandidates.length === 0 && (
               <p className="p-8 text-center text-sm text-slate-500">
-                Organisaatiossa ei ole vielä kirjautuvia käyttäjiä. Lisää henkilö Henkilöstö-näkymässä ja valitse “Luo tili ja lähetä kutsu”.
+                Organisaatiossa ei ole vielä henkilöstökortteja. Lisää henkilö Henkilöstö-näkymässä.
               </p>
             )}
           </div>

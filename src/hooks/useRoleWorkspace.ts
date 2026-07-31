@@ -10,6 +10,7 @@ import {
 const EMPTY_WORKSPACE: RoleWorkspaceData = {
   people: [],
   projectMemberships: [],
+  projectTeamMemberships: [],
   workOrders: [],
 };
 

@@ -43,9 +43,17 @@ import {
   uploadProjectDocument,
 } from '@/lib/supabase/projectWorkspace';
 import {
-  replaceProjectMembers,
+  replaceProjectTeamMembers,
   type OrganizationPerson,
+  type ProjectTeamMembership,
 } from '@/lib/supabase/workManagement';
+import {
+  buildProjectTeamCandidates,
+  displayNamesForProjectTeam,
+  partitionTeamSelection,
+  selectedKeysForProject,
+} from '@/lib/projectTeamRoster';
+import { useAppDataContext } from '@/contexts/AppDataContext';
 import type { Project } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -53,7 +61,8 @@ interface ProjectContactsFilesPanelProps {
   organizationId: string;
   project: Project;
   people: OrganizationPerson[];
-  projectPeople: OrganizationPerson[];
+  projectMemberships: Array<{ projectId: string; userId: string }>;
+  projectTeamMemberships: ProjectTeamMembership[];
   currentUserId?: string;
   canManage: boolean;
   onError: (message: string | null) => void;
@@ -77,7 +86,8 @@ export default function ProjectContactsFilesPanel({
   organizationId,
   project,
   people,
-  projectPeople,
+  projectMemberships,
+  projectTeamMemberships,
   currentUserId,
   canManage,
   onError,
@@ -86,6 +96,7 @@ export default function ProjectContactsFilesPanel({
 }: ProjectContactsFilesPanelProps) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { employees } = useAppDataContext();
 
   const documentsQuery = useQuery({
     queryKey: ['project-works-documents', organizationId, project.id],
@@ -102,6 +113,20 @@ export default function ProjectContactsFilesPanel({
 
   const documents = documentsQuery.data ?? [];
   const customerContacts = contactsQuery.data ?? [];
+  const teamCandidates = useMemo(
+    () => buildProjectTeamCandidates(employees, people),
+    [employees, people],
+  );
+  const teamNames = useMemo(
+    () => displayNamesForProjectTeam({
+      projectId: project.id,
+      teamMemberships: projectTeamMemberships,
+      projectMemberships,
+      employees,
+      people,
+    }),
+    [employees, people, project.id, projectMemberships, projectTeamMemberships],
+  );
 
   const peopleById = useMemo(
     () => new Map(people.map((person) => [person.userId, person])),
@@ -128,7 +153,7 @@ export default function ProjectContactsFilesPanel({
   }, [peopleById, project.projectManagerId, project.responsibleSupervisorId]);
 
   const [teamOpen, setTeamOpen] = useState(false);
-  const [teamUserIds, setTeamUserIds] = useState<string[]>([]);
+  const [teamKeys, setTeamKeys] = useState<string[]>([]);
   const [contactOpen, setContactOpen] = useState(false);
   const [contactForm, setContactForm] = useState({
     name: '',
@@ -147,8 +172,13 @@ export default function ProjectContactsFilesPanel({
 
   useEffect(() => {
     if (!teamOpen) return;
-    setTeamUserIds(projectPeople.map((person) => person.userId));
-  }, [projectPeople, teamOpen]);
+    setTeamKeys(selectedKeysForProject({
+      projectId: project.id,
+      teamMemberships: projectTeamMemberships,
+      projectMemberships,
+      candidates: teamCandidates,
+    }));
+  }, [project.id, projectMemberships, projectTeamMemberships, teamCandidates, teamOpen]);
 
   const refreshSideData = async () => {
     await Promise.all([
@@ -163,10 +193,12 @@ export default function ProjectContactsFilesPanel({
     setSaving(true);
     onError(null);
     try {
-      await replaceProjectMembers({
+      const { employeeIds, extraUserIds } = partitionTeamSelection(teamKeys, teamCandidates);
+      await replaceProjectTeamMembers({
         organizationId,
         projectId: project.id,
-        userIds: teamUserIds,
+        employeeIds,
+        extraUserIds,
       });
       await refreshSideData();
       setTeamOpen(false);
@@ -355,22 +387,21 @@ export default function ProjectContactsFilesPanel({
 
             <section className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Projektitiimi ({projectPeople.length})
+                Projektitiimi ({teamNames.length})
               </h3>
-              {projectPeople.length === 0 ? (
+              {teamNames.length === 0 ? (
                 <p className="break-words rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
-                  Tiimiä ei ole vielä määritetty. Lisää työnjohtajat ja tekijät projektitiimiin.
+                  Tiimiä ei ole vielä määritetty. Lisää henkilöstö projektitiimiin ilman kutsua.
                 </p>
               ) : (
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {projectPeople.map((person) => (
-                    <div key={person.userId} className="flex items-start gap-3 rounded-xl border border-slate-200 p-3">
+                  {teamNames.map((name) => (
+                    <div key={name} className="flex items-start gap-3 rounded-xl border border-slate-200 p-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-xs font-bold text-orange-800">
-                        {initials(person.name)}
+                        {initials(name)}
                       </div>
                       <div className="min-w-0">
-                        <p className="break-words text-sm font-medium text-slate-900">{person.name}</p>
-                        <p className="break-words text-xs text-slate-500">{ROLE_LABELS[person.role]}</p>
+                        <p className="break-words text-sm font-medium text-slate-900">{name}</p>
                       </div>
                     </div>
                   ))}
@@ -525,37 +556,40 @@ export default function ProjectContactsFilesPanel({
           <DialogHeader>
             <DialogTitle>Muokkaa projektitiimiä</DialogTitle>
           </DialogHeader>
-          <p className="break-words rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-            Listassa näkyvät vain kirjautuvat käyttäjät. Jos henkilö puuttuu, kutsu hänet ensin Henkilöstö-näkymässä (“Luo tili ja lähetä kutsu”). Pelkkä HR-henkilöstökortti ei riitä.
+          <p className="break-words text-sm text-slate-600">
+            Lisää henkilöstökortit suoraan tiimiin. Sovellustunnus tarvitaan vasta työmääräysten kohdistukseen.
           </p>
           <div className="space-y-2">
-            {people.map((person) => {
-              const checked = teamUserIds.includes(person.userId);
+            {teamCandidates.map((candidate) => {
+              const checked = teamKeys.includes(candidate.key);
               return (
                 <label
-                  key={person.userId}
+                  key={candidate.key}
                   className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3"
                 >
                   <Checkbox
                     checked={checked}
                     onCheckedChange={(value) => {
-                      setTeamUserIds((previous) => (
+                      setTeamKeys((previous) => (
                         value === true
-                          ? [...new Set([...previous, person.userId])]
-                          : previous.filter((id) => id !== person.userId)
+                          ? [...new Set([...previous, candidate.key])]
+                          : previous.filter((id) => id !== candidate.key)
                       ));
                     }}
                   />
                   <span className="min-w-0">
-                    <span className="block break-words text-sm font-medium text-slate-900">{person.name}</span>
-                    <span className="block break-words text-xs text-slate-500">{ROLE_LABELS[person.role]}</span>
+                    <span className="block break-words text-sm font-medium text-slate-900">{candidate.name}</span>
+                    <span className="block break-words text-xs text-slate-500">
+                      {candidate.detail}
+                      {candidate.hasLogin ? '' : ' · Ei sovellustunnusta'}
+                    </span>
                   </span>
                 </label>
               );
             })}
-            {people.length === 0 && (
+            {teamCandidates.length === 0 && (
               <p className="text-sm text-slate-500">
-                Organisaatiossa ei ole vielä kirjautuvia käyttäjiä. Kutsu henkilö Henkilöstö-näkymässä.
+                Organisaatiossa ei ole vielä henkilöstökortteja. Lisää henkilö Henkilöstö-näkymässä.
               </p>
             )}
           </div>

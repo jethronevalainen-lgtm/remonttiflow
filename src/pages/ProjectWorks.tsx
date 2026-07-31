@@ -107,6 +107,7 @@ export default function ProjectWorks({ embedded = false }: { embedded?: boolean 
   const {
     people,
     projectMemberships,
+    projectTeamMemberships,
     workOrders,
     canManage,
     loading,
@@ -309,7 +310,8 @@ export default function ProjectWorks({ embedded = false }: { embedded?: boolean 
           organizationId={currentOrg.id}
           project={project}
           people={people}
-          projectPeople={projectPeople}
+          projectMemberships={projectMemberships}
+          projectTeamMemberships={projectTeamMemberships}
           currentUserId={user?.id}
           canManage={canManage}
           onError={setOperationError}

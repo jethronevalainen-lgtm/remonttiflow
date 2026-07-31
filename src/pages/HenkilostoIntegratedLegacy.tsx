@@ -815,7 +815,8 @@ export default function HenkilostoIntegrated() {
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 sm:col-span-2">
                   <p className="font-semibold text-amber-950">Ei sovellustunnusta</p>
                   <p className="mt-1 text-sm leading-6 text-amber-900">
-                    Henkilöstökortti on olemassa, mutta ilman VaKantti-kutsua henkilöä ei voi lisätä projektitiimiin eikä kohdistaa työmääräyksiin. Valitse “Luo tili ja lähetä kutsu”.
+                    Henkilöstökortti on olemassa ilman VaKantti-tunnusta. Voit silti lisätä henkilön projektitiimiin.
+                    Sovellustunnus tarvitaan vasta, kun henkilö tarvitsee kirjautumisen tai työmääräysten kohdistuksen.
                   </p>
                 </div>
               )}

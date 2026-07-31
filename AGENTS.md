@@ -81,8 +81,9 @@ Calendar create dialog can (1) assign an installer to an existing open work orde
 paths go through `saveManagedWorkOrder` / `save_work_order_v2` so
 `private.sync_work_order_calendar` owns the blue calendar cards. Pure helpers live
 in `src/lib/calendarWorkOrderBooking.ts`. Clicking a work-order card opens
-`/tyomaaraykset?edit=<id>`. Project-linked assignment still requires the person to
-be on `project_members`.
+`/tyomaaraykset?edit=<id>`. Project crew roster is `project_team_members`
+(employee-based, no invite required). Operational assignment still requires the
+person to have a linked login on `project_members`.
 
 ## Project works: contacts + files
 

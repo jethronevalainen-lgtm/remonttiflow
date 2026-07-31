@@ -22,6 +22,11 @@ export interface ProjectMembership {
   userId: string;
 }
 
+export interface ProjectTeamMembership {
+  projectId: string;
+  employeeId: string;
+}
+
 export interface ManagedWorkOrder {
   id: string;
   projectId?: string;
@@ -77,6 +82,7 @@ export interface ManagedWorkOrder {
 export interface RoleWorkspaceData {
   people: OrganizationPerson[];
   projectMemberships: ProjectMembership[];
+  projectTeamMemberships: ProjectTeamMembership[];
   workOrders: ManagedWorkOrder[];
 }
 
@@ -161,7 +167,7 @@ export async function loadRoleWorkspace(
   canManage: boolean,
   currentUserId: string,
 ): Promise<RoleWorkspaceData> {
-  const [workOrderData, membershipData, assigneeData, activeSessionData] = await Promise.all([
+  const [workOrderData, membershipData, teamMembershipData, assigneeData, activeSessionData] = await Promise.all([
     requireData(
       supabase
         .from('work_orders')
@@ -177,6 +183,13 @@ export async function loadRoleWorkspace(
         .select('project_id, user_id')
         .eq('organization_id', organizationId),
       'Projektitiimien haku',
+    ),
+    requireData(
+      supabase
+        .from('project_team_members')
+        .select('project_id, employee_id')
+        .eq('organization_id', organizationId),
+      'Projektitiimin henkilöstön haku',
     ),
     requireData(
       supabase
@@ -198,6 +211,7 @@ export async function loadRoleWorkspace(
 
   const workOrderRows = asRows(workOrderData);
   const membershipRows = asRows(membershipData);
+  const teamMembershipRows = asRows(teamMembershipData);
   const assigneeRows = asRows(assigneeData);
   const activeSessionRows = asRows(activeSessionData);
   const visibleUserIds = new Set<string>([currentUserId]);
@@ -340,10 +354,16 @@ export async function loadRoleWorkspace(
     userId: text(item, 'user_id'),
   })).filter((item) => item.projectId && item.userId);
 
+  const projectTeamMemberships = teamMembershipRows.map((item) => ({
+    projectId: text(item, 'project_id'),
+    employeeId: text(item, 'employee_id'),
+  })).filter((item) => item.projectId && item.employeeId);
+
   if (canManage) {
     return {
       people,
       projectMemberships,
+      projectTeamMemberships,
       workOrders: allWorkOrders,
     };
   }
@@ -362,8 +382,24 @@ export async function loadRoleWorkspace(
   return {
     people: [],
     projectMemberships: projectMemberships.filter((membership) => membership.userId === currentUserId),
+    projectTeamMemberships,
     workOrders,
   };
+}
+
+export async function replaceProjectTeamMembers(values: {
+  organizationId: string;
+  projectId: string;
+  employeeIds: string[];
+  extraUserIds?: string[];
+}): Promise<void> {
+  const { error } = await supabase.rpc('replace_project_team_members', {
+    p_organization_id: values.organizationId,
+    p_project_id: values.projectId,
+    p_employee_ids: values.employeeIds,
+    p_extra_user_ids: values.extraUserIds ?? [],
+  });
+  if (error) throw new Error(`Projektitiimin tallennus epäonnistui: ${error.message}`);
 }
 
 export async function replaceProjectMembers(values: {
