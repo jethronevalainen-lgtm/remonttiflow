@@ -118,6 +118,17 @@ export function isIsoDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+/** Hyväksyy sekä ISO-muodon että suomalaisen 3.8.2026 -kirjoitusasun. */
+export function normalizeDateInput(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (isIsoDate(trimmed)) return trimmed;
+  const finnish = /^(\d{1,2})\.(\d{1,2})\.(\d{4})\.?$/.exec(trimmed);
+  if (!finnish) return '';
+  const iso = `${finnish[3]}-${finnish[2].padStart(2, '0')}-${finnish[1].padStart(2, '0')}`;
+  return isIsoDate(iso) ? iso : '';
+}
+
 function parseDate(value: string): Date | null {
   if (!isIsoDate(value)) return null;
   const date = new Date(`${value}T12:00:00Z`);
@@ -319,6 +330,55 @@ export function appendProjectWorkTargets(
   return { targets, addedCount, duplicateCount, limitReached };
 }
 
+/** Täydentää puuttuvat kohdepäivät projektin aikataululla, jotta lisätty kohde on heti kelvollinen. */
+export function fillMissingProjectWorkTargetDates(
+  targets: ProjectWorkTargetDraft[],
+  startDate: string,
+  endDate: string,
+): ProjectWorkTargetDraft[] {
+  const fallbackStart = isIsoDate(startDate) ? startDate : '';
+  const fallbackEnd = isIsoDate(endDate) ? endDate : fallbackStart;
+  return targets.map((target) => {
+    const nextStart = isIsoDate(target.startDate) ? target.startDate : fallbackStart;
+    if (isIsoDate(target.endDate)) return { ...target, startDate: nextStart };
+    const nextEnd = fallbackEnd && fallbackEnd >= nextStart ? fallbackEnd : nextStart;
+    return { ...target, startDate: nextStart, endDate: nextEnd };
+  });
+}
+
+export interface ProjectWorkTargetAdditionPreview {
+  addedCount: number;
+  duplicateCount: number;
+  limitReached: boolean;
+  added: ProjectWorkTargetDraft[];
+}
+
+/** Kertoo etukäteen, mitä valittu lisäystapa oikeasti tekisi nykyiselle kohdelistalle. */
+export function previewProjectWorkTargetAddition(
+  current: ProjectWorkTargetDraft[],
+  incoming: ProjectWorkTargetDraft[],
+  maxTargets = 100,
+): ProjectWorkTargetAdditionPreview {
+  const result = appendProjectWorkTargets(current, incoming, maxTargets);
+  return {
+    addedCount: result.addedCount,
+    duplicateCount: result.duplicateCount,
+    limitReached: result.limitReached,
+    added: result.targets.slice(current.length),
+  };
+}
+
+export function describeProjectWorkTargetAddition(preview: ProjectWorkTargetAdditionPreview): string {
+  const parts: string[] = [];
+  if (preview.addedCount === 0) parts.push('Ei uusia kohteita lisättäväksi.');
+  else if (preview.addedCount === 1) parts.push('Lisätään 1 uusi kohde.');
+  else parts.push(`Lisätään ${preview.addedCount} uutta kohdetta.`);
+  if (preview.duplicateCount === 1) parts.push('1 kohde on jo listalla.');
+  else if (preview.duplicateCount > 1) parts.push(`${preview.duplicateCount} kohdetta on jo listalla.`);
+  if (preview.limitReached) parts.push('Kohdelistan 100 kohteen raja tulee vastaan.');
+  return parts.join(' ');
+}
+
 export function moveProjectWorkTarget(
   targets: ProjectWorkTargetDraft[],
   targetIdValue: string,
@@ -332,6 +392,15 @@ export function moveProjectWorkTarget(
   return reordered;
 }
 
+/**
+ * Sarakkeet erotellaan sarkaimella (Excel-liitos), pystyviivalla tai puolipisteellä.
+ * Rivikohtainen tunnistus estää sen, että sijainnin välimerkki katkaisisi rivin väärin.
+ */
+function splitTargetColumns(line: string): string[] {
+  const separator = line.includes('\t') ? '\t' : line.includes('|') ? '|' : ';';
+  return line.split(separator).map((part) => part.trim());
+}
+
 export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDraft[] {
   const seen = new Set<string>();
   const result: ProjectWorkTargetDraft[] = [];
@@ -340,12 +409,12 @@ export function normalizeProjectWorkTargets(value: string): ProjectWorkTargetDra
     const line = rawLine.trim();
     if (!line) continue;
 
-    const parts = line.split('|').map((part) => part.trim());
+    const parts = splitTargetColumns(line);
     const title = parts[0] ?? '';
     const location = parts[1] || title;
     const description = parts[2] ?? '';
-    const startDate = isIsoDate(parts[3] ?? '') ? parts[3] : '';
-    const endDate = isIsoDate(parts[4] ?? '') ? parts[4] : '';
+    const startDate = normalizeDateInput(parts[3] ?? '');
+    const endDate = normalizeDateInput(parts[4] ?? '');
     if (!title) continue;
 
     const duplicateKey = normalizeProjectWorkTargetIdentity({ title, location });
