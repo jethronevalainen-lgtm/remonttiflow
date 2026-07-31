@@ -179,6 +179,48 @@ function moneyInput(
   );
 }
 
+function HeroStat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex min-h-[5.5rem] flex-col rounded-2xl border border-white/10 bg-white/5 p-4">
+      <p className="text-xs font-medium text-slate-400">{label}</p>
+      <div className="mt-auto break-words pt-2 text-2xl font-bold leading-tight tracking-tight">{value}</div>
+    </div>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  icon: typeof BriefcaseBusiness;
+}) {
+  return (
+    <Card className="min-h-[7.5rem] border-slate-200/80 shadow-sm">
+      <CardContent className="flex h-full flex-col p-4">
+        <div className="flex min-h-8 items-start justify-between gap-3">
+          <p className="break-words text-xs font-medium text-slate-500">{label}</p>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+            <Icon size={16} />
+          </span>
+        </div>
+        <p className="mt-auto break-words pt-3 text-base font-semibold leading-snug text-slate-900">{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReadOnlyFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-h-[5.75rem] flex-col rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mt-auto break-words pt-2 text-sm font-semibold leading-snug text-slate-900">{value}</p>
+    </div>
+  );
+}
+
 export default function Henkilokortit() {
   const { user } = useAuth();
   const { currentOrg, currentRole } = useOrganization();
@@ -433,70 +475,445 @@ export default function Henkilokortit() {
       : 'Henkilökortit ja palkat';
   const readOnly = !isAdmin;
 
+  const accessLevelLabel = isAdmin
+    ? 'Koko organisaatio'
+    : currentRole === 'supervisor'
+      ? 'Oma tiimi'
+      : 'Omat tiedot';
+
+  const summaryMetrics = selectedCard
+    ? [
+        {
+          label: 'Viikkotyöaika',
+          value: selectedCard.weeklyHours ? `${selectedCard.weeklyHours} h` : '—',
+          icon: BriefcaseBusiness,
+        },
+        {
+          label: 'Työsuhde alkanut',
+          value: dateLabel(selectedCard.startDate),
+          icon: Building2,
+        },
+        {
+          label: 'Työehtosopimus',
+          value: selectedCard.collectiveAgreement || '—',
+          icon: ShieldCheck,
+        },
+        {
+          label: 'Oma työnjohto',
+          value: selectedCard.supervisorNames.join(', ') || '—',
+          icon: UsersRound,
+        },
+      ]
+    : [];
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mx-auto max-w-[1600px] space-y-6">
-      <div className="overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-white shadow-xl sm:p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: 'easeOut' }}
+      className="mx-auto max-w-[1600px] space-y-6"
+    >
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-white shadow-xl sm:p-8">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 12% 18%, rgba(251,146,60,0.22), transparent 42%), radial-gradient(circle at 88% 12%, rgba(148,163,184,0.18), transparent 36%)',
+          }}
+        />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-stretch lg:justify-between">
           <div className="max-w-3xl">
-            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300"><ShieldCheck size={16} />Rajattu henkilöstöhallinto</div>
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300">
+              <ShieldCheck size={16} />
+              Rajattu henkilöstöhallinto
+            </div>
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>
-            <p className="mt-3 text-sm leading-6 text-slate-300">Työnjohtaja näkee vain oman tiiminsä HR- ja palkkatiedot. Työmääräysten ja työvuorojen jakaminen koko organisaatiolle toimii tästä rajauksesta riippumatta.</p>
+            <p className="mt-3 text-sm leading-6 text-slate-300">
+              Työnjohtaja näkee vain oman tiiminsä HR- ja palkkatiedot. Työmääräysten ja työvuorojen jakaminen koko organisaatiolle toimii tästä rajauksesta riippumatta.
+            </p>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-slate-400">Näkyviä henkilöitä</p><p className="mt-1 text-2xl font-bold">{cards.length}</p></div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="text-xs text-slate-400">Palkka määritetty</p><p className="mt-1 text-2xl font-bold">{cards.filter((card) => card.payType).length}</p></div>
-            <div className="col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4 sm:col-span-1"><p className="text-xs text-slate-400">Oikeustaso</p><p className="mt-1 text-sm font-semibold">{isAdmin ? 'Koko organisaatio' : currentRole === 'supervisor' ? 'Oma tiimi' : 'Omat tiedot'}</p></div>
+          <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-3 sm:min-w-[22rem] sm:grid-cols-3 lg:w-[28rem] lg:shrink-0">
+            <HeroStat label="Näkyviä henkilöitä" value={cards.length} />
+            <HeroStat label="Palkka määritetty" value={cards.filter((card) => card.payType).length} />
+            <HeroStat label="Oikeustaso" value={<span className="text-lg sm:text-xl">{accessLevelLabel}</span>} />
           </div>
         </div>
       </div>
 
-      {error && <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><AlertTriangle size={18} className="mt-0.5 shrink-0" />{error}</div>}
-      {success && <div className="flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"><CheckCircle2 size={18} className="mt-0.5 shrink-0" />{success}</div>}
+      {error && (
+        <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+          {success}
+        </div>
+      )}
 
       {isAdmin && (
-        <Card className="border-slate-200 shadow-sm">
+        <Card className="border-slate-200/80 shadow-sm">
           <CardContent className="space-y-5 p-5 sm:p-6">
-            <div><h2 className="flex items-center gap-2 font-semibold text-slate-950"><UsersRound size={18} className="text-orange-600" />Työnjohtajien omat HR-tiimit</h2><p className="mt-1 text-sm text-slate-500">Tiimijako vaikuttaa vain luottamuksellisten HR- ja palkkatietojen näkyvyyteen.</p></div>
+            <div>
+              <h2 className="flex items-center gap-2 font-semibold text-slate-950">
+                <UsersRound size={18} className="text-orange-600" />
+                Työnjohtajien omat HR-tiimit
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Tiimijako vaikuttaa vain luottamuksellisten HR- ja palkkatietojen näkyvyyteen.
+              </p>
+            </div>
             <div className="grid gap-5 lg:grid-cols-[300px_1fr_auto] lg:items-start">
-              <Field label="Työnjohtaja"><Select value={selectedSupervisorId} onValueChange={setSelectedSupervisorId}><SelectTrigger><SelectValue placeholder="Valitse työnjohtaja" /></SelectTrigger><SelectContent>{supervisors.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name}</SelectItem>)}</SelectContent></Select></Field>
-              <div className="space-y-2"><Label>Oman tiimin työntekijät</Label><div className="grid max-h-56 gap-2 overflow-y-auto rounded-xl border border-slate-200 p-3 sm:grid-cols-2 xl:grid-cols-3">{employees.filter((employee) => !employee.archivedAt).map((employee) => <label key={employee.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50"><Checkbox disabled={!selectedSupervisorId} checked={assignedEmployeeIds.has(employee.id)} onCheckedChange={(checked) => setAssignedEmployeeIds((previous) => { const next = new Set(previous); if (checked) next.add(employee.id); else next.delete(employee.id); return next; })} /><span className="min-w-0 break-words"><span className="block text-sm font-medium">{employee.name}</span><span className="block text-xs text-slate-500">{employee.role} · {employee.department}</span></span></label>)}</div></div>
-              <Button className="gap-2 lg:mt-7" disabled={!selectedSupervisorId || saving} onClick={() => void saveTeam()}>{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Tallenna tiimi</Button>
+              <Field label="Työnjohtaja">
+                <Select value={selectedSupervisorId} onValueChange={setSelectedSupervisorId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Valitse työnjohtaja" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {supervisors.map((person) => (
+                      <SelectItem key={person.userId} value={person.userId}>{person.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <div className="space-y-2">
+                <Label>Oman tiimin työntekijät</Label>
+                <div className="grid max-h-56 auto-rows-fr gap-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {employees.filter((employee) => !employee.archivedAt).map((employee) => (
+                    <label
+                      key={employee.id}
+                      className="flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border border-transparent bg-white px-3 py-2 shadow-sm hover:border-slate-200"
+                    >
+                      <Checkbox
+                        disabled={!selectedSupervisorId}
+                        checked={assignedEmployeeIds.has(employee.id)}
+                        onCheckedChange={(checked) => setAssignedEmployeeIds((previous) => {
+                          const next = new Set(previous);
+                          if (checked) next.add(employee.id);
+                          else next.delete(employee.id);
+                          return next;
+                        })}
+                      />
+                      <span className="min-w-0 break-words">
+                        <span className="block text-sm font-medium">{employee.name}</span>
+                        <span className="block text-xs text-slate-500">{employee.role} · {employee.department}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <Button className="gap-2 lg:mt-7" disabled={!selectedSupervisorId || saving} onClick={() => void saveTeam()}>
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Tallenna tiimi
+              </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
       {loading ? (
-        <div className="flex min-h-72 items-center justify-center rounded-2xl border border-slate-200 bg-white"><Loader2 size={28} className="animate-spin text-orange-600" /></div>
+        <div className="flex min-h-72 items-center justify-center rounded-2xl border border-slate-200 bg-white">
+          <Loader2 size={28} className="animate-spin text-orange-600" />
+        </div>
       ) : cards.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center"><LockKeyhole size={44} className="mx-auto mb-3 text-slate-300" /><h2 className="font-semibold">Ei näkyviä henkilökortteja</h2><p className="mt-1 text-sm text-slate-500">Admin määrittää työnjohtajan oman HR-tiimin.</p></div>
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center">
+          <LockKeyhole size={44} className="mx-auto mb-3 text-slate-300" />
+          <h2 className="font-semibold">Ei näkyviä henkilökortteja</h2>
+          <p className="mt-1 text-sm text-slate-500">Admin määrittää työnjohtajan oman HR-tiimin.</p>
+        </div>
       ) : (
-        <div className="grid min-w-0 gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-          <Card className="h-fit overflow-hidden border-slate-200 shadow-sm xl:sticky xl:top-0"><CardContent className="p-0"><div className="border-b border-slate-200 p-4"><div className="relative"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Hae henkilöä…" /></div></div><div className="max-h-[68vh] overflow-y-auto">{filteredCards.map((card) => <button key={card.employeeId} type="button" onClick={() => setSelectedEmployeeId(card.employeeId)} className={`flex w-full items-center gap-3 border-b border-slate-100 p-4 text-left transition-colors ${selectedCard?.employeeId === card.employeeId ? 'bg-orange-50' : 'hover:bg-slate-50'}`}><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-sm font-bold text-white">{initials(card.employeeName)}</div><div className="min-w-0 flex-1 break-words"><p className="font-semibold text-slate-950">{card.employeeName}</p><p className="text-sm text-slate-500">{card.employeeRole} · {card.department}</p><p className="mt-1 text-xs text-slate-400">{card.supervisorNames.length ? `Työnjohto: ${card.supervisorNames.join(', ')}` : 'Omaa työnjohtajaa ei määritetty'}</p></div>{card.payType && <Badge className="shrink-0 border-0 bg-emerald-50 text-emerald-700">Palkka</Badge>}</button>)}</div></CardContent></Card>
+        <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <Card className="h-fit overflow-hidden border-slate-200/80 shadow-sm xl:sticky xl:top-4">
+            <CardContent className="p-0">
+              <div className="border-b border-slate-200 bg-slate-50/70 p-4">
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className="border-slate-200 bg-white pl-9"
+                    placeholder="Hae henkilöä…"
+                  />
+                </div>
+              </div>
+              <div className="max-h-[68vh] overflow-y-auto">
+                {filteredCards.map((card) => {
+                  const selected = selectedCard?.employeeId === card.employeeId;
+                  return (
+                    <button
+                      key={card.employeeId}
+                      type="button"
+                      onClick={() => setSelectedEmployeeId(card.employeeId)}
+                      className={`flex min-h-[5.75rem] w-full items-start gap-3 border-b border-slate-100 px-4 py-3.5 text-left transition-colors ${
+                        selected
+                          ? 'border-l-4 border-l-orange-500 bg-orange-50/90'
+                          : 'border-l-4 border-l-transparent hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-sm font-bold text-white">
+                        {initials(card.employeeName)}
+                      </div>
+                      <div className="min-w-0 flex-1 break-words">
+                        <div className="flex flex-wrap items-start gap-2">
+                          <p className="font-semibold text-slate-950">{card.employeeName}</p>
+                          {card.payType && (
+                            <Badge className="shrink-0 border-0 bg-emerald-50 text-emerald-700">Palkka</Badge>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-sm text-slate-500">{card.employeeRole} · {card.department}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          {card.supervisorNames.length
+                            ? `Työnjohto: ${card.supervisorNames.join(', ')}`
+                            : 'Omaa työnjohtajaa ei määritetty'}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
 
           {selectedCard && (
-            <div className="min-w-0 space-y-5">
-              <Card className="overflow-hidden border-slate-200 shadow-sm"><CardContent className="flex flex-col gap-5 bg-gradient-to-r from-white to-slate-50 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"><div className="flex min-w-0 items-center gap-4"><div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl bg-orange-500 text-xl font-bold text-white">{initials(selectedCard.employeeName)}</div><div className="min-w-0 break-words"><h2 className="text-2xl font-bold text-slate-950">{selectedCard.employeeName}</h2><p className="mt-1 text-sm text-slate-500">{selectedCard.employeeRole} · {selectedCard.department}</p><div className="mt-2 flex flex-wrap gap-2"><Badge variant="outline">{selectedCard.employeeStatus}</Badge><Badge variant="outline">{selectedCard.employmentType || 'Työsuhdemuoto puuttuu'}</Badge></div></div></div><div className="rounded-2xl border border-slate-200 bg-white px-5 py-4"><p className="text-xs uppercase tracking-wider text-slate-400">Voimassa oleva palkka</p><p className="mt-1 text-xl font-bold text-slate-950">{selectedCard.payType === 'Tuntipalkka' ? `${euro(selectedCard.hourlyWageCents)} / h` : euro(selectedCard.monthlySalaryCents)}</p><p className="mt-1 text-xs text-slate-500">{selectedCard.payType || 'Palkkatapaa ei määritetty'}</p></div></CardContent></Card>
+            <motion.div
+              key={selectedCard.employeeId}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+              className="min-w-0 space-y-5"
+            >
+              <Card className="overflow-hidden border-slate-200/80 shadow-sm">
+                <CardContent className="grid gap-5 bg-gradient-to-br from-white via-white to-slate-50 p-5 sm:grid-cols-[minmax(0,1fr)_minmax(13rem,16rem)] sm:items-stretch sm:p-6">
+                  <div className="flex min-w-0 items-start gap-4">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl bg-orange-500 text-xl font-bold text-white shadow-sm shadow-orange-500/25">
+                      {initials(selectedCard.employeeName)}
+                    </div>
+                    <div className="min-w-0 break-words">
+                      <h2 className="text-2xl font-bold tracking-tight text-slate-950">{selectedCard.employeeName}</h2>
+                      <p className="mt-1 text-sm text-slate-500">{selectedCard.employeeRole} · {selectedCard.department}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge variant="outline">{selectedCard.employeeStatus}</Badge>
+                        <Badge variant="outline">{selectedCard.employmentType || 'Työsuhdemuoto puuttuu'}</Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex min-h-[6.5rem] flex-col rounded-2xl bg-slate-950 px-5 py-4 text-white">
+                    <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Voimassa oleva palkka</p>
+                    <p className="mt-auto break-words pt-3 text-xl font-bold leading-snug">
+                      {selectedCard.payType === 'Tuntipalkka'
+                        ? `${euro(selectedCard.hourlyWageCents)} / h`
+                        : euro(selectedCard.monthlySalaryCents)}
+                    </p>
+                    <p className="mt-1 break-words text-xs text-slate-400">
+                      {selectedCard.payType || 'Palkkatapaa ei määritetty'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
 
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
-                { label: 'Viikkotyöaika', value: selectedCard.weeklyHours ? `${selectedCard.weeklyHours} h` : '—', icon: BriefcaseBusiness },
-                { label: 'Työsuhde alkanut', value: dateLabel(selectedCard.startDate), icon: Building2 },
-                { label: 'Työehtosopimus', value: selectedCard.collectiveAgreement || '—', icon: ShieldCheck },
-                { label: 'Oma työnjohto', value: selectedCard.supervisorNames.join(', ') || '—', icon: UsersRound },
-              ].map((item) => <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs text-slate-500">{item.label}</p><item.icon size={17} className="shrink-0 text-orange-600" /></div><p className="mt-2 break-words font-semibold text-slate-900">{item.value}</p></CardContent></Card>)}</div>
+              <div className="grid auto-rows-fr grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {summaryMetrics.map((item) => (
+                  <SummaryMetric key={item.label} label={item.label} value={item.value} icon={item.icon} />
+                ))}
+              </div>
 
               <Tabs defaultValue="employment">
-                <TabsList className="h-auto w-full flex-wrap justify-start rounded-xl bg-slate-100 p-1"><TabsTrigger value="employment">Työsuhde</TabsTrigger><TabsTrigger value="compensation">Palkka ja lisät</TabsTrigger><TabsTrigger value="tax">Pankki ja verotus</TabsTrigger><TabsTrigger value="contact">Yhteystiedot</TabsTrigger></TabsList>
+                <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-2xl bg-slate-100/90 p-1.5">
+                  <TabsTrigger value="employment" className="rounded-xl">Työsuhde</TabsTrigger>
+                  <TabsTrigger value="compensation" className="rounded-xl">Palkka ja lisät</TabsTrigger>
+                  <TabsTrigger value="tax" className="rounded-xl">Pankki ja verotus</TabsTrigger>
+                  <TabsTrigger value="contact" className="rounded-xl">Yhteystiedot</TabsTrigger>
+                </TabsList>
 
-                <TabsContent value="employment" className="mt-4"><Card className="border-slate-200 shadow-sm"><CardContent className="grid gap-5 p-5 md:grid-cols-2 sm:p-6"><Field label="Ammattiliitto"><Input disabled={readOnly} value={hrForm.unionName} onChange={(event) => setHrForm((previous) => ({ ...previous, unionName: event.target.value }))} /></Field><Field label="Työterveyshuolto"><Input disabled={readOnly} value={hrForm.occupationalHealthProvider} onChange={(event) => setHrForm((previous) => ({ ...previous, occupationalHealthProvider: event.target.value }))} /></Field><Field label="Työsuhteen HR-huomiot"><Textarea disabled={readOnly} value={hrForm.employmentNotes} onChange={(event) => setHrForm((previous) => ({ ...previous, employmentNotes: event.target.value }))} rows={5} /></Field><Field label="Palkanlaskennan huomiot" hint="Näkyy vain rajatun HR-oikeuden käyttäjille."><Textarea disabled={readOnly} value={hrForm.payrollNotes} onChange={(event) => setHrForm((previous) => ({ ...previous, payrollNotes: event.target.value }))} rows={5} /></Field>{isAdmin && <div className="flex justify-end md:col-span-2"><Button className="gap-2" onClick={() => void saveHr()} disabled={saving}>{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Tallenna HR-tiedot</Button></div>}</CardContent></Card></TabsContent>
+                <TabsContent value="employment" className="mt-4">
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="grid gap-5 p-5 sm:p-6 md:grid-cols-2">
+                      <Field label="Ammattiliitto">
+                        <Input disabled={readOnly} value={hrForm.unionName} onChange={(event) => setHrForm((previous) => ({ ...previous, unionName: event.target.value }))} />
+                      </Field>
+                      <Field label="Työterveyshuolto">
+                        <Input disabled={readOnly} value={hrForm.occupationalHealthProvider} onChange={(event) => setHrForm((previous) => ({ ...previous, occupationalHealthProvider: event.target.value }))} />
+                      </Field>
+                      <Field label="Työsuhteen HR-huomiot">
+                        <Textarea disabled={readOnly} value={hrForm.employmentNotes} onChange={(event) => setHrForm((previous) => ({ ...previous, employmentNotes: event.target.value }))} rows={5} />
+                      </Field>
+                      <Field label="Palkanlaskennan huomiot" hint="Näkyy vain rajatun HR-oikeuden käyttäjille.">
+                        <Textarea disabled={readOnly} value={hrForm.payrollNotes} onChange={(event) => setHrForm((previous) => ({ ...previous, payrollNotes: event.target.value }))} rows={5} />
+                      </Field>
+                      {isAdmin && (
+                        <div className="flex justify-end md:col-span-2">
+                          <Button className="gap-2" onClick={() => void saveHr()} disabled={saving}>
+                            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                            Tallenna HR-tiedot
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
-                <TabsContent value="compensation" className="mt-4"><Card className="border-slate-200 shadow-sm"><CardContent className="space-y-6 p-5 sm:p-6"><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"><Field label="Palkkatapa"><Select disabled={readOnly} value={compensationForm.payType} onValueChange={(value) => setCompensationForm((previous) => ({ ...previous, payType: value === 'Tuntipalkka' ? 'Tuntipalkka' : 'Kuukausipalkka' }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Kuukausipalkka">Kuukausipalkka</SelectItem><SelectItem value="Tuntipalkka">Tuntipalkka</SelectItem></SelectContent></Select></Field>{moneyInput(compensationForm.payType === 'Kuukausipalkka' ? 'Kuukausipalkka €' : 'Tuntipalkka €/h', compensationForm.payType === 'Kuukausipalkka' ? compensationForm.monthlySalary : compensationForm.hourlyWage, readOnly, (value) => setCompensationForm((previous) => compensationForm.payType === 'Kuukausipalkka' ? { ...previous, monthlySalary: value } : { ...previous, hourlyWage: value }))}<Field label="Viikkotyöaika"><Input disabled={readOnly} inputMode="decimal" value={compensationForm.weeklyHours} onChange={(event) => setCompensationForm((previous) => ({ ...previous, weeklyHours: event.target.value }))} /></Field><Field label="Työehtosopimus"><Input disabled={readOnly} value={compensationForm.collectiveAgreement} onChange={(event) => setCompensationForm((previous) => ({ ...previous, collectiveAgreement: event.target.value }))} /></Field><Field label="Voimassa alkaen"><Input disabled={readOnly} type="date" value={compensationForm.validFrom} onChange={(event) => setCompensationForm((previous) => ({ ...previous, validFrom: event.target.value }))} /></Field><Field label="Voimassa päättyen"><Input disabled={readOnly} type="date" value={compensationForm.validTo} onChange={(event) => setCompensationForm((previous) => ({ ...previous, validTo: event.target.value }))} /></Field><Field label="Palkkakausi"><Input disabled={readOnly} value={compensationForm.payPeriod} onChange={(event) => setCompensationForm((previous) => ({ ...previous, payPeriod: event.target.value }))} /></Field>{moneyInput('Matka-ajan korvaus €/h', compensationForm.travelTimeHourly, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, travelTimeHourly: value })))}</div><div><h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-950"><BadgeEuro size={18} className="text-orange-600" />Lisät ja korvaukset</h3><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{moneyInput('Iltalisä €/h', compensationForm.eveningAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, eveningAllowance: value })))}{moneyInput('Yölisä €/h', compensationForm.nightAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, nightAllowance: value })))}{moneyInput('Lauantailisä €/h', compensationForm.saturdayAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, saturdayAllowance: value })))}{moneyInput('Sunnuntailisä €/h', compensationForm.sundayAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, sundayAllowance: value })))}{moneyInput('Päiväraha €', compensationForm.dailyAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, dailyAllowance: value })))}{moneyInput('Ateriakorvaus €', compensationForm.mealAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, mealAllowance: value })))}<Field label="Ylityö 50 % kerroin"><Input disabled={readOnly} inputMode="decimal" value={compensationForm.overtime50Multiplier} onChange={(event) => setCompensationForm((previous) => ({ ...previous, overtime50Multiplier: event.target.value }))} /></Field><Field label="Ylityö 100 % kerroin"><Input disabled={readOnly} inputMode="decimal" value={compensationForm.overtime100Multiplier} onChange={(event) => setCompensationForm((previous) => ({ ...previous, overtime100Multiplier: event.target.value }))} /></Field></div></div><Field label="Palkkaehtojen huomautukset"><Textarea disabled={readOnly} value={compensationForm.notes} onChange={(event) => setCompensationForm((previous) => ({ ...previous, notes: event.target.value }))} rows={4} /></Field>{isAdmin && <div className="flex justify-end"><Button className="gap-2" onClick={() => void saveCompensation()} disabled={saving}>{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Tallenna palkkaehdot</Button></div>}</CardContent></Card></TabsContent>
+                <TabsContent value="compensation" className="mt-4">
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="space-y-6 p-5 sm:p-6">
+                      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                        <Field label="Palkkatapa">
+                          <Select
+                            disabled={readOnly}
+                            value={compensationForm.payType}
+                            onValueChange={(value) => setCompensationForm((previous) => ({
+                              ...previous,
+                              payType: value === 'Tuntipalkka' ? 'Tuntipalkka' : 'Kuukausipalkka',
+                            }))}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Kuukausipalkka">Kuukausipalkka</SelectItem>
+                              <SelectItem value="Tuntipalkka">Tuntipalkka</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        {moneyInput(
+                          compensationForm.payType === 'Kuukausipalkka' ? 'Kuukausipalkka €' : 'Tuntipalkka €/h',
+                          compensationForm.payType === 'Kuukausipalkka' ? compensationForm.monthlySalary : compensationForm.hourlyWage,
+                          readOnly,
+                          (value) => setCompensationForm((previous) => (
+                            compensationForm.payType === 'Kuukausipalkka'
+                              ? { ...previous, monthlySalary: value }
+                              : { ...previous, hourlyWage: value }
+                          )),
+                        )}
+                        <Field label="Viikkotyöaika">
+                          <Input disabled={readOnly} inputMode="decimal" value={compensationForm.weeklyHours} onChange={(event) => setCompensationForm((previous) => ({ ...previous, weeklyHours: event.target.value }))} />
+                        </Field>
+                        <Field label="Työehtosopimus">
+                          <Input disabled={readOnly} value={compensationForm.collectiveAgreement} onChange={(event) => setCompensationForm((previous) => ({ ...previous, collectiveAgreement: event.target.value }))} />
+                        </Field>
+                        <Field label="Voimassa alkaen">
+                          <Input disabled={readOnly} type="date" value={compensationForm.validFrom} onChange={(event) => setCompensationForm((previous) => ({ ...previous, validFrom: event.target.value }))} />
+                        </Field>
+                        <Field label="Voimassa päättyen">
+                          <Input disabled={readOnly} type="date" value={compensationForm.validTo} onChange={(event) => setCompensationForm((previous) => ({ ...previous, validTo: event.target.value }))} />
+                        </Field>
+                        <Field label="Palkkakausi">
+                          <Input disabled={readOnly} value={compensationForm.payPeriod} onChange={(event) => setCompensationForm((previous) => ({ ...previous, payPeriod: event.target.value }))} />
+                        </Field>
+                        {moneyInput('Matka-ajan korvaus €/h', compensationForm.travelTimeHourly, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, travelTimeHourly: value })))}
+                      </div>
+                      <div>
+                        <h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-950">
+                          <BadgeEuro size={18} className="text-orange-600" />
+                          Lisät ja korvaukset
+                        </h3>
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                          {moneyInput('Iltalisä €/h', compensationForm.eveningAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, eveningAllowance: value })))}
+                          {moneyInput('Yölisä €/h', compensationForm.nightAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, nightAllowance: value })))}
+                          {moneyInput('Lauantailisä €/h', compensationForm.saturdayAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, saturdayAllowance: value })))}
+                          {moneyInput('Sunnuntailisä €/h', compensationForm.sundayAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, sundayAllowance: value })))}
+                          {moneyInput('Päiväraha €', compensationForm.dailyAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, dailyAllowance: value })))}
+                          {moneyInput('Ateriakorvaus €', compensationForm.mealAllowance, readOnly, (value) => setCompensationForm((previous) => ({ ...previous, mealAllowance: value })))}
+                          <Field label="Ylityö 50 % kerroin">
+                            <Input disabled={readOnly} inputMode="decimal" value={compensationForm.overtime50Multiplier} onChange={(event) => setCompensationForm((previous) => ({ ...previous, overtime50Multiplier: event.target.value }))} />
+                          </Field>
+                          <Field label="Ylityö 100 % kerroin">
+                            <Input disabled={readOnly} inputMode="decimal" value={compensationForm.overtime100Multiplier} onChange={(event) => setCompensationForm((previous) => ({ ...previous, overtime100Multiplier: event.target.value }))} />
+                          </Field>
+                        </div>
+                      </div>
+                      <Field label="Palkkaehtojen huomautukset">
+                        <Textarea disabled={readOnly} value={compensationForm.notes} onChange={(event) => setCompensationForm((previous) => ({ ...previous, notes: event.target.value }))} rows={4} />
+                      </Field>
+                      {isAdmin && (
+                        <div className="flex justify-end">
+                          <Button className="gap-2" onClick={() => void saveCompensation()} disabled={saving}>
+                            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                            Tallenna palkkaehdot
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
-                <TabsContent value="tax" className="mt-4"><Card className="border-slate-200 shadow-sm"><CardContent className="space-y-6 p-5 sm:p-6"><div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900"><LockKeyhole size={19} className="mt-0.5 shrink-0" /><p>Henkilötunnuksesta tallennetaan turvallisuussyistä vain neljä viimeistä merkkiä. Täyttä henkilötunnusta ei tallenneta ilman erillistä kenttätason salausta.</p></div><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4"><Field label="IBAN"><Input disabled={readOnly} value={hrForm.iban} onChange={(event) => setHrForm((previous) => ({ ...previous, iban: event.target.value }))} /></Field><Field label="BIC"><Input disabled={readOnly} value={hrForm.bic} onChange={(event) => setHrForm((previous) => ({ ...previous, bic: event.target.value }))} /></Field><Field label="Perusveroprosentti"><Input disabled={readOnly} inputMode="decimal" value={hrForm.taxPercent} onChange={(event) => setHrForm((previous) => ({ ...previous, taxPercent: event.target.value }))} /></Field><Field label="Lisäveroprosentti"><Input disabled={readOnly} inputMode="decimal" value={hrForm.additionalTaxPercent} onChange={(event) => setHrForm((previous) => ({ ...previous, additionalTaxPercent: event.target.value }))} /></Field>{moneyInput('Tuloraja €', hrForm.taxIncomeLimit, readOnly, (value) => setHrForm((previous) => ({ ...previous, taxIncomeLimit: value })))}<Field label="Verokortti alkaen"><Input disabled={readOnly} type="date" value={hrForm.taxCardValidFrom} onChange={(event) => setHrForm((previous) => ({ ...previous, taxCardValidFrom: event.target.value }))} /></Field><Field label="Verokortti päättyen"><Input disabled={readOnly} type="date" value={hrForm.taxCardValidTo} onChange={(event) => setHrForm((previous) => ({ ...previous, taxCardValidTo: event.target.value }))} /></Field><Field label="Henkilötunnuksen 4 viimeistä"><Input disabled={readOnly} maxLength={4} value={hrForm.personalIdentityCodeLast4} onChange={(event) => setHrForm((previous) => ({ ...previous, personalIdentityCodeLast4: event.target.value }))} /></Field></div>{isAdmin && <div className="flex justify-end"><Button className="gap-2" onClick={() => void saveHr()} disabled={saving}>{saving ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}Tallenna pankki- ja verotiedot</Button></div>}</CardContent></Card></TabsContent>
+                <TabsContent value="tax" className="mt-4">
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="space-y-6 p-5 sm:p-6">
+                      <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                        <LockKeyhole size={19} className="mt-0.5 shrink-0" />
+                        <p>
+                          Henkilötunnuksesta tallennetaan turvallisuussyistä vain neljä viimeistä merkkiä. Täyttä henkilötunnusta ei tallenneta ilman erillistä kenttätason salausta.
+                        </p>
+                      </div>
+                      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                        <Field label="IBAN">
+                          <Input disabled={readOnly} value={hrForm.iban} onChange={(event) => setHrForm((previous) => ({ ...previous, iban: event.target.value }))} />
+                        </Field>
+                        <Field label="BIC">
+                          <Input disabled={readOnly} value={hrForm.bic} onChange={(event) => setHrForm((previous) => ({ ...previous, bic: event.target.value }))} />
+                        </Field>
+                        <Field label="Perusveroprosentti">
+                          <Input disabled={readOnly} inputMode="decimal" value={hrForm.taxPercent} onChange={(event) => setHrForm((previous) => ({ ...previous, taxPercent: event.target.value }))} />
+                        </Field>
+                        <Field label="Lisäveroprosentti">
+                          <Input disabled={readOnly} inputMode="decimal" value={hrForm.additionalTaxPercent} onChange={(event) => setHrForm((previous) => ({ ...previous, additionalTaxPercent: event.target.value }))} />
+                        </Field>
+                        {moneyInput('Tuloraja €', hrForm.taxIncomeLimit, readOnly, (value) => setHrForm((previous) => ({ ...previous, taxIncomeLimit: value })))}
+                        <Field label="Verokortti alkaen">
+                          <Input disabled={readOnly} type="date" value={hrForm.taxCardValidFrom} onChange={(event) => setHrForm((previous) => ({ ...previous, taxCardValidFrom: event.target.value }))} />
+                        </Field>
+                        <Field label="Verokortti päättyen">
+                          <Input disabled={readOnly} type="date" value={hrForm.taxCardValidTo} onChange={(event) => setHrForm((previous) => ({ ...previous, taxCardValidTo: event.target.value }))} />
+                        </Field>
+                        <Field label="Henkilötunnuksen 4 viimeistä">
+                          <Input disabled={readOnly} maxLength={4} value={hrForm.personalIdentityCodeLast4} onChange={(event) => setHrForm((previous) => ({ ...previous, personalIdentityCodeLast4: event.target.value }))} />
+                        </Field>
+                      </div>
+                      {isAdmin && (
+                        <div className="flex justify-end">
+                          <Button className="gap-2" onClick={() => void saveHr()} disabled={saving}>
+                            {saving ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
+                            Tallenna pankki- ja verotiedot
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
-                <TabsContent value="contact" className="mt-4"><Card className="border-slate-200 shadow-sm"><CardContent className="grid gap-5 p-5 md:grid-cols-2 xl:grid-cols-4 sm:p-6"><Field label="Syntymäaika"><Input disabled={readOnly} type="date" value={hrForm.dateOfBirth} onChange={(event) => setHrForm((previous) => ({ ...previous, dateOfBirth: event.target.value }))} /></Field><Field label="Katuosoite"><Input disabled={readOnly} value={hrForm.streetAddress} onChange={(event) => setHrForm((previous) => ({ ...previous, streetAddress: event.target.value }))} /></Field><Field label="Postinumero"><Input disabled={readOnly} value={hrForm.postalCode} onChange={(event) => setHrForm((previous) => ({ ...previous, postalCode: event.target.value }))} /></Field><Field label="Postitoimipaikka"><Input disabled={readOnly} value={hrForm.city} onChange={(event) => setHrForm((previous) => ({ ...previous, city: event.target.value }))} /></Field><Field label="Maa"><Input disabled={readOnly} value={hrForm.country} onChange={(event) => setHrForm((previous) => ({ ...previous, country: event.target.value }))} /></Field><div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">Työsähköposti</p><p className="mt-1 break-words font-medium">{selectedCard.email || 'Ei määritetty'}</p></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs text-slate-500">Puhelin</p><p className="mt-1 break-words font-medium">{selectedCard.phone || 'Ei määritetty'}</p></div>{isAdmin && <div className="flex items-end justify-end xl:col-span-4"><Button className="gap-2" onClick={() => void saveHr()} disabled={saving}>{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Tallenna yhteystiedot</Button></div>}</CardContent></Card></TabsContent>
+                <TabsContent value="contact" className="mt-4">
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="grid auto-rows-fr gap-5 p-5 sm:p-6 md:grid-cols-2 xl:grid-cols-4">
+                      <Field label="Syntymäaika">
+                        <Input disabled={readOnly} type="date" value={hrForm.dateOfBirth} onChange={(event) => setHrForm((previous) => ({ ...previous, dateOfBirth: event.target.value }))} />
+                      </Field>
+                      <Field label="Katuosoite">
+                        <Input disabled={readOnly} value={hrForm.streetAddress} onChange={(event) => setHrForm((previous) => ({ ...previous, streetAddress: event.target.value }))} />
+                      </Field>
+                      <Field label="Postinumero">
+                        <Input disabled={readOnly} value={hrForm.postalCode} onChange={(event) => setHrForm((previous) => ({ ...previous, postalCode: event.target.value }))} />
+                      </Field>
+                      <Field label="Postitoimipaikka">
+                        <Input disabled={readOnly} value={hrForm.city} onChange={(event) => setHrForm((previous) => ({ ...previous, city: event.target.value }))} />
+                      </Field>
+                      <Field label="Maa">
+                        <Input disabled={readOnly} value={hrForm.country} onChange={(event) => setHrForm((previous) => ({ ...previous, country: event.target.value }))} />
+                      </Field>
+                      <ReadOnlyFact label="Työsähköposti" value={selectedCard.email || 'Ei määritetty'} />
+                      <ReadOnlyFact label="Puhelin" value={selectedCard.phone || 'Ei määritetty'} />
+                      {isAdmin && (
+                        <div className="flex items-end justify-end xl:col-span-4">
+                          <Button className="gap-2" onClick={() => void saveHr()} disabled={saving}>
+                            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                            Tallenna yhteystiedot
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
               </Tabs>
-            </div>
+            </motion.div>
           )}
         </div>
       )}
