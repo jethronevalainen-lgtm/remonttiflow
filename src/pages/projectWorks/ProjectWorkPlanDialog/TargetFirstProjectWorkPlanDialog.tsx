@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowDown,
   ArrowLeft,
   ArrowRight,
-  ArrowUp,
   CalendarCheck2,
   CalendarDays,
   CheckCircle2,
@@ -12,7 +10,6 @@ import {
   ClipboardList,
   Copy,
   Layers3,
-  ListPlus,
   Loader2,
   Plus,
   RefreshCw,
@@ -32,17 +29,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  appendProjectWorkTargets,
-  applyAssigneesToAllTargets,
-  applyScheduleToAllTargets,
   buildInternalResourceConflicts,
   buildScheduleWarnings,
   createGenericProjectPhases,
   defaultPhaseDuration,
-  generateProjectWorkTargets,
   isIsoDate,
-  moveProjectWorkTarget,
-  normalizeProjectWorkTargets,
   resolveWorkItemAssignees,
   scheduleAllAssignments,
   scheduleTargetAssignments,
@@ -58,7 +49,10 @@ import {
   type ProjectWorkPlanConflict,
 } from '@/lib/supabase/projectWorkPlans';
 import type { OrganizationPerson } from '@/lib/supabase/workManagement';
-import ProjectUnitImportPanel from './ProjectUnitImportPanel';
+import AssigneeSelect from './AssigneeSelect';
+import ProjectWorkTargetsStep from './ProjectWorkTargetsStep';
+import { formatDate } from './workPlanFormatting';
+import { useProjectUnitImportOptions } from './useProjectUnitImportOptions';
 import type { Project, WorkOrderPriority } from '@/types';
 import { cn } from '@/lib/utils';
 
@@ -72,24 +66,10 @@ interface Props {
 }
 
 const PRIORITIES: WorkOrderPriority[] = ['Korkea', 'Normaali', 'Matala'];
-const DEFAULT_ASSIGNEE = '__default__';
 const NO_SOURCE = '__none__';
 
 function uniqueId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function emptyTarget(project: Project): ProjectWorkTargetDraft {
-  return {
-    id: uniqueId('target'),
-    key: uniqueId('kohde'),
-    title: '',
-    location: '',
-    description: '',
-    startDate: project.startDate || '',
-    endDate: project.endDate || project.startDate || '',
-    assigneeUserIds: [],
-  };
 }
 
 function emptyPhase(project: Project): ProjectWorkPhaseDraft {
@@ -120,51 +100,12 @@ function clonePhase(phase: ProjectWorkPhaseDraft): ProjectWorkPhaseDraft {
   };
 }
 
-function roleLabel(role: OrganizationPerson['role']): string {
-  if (role === 'worker') return 'Työntekijä';
-  if (role === 'supervisor') return 'Työnjohtaja';
-  if (role === 'project_coordinator') return 'Projektikoordinaattori';
-  return 'Ylläpitäjä';
-}
-
-function formatDate(value: string): string {
-  if (!value) return 'Ei asetettu';
-  const parsed = new Date(`${value}T12:00:00`);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('fi-FI');
-}
-
 function stepClasses(active: boolean, complete: boolean): string {
   return cn(
     'flex min-w-0 items-center gap-3 rounded-xl border px-3 py-3 text-left transition',
     complete && 'border-emerald-200 bg-emerald-50',
     active && !complete && 'border-primary/40 bg-primary/5',
     !active && !complete && 'border-slate-200 bg-slate-50/60',
-  );
-}
-
-function AssigneeSelect({
-  value,
-  people,
-  fallbackText,
-  onChange,
-}: {
-  value: string[];
-  people: OrganizationPerson[];
-  fallbackText: string;
-  onChange: (userIds: string[]) => void;
-}) {
-  return (
-    <Select value={value[0] || DEFAULT_ASSIGNEE} onValueChange={(next) => onChange(next === DEFAULT_ASSIGNEE ? [] : [next])}>
-      <SelectTrigger><SelectValue /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value={DEFAULT_ASSIGNEE}>{fallbackText}</SelectItem>
-        {people.map((person) => (
-          <SelectItem key={person.userId} value={person.userId}>
-            {person.name} ({roleLabel(person.role)})
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 
@@ -179,26 +120,18 @@ export default function TargetFirstProjectWorkPlanDialog({
   const [step, setStep] = useState(1);
   const [planName, setPlanName] = useState('');
   const [planDescription, setPlanDescription] = useState('');
-  const [targetInput, setTargetInput] = useState('');
   const [targets, setTargets] = useState<ProjectWorkTargetDraft[]>([]);
   const [phases, setPhases] = useState<ProjectWorkPhaseDraft[]>([]);
   const [assignments, setAssignments] = useState<ProjectWorkAssignmentDraft[]>([]);
   const [activeTargetId, setActiveTargetId] = useState('');
   const [copySourceTargetId, setCopySourceTargetId] = useState(NO_SOURCE);
-  const [sequencePrefix, setSequencePrefix] = useState('Huoneisto ');
-  const [sequenceStart, setSequenceStart] = useState('1');
-  const [sequenceCount, setSequenceCount] = useState('10');
-  const [sequenceFirstDate, setSequenceFirstDate] = useState('');
-  const [sequenceDuration, setSequenceDuration] = useState('10');
-  const [sequenceGap, setSequenceGap] = useState('0');
-  const [bulkAssigneeId, setBulkAssigneeId] = useState('');
-  const [bulkStartDate, setBulkStartDate] = useState('');
-  const [bulkEndDate, setBulkEndDate] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [conflicts, setConflicts] = useState<ProjectWorkPlanConflict[]>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [conflictsAccepted, setConflictsAccepted] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const units = useProjectUnitImportOptions({ organizationId, projectId: project.id, enabled: open });
 
   const availablePeople = useMemo(
     () => people.filter((person) => ['worker', 'supervisor', 'project_coordinator', 'admin'].includes(person.role)),
@@ -236,27 +169,17 @@ export default function TargetFirstProjectWorkPlanDialog({
     setStep(1);
     setPlanName(`${project.name} – työkokonaisuus`);
     setPlanDescription('');
-    setTargetInput('');
     setTargets([]);
     setPhases([]);
     setAssignments([]);
     setActiveTargetId('');
     setCopySourceTargetId(NO_SOURCE);
-    setSequencePrefix('Huoneisto ');
-    setSequenceStart('1');
-    setSequenceCount('10');
-    setSequenceFirstDate(project.startDate || '');
-    setSequenceDuration('10');
-    setSequenceGap('0');
-    setBulkAssigneeId('');
-    setBulkStartDate(project.startDate || '');
-    setBulkEndDate(project.endDate || project.startDate || '');
     setErrors([]);
     setConflicts([]);
     setCheckingConflicts(false);
     setConflictsAccepted(false);
     setSaving(false);
-  }, [open, project.endDate, project.name, project.startDate]);
+  }, [open, project.name]);
 
   useEffect(() => {
     setAssignments((current) => synchronizeWorkAssignments(targets, phases, current, false));
@@ -282,61 +205,9 @@ export default function TargetFirstProjectWorkPlanDialog({
   const selectedForTarget = (targetId: string) => assignments.filter((item) => item.targetId === targetId && item.enabled).length;
   const selectedForPhase = (phaseId: string) => assignments.filter((item) => item.phaseId === phaseId && item.enabled).length;
 
-  const appendTargets = (next: ProjectWorkTargetDraft[]) => {
-    const result = appendProjectWorkTargets(targets, next, 100);
-    setTargets(result.targets);
-    return result;
-  };
-
-  const moveTarget = (targetId: string, direction: -1 | 1) => {
-    setTargets((current) => moveProjectWorkTarget(current, targetId, direction));
-  };
-
-  const buildTargetsFromText = () => {
-    const parsed = normalizeProjectWorkTargets(targetInput);
-    if (parsed.length === 0) {
-      setErrors(['Syötä vähintään yksi kohde. Muoto: nimi | sijainti | työseloste | aloitus | valmis']);
-      return;
-    }
-    appendTargets(parsed);
-    setTargetInput('');
+  const applyTargets = (next: ProjectWorkTargetDraft[]) => {
+    setTargets(next);
     setErrors([]);
-  };
-
-  const buildTargetSequence = () => {
-    const start = Number(sequenceStart);
-    const count = Number(sequenceCount);
-    const duration = Number(sequenceDuration);
-    const gap = Number(sequenceGap);
-    if (!Number.isFinite(start) || !Number.isFinite(count) || count < 1 || count > 100) {
-      setErrors(['Anna kelvollinen aloitusnumero ja 1–100 kohteen määrä.']);
-      return;
-    }
-    if (sequenceFirstDate && !isIsoDate(sequenceFirstDate)) {
-      setErrors(['Numerosarjan ensimmäinen aloituspäivä on virheellinen.']);
-      return;
-    }
-    if (!Number.isFinite(duration) || duration < 1 || duration > 60) {
-      setErrors(['Kohteen keston pitää olla 1–60 työpäivää.']);
-      return;
-    }
-    if (!Number.isFinite(gap) || gap < 0 || gap > 20) {
-      setErrors(['Kohteiden välisen tauon pitää olla 0–20 työpäivää.']);
-      return;
-    }
-    appendTargets(generateProjectWorkTargets({
-      prefix: sequencePrefix,
-      start,
-      count,
-      firstStartDate: sequenceFirstDate,
-      workdayDuration: duration,
-      gapWorkdays: gap,
-    }));
-    setErrors([]);
-  };
-
-  const updateTarget = (id: string, patch: Partial<ProjectWorkTargetDraft>) => {
-    setTargets((current) => current.map((target) => target.id === id ? { ...target, ...patch } : target));
   };
 
   const updatePhase = (id: string, patch: Partial<ProjectWorkPhaseDraft>) => {
@@ -345,24 +216,6 @@ export default function TargetFirstProjectWorkPlanDialog({
 
   const updateAssignment = (id: string, patch: Partial<ProjectWorkAssignmentDraft>) => {
     setAssignments((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
-  };
-
-  const applyBulkAssignee = () => {
-    if (!bulkAssigneeId) {
-      setErrors(['Valitse ensin kaikille kohteille asetettava oletustekijä.']);
-      return;
-    }
-    setTargets((current) => applyAssigneesToAllTargets(current, [bulkAssigneeId]));
-    setErrors([]);
-  };
-
-  const applyBulkSchedule = () => {
-    if (!isIsoDate(bulkStartDate) || !isIsoDate(bulkEndDate) || bulkEndDate < bulkStartDate) {
-      setErrors(['Anna kelvollinen yhteinen aloitus- ja tavoitevalmistumispäivä.']);
-      return;
-    }
-    setTargets((current) => applyScheduleToAllTargets(current, bulkStartDate, bulkEndDate));
-    setErrors([]);
   };
 
   const enablePhaseForTarget = (targetId: string, phaseId: string) => {
@@ -618,87 +471,20 @@ export default function TargetFirstProjectWorkPlanDialog({
         )}
 
         {step === 1 && (
-          <div className="space-y-5">
-            <section className="grid gap-4 rounded-2xl border border-slate-200 p-4 sm:grid-cols-2 sm:p-5">
-              <div className="space-y-2"><Label>Työkokonaisuuden nimi *</Label><Input value={planName} onChange={(event) => setPlanName(event.target.value)} /></div>
-              <div className="space-y-2"><Label>Kuvaus</Label><Input value={planDescription} onChange={(event) => setPlanDescription(event.target.value)} placeholder="Esim. Keittiöremontit, 14 huoneistoa" /></div>
-            </section>
-
-            <ProjectUnitImportPanel
-              organizationId={organizationId}
-              project={project}
-              currentTargets={targets}
-              onImport={appendTargets}
-            />
-
-            <section className="grid gap-4 lg:grid-cols-2">
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div><h3 className="font-semibold">Liitä kohdelista</h3><p className="mt-1 text-xs text-text-secondary">Yksi kohde per rivi.</p></div>
-                <Textarea value={targetInput} onChange={(event) => setTargetInput(event.target.value)} rows={7} placeholder={'A1 | 1. kerros | Keittiö + vinyyli | 2026-08-03 | 2026-08-14\nA2 | 1. kerros | Vain keittiö | 2026-08-17 | 2026-08-28'} />
-                <p className="text-xs text-text-secondary">Muoto: kohde | sijainti | työseloste | aloitus YYYY-MM-DD | valmis YYYY-MM-DD</p>
-                <Button type="button" variant="outline" onClick={buildTargetsFromText}><ListPlus size={16} className="mr-2" /> Muodosta listasta</Button>
-              </div>
-
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                <div><h3 className="font-semibold">Luo numerosarja</h3><p className="mt-1 text-xs text-text-secondary">Sopii samanlaisten asuntojen sarjatuotantoon. Viikonloput ohitetaan.</p></div>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <div className="space-y-1"><Label className="text-xs">Nimen alku</Label><Input value={sequencePrefix} onChange={(event) => setSequencePrefix(event.target.value)} /></div>
-                  <div className="space-y-1"><Label className="text-xs">Alkaa numerosta</Label><Input type="number" value={sequenceStart} onChange={(event) => setSequenceStart(event.target.value)} /></div>
-                  <div className="space-y-1"><Label className="text-xs">Määrä</Label><Input type="number" min={1} max={100} value={sequenceCount} onChange={(event) => setSequenceCount(event.target.value)} /></div>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <div className="space-y-1"><Label className="text-xs">Ensimmäinen aloitus</Label><Input type="date" value={sequenceFirstDate} onChange={(event) => setSequenceFirstDate(event.target.value)} /></div>
-                  <div className="space-y-1"><Label className="text-xs">Kesto / kohde</Label><Input type="number" min={1} max={60} value={sequenceDuration} onChange={(event) => setSequenceDuration(event.target.value)} /></div>
-                  <div className="space-y-1"><Label className="text-xs">Väli työpäivinä</Label><Input type="number" min={0} max={20} value={sequenceGap} onChange={(event) => setSequenceGap(event.target.value)} /></div>
-                </div>
-                <Button type="button" variant="outline" onClick={buildTargetSequence}><Wand2 size={16} className="mr-2" /> Muodosta ja jaksota</Button>
-              </div>
-            </section>
-
-            <section className="space-y-4 rounded-2xl border border-slate-200 p-4 sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div><h3 className="font-semibold">Kohteet</h3><p className="mt-1 text-sm text-text-secondary">Työt määritetään seuraavassa vaiheessa erikseen jokaiselle kohteelle.</p></div>
-                <div className="flex items-center gap-2"><Badge variant="secondary">{targets.length}/100</Badge><Button type="button" variant="outline" size="sm" onClick={() => setTargets((current) => [...current, emptyTarget(project)])}><Plus size={16} className="mr-1.5" /> Lisää kohde</Button></div>
-              </div>
-
-              {targets.length > 0 && (
-                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:grid-cols-[1fr_1fr_auto]">
-                  <div className="flex flex-wrap items-end gap-2">
-                    <div className="min-w-[220px] flex-1 space-y-1"><Label className="text-xs">Oletustekijä kaikille</Label><Select value={bulkAssigneeId || undefined} onValueChange={setBulkAssigneeId}><SelectTrigger><SelectValue placeholder="Valitse henkilö" /></SelectTrigger><SelectContent>{availablePeople.map((person) => <SelectItem key={person.userId} value={person.userId}>{person.name}</SelectItem>)}</SelectContent></Select></div>
-                    <Button type="button" variant="secondary" onClick={applyBulkAssignee}><Users size={16} className="mr-2" /> Aseta</Button>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="space-y-1"><Label className="text-xs">Yhteinen aloitus</Label><Input type="date" value={bulkStartDate} onChange={(event) => setBulkStartDate(event.target.value)} /></div>
-                    <div className="space-y-1"><Label className="text-xs">Yhteinen tavoite</Label><Input type="date" value={bulkEndDate} onChange={(event) => setBulkEndDate(event.target.value)} /></div>
-                  </div>
-                  <Button type="button" variant="secondary" className="self-end" onClick={applyBulkSchedule}><CalendarDays size={16} className="mr-2" /> Aseta päivät</Button>
-                </div>
-              )}
-
-              {targets.length === 0 ? (
-                <div className="rounded-xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-text-secondary">Ei vielä kohteita.</div>
-              ) : (
-                <div className="space-y-3">
-                  {targets.map((target, index) => (
-                    <div key={target.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 lg:grid-cols-[48px_1fr_1fr_150px_150px_180px_96px_40px] lg:items-end">
-                      <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white lg:flex">{index + 1}</div>
-                      <div className="space-y-1"><Label className="text-xs">Kohde *</Label><Input value={target.title} onChange={(event) => updateTarget(target.id, { title: event.target.value })} placeholder="A1" /></div>
-                      <div className="space-y-1"><Label className="text-xs">Sijainti</Label><Input value={target.location} onChange={(event) => updateTarget(target.id, { location: event.target.value })} placeholder="1. kerros" /></div>
-                      <div className="space-y-1"><Label className="text-xs">Aikaisin aloitus *</Label><Input type="date" value={target.startDate} onChange={(event) => updateTarget(target.id, { startDate: event.target.value })} /></div>
-                      <div className="space-y-1"><Label className="text-xs">Tavoite valmis *</Label><Input type="date" min={target.startDate || undefined} value={target.endDate} onChange={(event) => updateTarget(target.id, { endDate: event.target.value })} /></div>
-                      <div className="space-y-1"><Label className="text-xs">Oletustekijä</Label><AssigneeSelect value={target.assigneeUserIds} people={availablePeople} fallbackText="Työkohtainen" onChange={(value) => updateTarget(target.id, { assigneeUserIds: value })} /></div>
-                      <div className="flex items-center gap-1">
-                        <Button type="button" variant="outline" size="sm" disabled={index === 0} onClick={() => moveTarget(target.id, -1)} aria-label={`Siirrä ${target.title || `kohde ${index + 1}`} ylös`}><ArrowUp size={16} /></Button>
-                        <Button type="button" variant="outline" size="sm" disabled={index === targets.length - 1} onClick={() => moveTarget(target.id, 1)} aria-label={`Siirrä ${target.title || `kohde ${index + 1}`} alas`}><ArrowDown size={16} /></Button>
-                      </div>
-                      <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => setTargets((current) => current.filter((item) => item.id !== target.id))} aria-label="Poista kohde"><Trash2 size={16} /></Button>
-                      <div className="space-y-1 lg:col-start-2 lg:col-span-6"><Label className="text-xs">Kohteen työseloste</Label><Input value={target.description} onChange={(event) => updateTarget(target.id, { description: event.target.value })} placeholder="Esim. Keittiö + vinyyli, ei kylpyhuonetta" /></div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
+          <ProjectWorkTargetsStep
+            project={project}
+            people={availablePeople}
+            planName={planName}
+            planDescription={planDescription}
+            targets={targets}
+            unitOptions={units.options}
+            unitsLoading={units.loading}
+            unitsError={units.error}
+            onReloadUnits={() => void units.reload()}
+            onPlanNameChange={setPlanName}
+            onPlanDescriptionChange={setPlanDescription}
+            onTargetsChange={applyTargets}
+          />
         )}
 
         {step === 2 && (

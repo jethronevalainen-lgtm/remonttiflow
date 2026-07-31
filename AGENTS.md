@@ -85,6 +85,18 @@ in `src/lib/calendarWorkOrderBooking.ts`. Clicking a work-order card opens
 (employee-based, no invite required). Operational assignment still requires the
 person to have a linked login on `project_members`.
 
+## Työkokonaisuuden kohdevaihe
+
+`ProjectWorkTargetsStep` on työkokonaisuusdialogin vaihe 1. Kohteita lisätään
+**yhdellä kerrallaan valittavalla tavalla** (huoneistorekisteri, numerosarja tai
+liitetty lista) — kaikkia kolmea ei näytetä auki yhtä aikaa. Jokainen tapa
+tuottaa `pendingTargets`-listan, jonka `previewProjectWorkTargetAddition`
+esikatselee ennen kuin mitään lisätään; sama esikatselu ja sama
+“Lisää N kohdetta listaan” -painike palvelee kaikkia tapoja. Liitetty lista
+hyväksyy sarkain-, `|`- ja `;`-erottimet sekä `3.8.2026`-muotoiset päivät, ja
+puuttuvat päivät täydennetään projektin aikataululla. Numerosarja jatkuu
+lisäyksen jälkeen seuraavasta numerosta ja työpäivästä.
+
 ## Project works: contacts + files
 
 `/projektit/:id` (`ProjectWorks`) shows **Päähenkilöt ja yhteystiedot** plus

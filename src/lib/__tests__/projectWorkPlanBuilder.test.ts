@@ -5,9 +5,13 @@ import {
   applyAssigneesToAllTargets,
   combineWorkPlanDescription,
   createGenericProjectPhases,
+  describeProjectWorkTargetAddition,
+  fillMissingProjectWorkTargetDates,
   generateProjectWorkTargets,
   moveProjectWorkTarget,
+  normalizeDateInput,
   normalizeProjectWorkTargets,
+  previewProjectWorkTargetAddition,
   projectUnitImportToTarget,
   projectWorkPlanSize,
   resolveWorkPlanAssignees,
@@ -142,6 +146,74 @@ describe('project work plan builder', () => {
     expect(result.targets).toHaveLength(100);
     expect(result.addedCount).toBe(1);
     expect(result.limitReached).toBe(true);
+  });
+
+  it('accepts tab-separated rows pasted straight from a spreadsheet', () => {
+    expect(normalizeProjectWorkTargets('A1\t1. kerros\tKeittiö\nA2\t2. kerros\tKylpyhuone')).toEqual([
+      expect.objectContaining({ title: 'A1', location: '1. kerros', description: 'Keittiö' }),
+      expect.objectContaining({ title: 'A2', location: '2. kerros', description: 'Kylpyhuone' }),
+    ]);
+  });
+
+  it('accepts semicolon-separated rows without breaking pipe-separated ones', () => {
+    expect(normalizeProjectWorkTargets('A1;1. kerros;Keittiö')).toEqual([
+      expect.objectContaining({ title: 'A1', location: '1. kerros', description: 'Keittiö' }),
+    ]);
+    expect(normalizeProjectWorkTargets('A1 | Talo 1; rappu A | Keittiö')).toEqual([
+      expect.objectContaining({ title: 'A1', location: 'Talo 1; rappu A', description: 'Keittiö' }),
+    ]);
+  });
+
+  it('reads both ISO and Finnish dates from a pasted list', () => {
+    expect(normalizeDateInput('3.8.2026')).toBe('2026-08-03');
+    expect(normalizeDateInput('03.08.2026')).toBe('2026-08-03');
+    expect(normalizeDateInput('2026-08-03')).toBe('2026-08-03');
+    expect(normalizeDateInput('32.8.2026')).toBe('');
+    expect(normalizeDateInput('elokuu')).toBe('');
+    expect(normalizeProjectWorkTargets('A1 | 1. kerros | Keittiö | 3.8.2026 | 14.8.2026')).toEqual([
+      expect.objectContaining({ startDate: '2026-08-03', endDate: '2026-08-14' }),
+    ]);
+  });
+
+  it('fills only the missing target dates from the project schedule', () => {
+    const targets = normalizeProjectWorkTargets('A1\nA2 | 2. kerros | | 2026-09-01\nA3 | | | 2026-08-05 | 2026-08-07');
+    expect(fillMissingProjectWorkTargetDates(targets, '2026-08-03', '2026-08-28')).toEqual([
+      expect.objectContaining({ title: 'A1', startDate: '2026-08-03', endDate: '2026-08-28' }),
+      expect.objectContaining({ title: 'A2', startDate: '2026-09-01', endDate: '2026-09-01' }),
+      expect.objectContaining({ title: 'A3', startDate: '2026-08-05', endDate: '2026-08-07' }),
+    ]);
+  });
+
+  it('previews an addition without touching the current target list', () => {
+    const current = normalizeProjectWorkTargets('A1 | 1. kerros');
+    const incoming = normalizeProjectWorkTargets('A1 | 1. kerros\nA2 | 1. kerros');
+    const preview = previewProjectWorkTargetAddition(current, incoming);
+    expect(preview.addedCount).toBe(1);
+    expect(preview.duplicateCount).toBe(1);
+    expect(preview.limitReached).toBe(false);
+    expect(preview.added.map((target) => target.title)).toEqual(['A2']);
+    expect(current.map((target) => target.title)).toEqual(['A1']);
+  });
+
+  it('describes what the chosen addition would do in plain Finnish', () => {
+    expect(describeProjectWorkTargetAddition({
+      addedCount: 10,
+      duplicateCount: 0,
+      limitReached: false,
+      added: [],
+    })).toBe('Lisätään 10 uutta kohdetta.');
+    expect(describeProjectWorkTargetAddition({
+      addedCount: 1,
+      duplicateCount: 2,
+      limitReached: true,
+      added: [],
+    })).toBe('Lisätään 1 uusi kohde. 2 kohdetta on jo listalla. Kohdelistan 100 kohteen raja tulee vastaan.');
+    expect(describeProjectWorkTargetAddition({
+      addedCount: 0,
+      duplicateCount: 1,
+      limitReached: false,
+      added: [],
+    })).toBe('Ei uusia kohteita lisättäväksi. 1 kohde on jo listalla.');
   });
 
   it('reorders targets without changing their dates, assignees or identity', () => {
