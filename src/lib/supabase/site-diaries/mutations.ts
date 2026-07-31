@@ -79,11 +79,11 @@ export async function upsertWeatherObservation(input: {
 
   const { error } = await supabase
     .from('site_diary_weather_observations')
-    .upsert({
+    .insert({
       diary_id: input.diaryId,
       created_by: input.userId,
       ...values,
-    }, { onConflict: 'diary_id,observation_time' });
+    });
   await assertNoError(error, 'Säähavainnon tallennus epäonnistui.');
 }
 
