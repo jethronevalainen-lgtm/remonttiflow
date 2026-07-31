@@ -52,7 +52,7 @@ describe('buildHeaderAlerts', () => {
 
 describe('filterHeaderRoutes', () => {
   const routes = [
-    { path: '/dashboard', label: 'Dashboard' },
+    { path: '/dashboard', label: 'Päivän tilannekuva' },
     { path: '/hallinta', label: 'Organisaation hallinta' },
     { path: '/tuntikirjaukset', label: 'Tuntikirjaukset' },
   ];
@@ -65,6 +65,12 @@ describe('filterHeaderRoutes', () => {
         'tunti',
       ),
     ).toEqual([{ path: '/tuntikirjaukset', label: 'Tuntikirjaukset' }]);
+  });
+
+  it('finds päivän tilannekuva by Finnish label', () => {
+    expect(
+      filterHeaderRoutes(routes, ['/dashboard'], 'tilannekuva'),
+    ).toEqual([{ path: '/dashboard', label: 'Päivän tilannekuva' }]);
   });
 
   it('does not expose disallowed routes in search results', () => {

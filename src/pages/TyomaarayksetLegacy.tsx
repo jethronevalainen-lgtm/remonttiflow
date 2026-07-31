@@ -47,6 +47,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -805,17 +806,22 @@ export default function Tyomaaraykset() {
       )}
 
       {!loading && filteredOrders.length === 0 && (
-        <Card className="border-dashed border-slate-300">
-          <CardContent className="p-12 text-center">
-            <ClipboardList size={46} className="mx-auto mb-3 text-slate-300" />
-            <h2 className="font-semibold text-slate-800">{canManage ? 'Työmääräyksiä ei löytynyt' : 'Sinulle ei ole määrätty töitä'}</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              {canManage
-                ? 'Muuta suodatusta tai luo uusi työmääräys. Projektia ei tarvitse valita.'
-                : 'Uudet tehtävät näkyvät tässä, kun työnjohto kohdistaa ne sinulle tai projektitiimillesi.'}
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={ClipboardList}
+          title={canManage ? 'Työmääräyksiä ei löytynyt' : 'Sinulle ei ole määrätty töitä'}
+          description={
+            canManage
+              ? 'Muuta suodatusta tai luo uusi työmääräys yläreunasta. Projektia ei tarvitse valita.'
+              : 'Uudet tehtävät näkyvät tässä, kun työnjohto kohdistaa ne sinulle tai projektitiimillesi.'
+          }
+          action={
+            canManage ? (
+              <Button onClick={() => openCreate()} className="gap-2">
+                <Plus size={16} /> Luo työmääräys
+              </Button>
+            ) : undefined
+          }
+        />
       )}
 
       <WorkOrderDialog

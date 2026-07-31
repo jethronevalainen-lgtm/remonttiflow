@@ -26,6 +26,11 @@ import { useProjectLocations } from '@/hooks/useProjectLocations';
 import type { OrganizationPerson, ProjectMembership } from '@/lib/supabase/workManagement';
 import type { Project, WorkAssignmentScope, WorkOrderPriority, WorkOrderStatus } from '@/types';
 import type { OccupancyStatus, WorkOrderFormValues } from './workOrderForm';
+import {
+  WORK_ORDER_DATE_HELP,
+  WORK_ORDER_REVIEW_HELP,
+  WORK_ORDER_STATUS_HELP,
+} from '@/lib/workOrderStatusHelp';
 
 const NO_VALUE = '__none__';
 const STATUSES: WorkOrderStatus[] = ['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'];
@@ -352,9 +357,20 @@ export default function WorkOrderEditorDialog({
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {STATUSES.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                      {STATUSES.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          <span className="flex flex-col gap-0.5 py-0.5 text-left">
+                            <span>{item}</span>
+                            <span className="text-xs font-normal text-slate-500">{WORK_ORDER_STATUS_HELP[item]}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  <p className="break-words text-xs text-slate-500">
+                    {WORK_ORDER_STATUS_HELP[form.status]}{' '}
+                    Työntekijän “ilmoita valmiiksi” ei merkitse tilaa Valmis — se jää hyväksyttäväksi. {WORK_ORDER_REVIEW_HELP}
+                  </p>
                 </div>
               )}
             </section>
@@ -449,6 +465,7 @@ export default function WorkOrderEditorDialog({
                       plannedEndDate: form.plannedEndDate || event.target.value,
                     })}
                   />
+                  <p className="break-words text-xs text-blue-800">{WORK_ORDER_DATE_HELP.plannedStart}</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="work-planned-end">Suunniteltu valmis</Label>
@@ -459,6 +476,7 @@ export default function WorkOrderEditorDialog({
                     value={form.plannedEndDate}
                     onChange={(event) => onChange({ ...form, plannedEndDate: event.target.value })}
                   />
+                  <p className="break-words text-xs text-blue-800">{WORK_ORDER_DATE_HELP.plannedEnd}</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="work-due">Viimeistään valmis</Label>
@@ -469,6 +487,7 @@ export default function WorkOrderEditorDialog({
                     value={form.dueDate}
                     onChange={(event) => onChange({ ...form, dueDate: event.target.value })}
                   />
+                  <p className="break-words text-xs text-blue-800">{WORK_ORDER_DATE_HELP.dueDate}</p>
                 </div>
               </div>
 

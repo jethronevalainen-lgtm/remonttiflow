@@ -5,7 +5,9 @@ import { AlertTriangle, ChevronRight, MessageCircle, RefreshCw } from 'lucide-re
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { useOrganization } from '@/contexts/OrganizationContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import {
   loadAccessibleProjectConversations,
   type ProjectConversationSummary,
@@ -22,9 +24,13 @@ function dateTime(value: string | null) {
 export default function ProjectDiscussions() {
   const navigate = useNavigate();
   const { currentOrg } = useOrganization();
+  const { effectiveRole } = useViewAs();
   const [projects, setProjects] = useState<ProjectConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const canOpenProjects = effectiveRole === 'admin'
+    || effectiveRole === 'supervisor'
+    || effectiveRole === 'project_coordinator';
 
   const refresh = useCallback(async () => {
     if (!currentOrg) return;
@@ -85,7 +91,22 @@ export default function ProjectDiscussions() {
       </div>
 
       {!loading && projects.length === 0 && (
-        <Card className="border-dashed"><CardContent className="p-12 text-center"><MessageCircle size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold text-slate-800">Ei keskusteltavia projekteja</p><p className="mt-1 text-sm text-slate-500">Projektit näkyvät täällä, kun käyttäjä on liitetty projektiin tai tilaaja-asiakkuuteen.</p></CardContent></Card>
+        <EmptyState
+          icon={MessageCircle}
+          title="Ei keskusteltavia projekteja"
+          description={
+            canOpenProjects
+              ? 'Projektit näkyvät täällä, kun käyttäjä on liitetty projektitiimiin tai tilaaja-asiakkuuteen. Lisää jäsenet Projektit → Tiimi.'
+              : 'Projektit näkyvät täällä, kun sinut on liitetty projektitiimiin tai tilaaja-asiakkuuteen.'
+          }
+          action={
+            canOpenProjects ? (
+              <Button variant="outline" onClick={() => navigate('/projektit')}>
+                Avaa projektit
+              </Button>
+            ) : undefined
+          }
+        />
       )}
     </div>
   );

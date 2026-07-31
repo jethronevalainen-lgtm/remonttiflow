@@ -117,9 +117,17 @@ export default function Tyonjohto() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <div>
-        <h1 className="text-hero text-text-primary">Työnjohdon tilannekuva</h1>
-        <p className="mt-1 text-body-sm text-text-secondary">Työmaat, tarkastukset, resurssit, hyväksynnät ja poikkeamat samassa näkymässä</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-hero text-text-primary">Työnjohdon koonti</h1>
+          <p className="mt-1 text-body-sm text-text-secondary">
+            Tiimin ja resurssien koonti: työmaat, tarkastukset, hyväksynnät ja poikkeamat samassa näkymässä.
+            Tämän päivän operatiivinen tilanne on Päivän tilannekuvassa.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="gap-2 shrink-0" onClick={() => navigate('/dashboard')}>
+          Päivän tilannekuva <ArrowRight size={15} />
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -162,7 +170,7 @@ export default function Tyonjohto() {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Users size={19} className="text-primary" />Tämän päivän resurssit</CardTitle></CardHeader>
-          <CardContent><p className="font-mono text-3xl font-bold">{todayShifts.length}</p><p className="text-sm text-text-secondary">suunniteltua työvuoroa</p><div className="mt-4 space-y-2">{todayShifts.slice(0, 6).map((shift) => <div key={shift.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-2 text-sm"><div><p className="font-medium">{shift.employeeName}</p><p className="text-xs text-text-secondary">{shift.project || shift.shiftType}</p></div><span className="font-mono text-xs">{shift.startTime}–{shift.endTime}</span></div>)}{todayShifts.length === 0 && <p className="text-sm text-text-secondary">Päivälle ei ole suunniteltuja vuoroja.</p>}</div><Button variant="ghost" className="mt-3 w-full justify-between" onClick={() => navigate('/tyovuorokalenteri')}>Avaa työvuorot <ArrowRight size={15} /></Button></CardContent>
+          <CardContent><p className="font-mono text-3xl font-bold">{todayShifts.length}</p><p className="text-sm text-text-secondary">suunniteltua työvuoroa</p><div className="mt-4 space-y-2">{todayShifts.slice(0, 6).map((shift) => <div key={shift.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-2 text-sm"><div><p className="font-medium">{shift.employeeName}</p><p className="text-xs text-text-secondary">{shift.project || shift.shiftType}</p></div><span className="font-mono text-xs">{shift.startTime}–{shift.endTime}</span></div>)}{todayShifts.length === 0 && <p className="text-sm text-text-secondary">Päivälle ei ole suunniteltuja vuoroja.</p>}</div><Button variant="ghost" className="mt-3 w-full justify-between" onClick={() => navigate('/tyovuorokalenteri')}>Avaa resurssikalenteri <ArrowRight size={15} /></Button></CardContent>
         </Card>
 
         <Card>

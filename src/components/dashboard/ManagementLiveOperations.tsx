@@ -180,12 +180,23 @@ export default function ManagementLiveOperations() {
             </div>
             <h1 className="mt-2 break-words text-2xl font-bold tracking-tight sm:text-3xl">{currentOrg?.name}</h1>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              Hei {effectiveDisplayName}. Tässä ovat asiat, joihin työnjohdon pitää reagoida nyt.
+              Hei {effectiveDisplayName}. Tämän päivän operatiivinen tilanne — asiat, joihin työnjohdon pitää reagoida nyt.
+              Laajemman tiimi- ja resurssikoonnin löydät Työnjohdon koonnista.
             </p>
           </div>
-          <Badge className="w-fit border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100">
-            {new Date().toLocaleDateString('fi-FI', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          </Badge>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <Badge className="w-fit border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100">
+              {new Date().toLocaleDateString('fi-FI', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+              onClick={() => navigate('/tyonjohto')}
+            >
+              Työnjohdon koonti
+            </Button>
+          </div>
         </div>
       </div>
 

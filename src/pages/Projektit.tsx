@@ -36,6 +36,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ProjectDescriptionEditor } from '@/components/projects/ProjectDescription';
 import { useAppDataContext } from '@/contexts/AppDataContext';
 import { useOrganization } from '@/contexts/OrganizationContext';
@@ -50,10 +51,12 @@ import { replaceProjectMembers } from '@/lib/supabase/workManagement';
 import type { Project, ProjectStatus } from '@/types';
 
 const ALL = 'Kaikki';
+const CUSTOMER_FREE_TEXT = '__free_text__';
 
 interface ProjectForm {
   name: string;
   customer: string;
+  customerId: string;
   location: string;
   startDate: string;
   endDate: string;
@@ -66,6 +69,7 @@ interface ProjectForm {
 const EMPTY_FORM: ProjectForm = {
   name: '',
   customer: '',
+  customerId: '',
   location: '',
   startDate: '',
   endDate: '',
@@ -140,6 +144,7 @@ export default function Projektit() {
   const { currentOrg } = useOrganization();
   const {
     projects,
+    customers,
     addProject,
     updateProject,
     deleteProject,
@@ -243,6 +248,7 @@ export default function Projektit() {
     setForm({
       name: project.name,
       customer: project.customer,
+      customerId: project.customerId ?? '',
       location: project.location ?? '',
       startDate: project.startDate,
       endDate: project.endDate,
@@ -302,6 +308,7 @@ export default function Projektit() {
     const payload: Omit<Project, 'id'> = {
       name: form.name.trim(),
       customer: form.customer.trim(),
+      customerId: form.customerId || undefined,
       location: form.location.trim() || undefined,
       startDate: form.startDate,
       endDate: form.endDate,
@@ -467,7 +474,46 @@ export default function Projektit() {
           {domainOperationError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{domainOperationError}</div>}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="project-name">Nimi *</Label><Input id="project-name" value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} /></div>
-            <div className="space-y-2"><Label htmlFor="project-customer">Asiakas *</Label><Input id="project-customer" value={form.customer} onChange={(event) => setForm((previous) => ({ ...previous, customer: event.target.value }))} /></div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="project-customer-link">Asiakas *</Label>
+              <Select
+                value={form.customerId || CUSTOMER_FREE_TEXT}
+                onValueChange={(value) => {
+                  if (value === CUSTOMER_FREE_TEXT) {
+                    setForm((previous) => ({ ...previous, customerId: '' }));
+                    return;
+                  }
+                  const selected = customers.find((customer) => customer.id === value);
+                  setForm((previous) => ({
+                    ...previous,
+                    customerId: value,
+                    customer: selected?.name ?? previous.customer,
+                  }));
+                }}
+              >
+                <SelectTrigger id="project-customer-link"><SelectValue placeholder="Valitse asiakasrekisteristä" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={CUSTOMER_FREE_TEXT}>Vapaa nimi (ei CRM-kytkentää)</SelectItem>
+                  {customers.filter((customer) => !customer.archivedAt).map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>{customer.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!form.customerId && (
+                <Input
+                  id="project-customer"
+                  value={form.customer}
+                  onChange={(event) => setForm((previous) => ({ ...previous, customer: event.target.value, customerId: '' }))}
+                  placeholder="Asiakkaan nimi"
+                  className="mt-2"
+                />
+              )}
+              <p className="break-words text-xs text-slate-500">
+                {form.customerId
+                  ? 'Asiakas on kytketty rekisteriin — projektin yhteyshenkilöt ja tilaajayhteistyö ovat käytettävissä.'
+                  : 'Vapaa nimi riittää näyttöön, mutta yhteyshenkilöt vaativat asiakkaan valinnan rekisteristä. Voit lisätä asiakkaita Asiakkaat-osiossa.'}
+              </p>
+            </div>
             <div className="space-y-2"><Label htmlFor="project-location">Sijainti</Label><Input id="project-location" value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="project-start">Aloitus</Label><Input id="project-start" type="date" value={form.startDate} onChange={(event) => setForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
             <div className="space-y-2"><Label htmlFor="project-end">Tavoitevalmistuminen</Label><Input id="project-end" type="date" min={form.startDate || undefined} value={form.endDate} onChange={(event) => setForm((previous) => ({ ...previous, endDate: event.target.value }))} /></div>
@@ -495,7 +541,10 @@ export default function Projektit() {
       <Dialog open={Boolean(teamProject)} onOpenChange={(open) => { if (!open) setTeamProject(null); }}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader><DialogTitle>Projektitiimi · {teamProject?.name}</DialogTitle></DialogHeader>
-          <p className="text-sm text-slate-600">Valitut käyttäjät näkevät projektitiimille osoitetut työmääräykset, vuorot ja projektin tiedot.</p>
+          <p className="break-words text-sm text-slate-600">
+            Projektitiimi määrittää, kenelle työmääräyksiä voi kohdistaa tälle projektille.
+            Se on eri asia kuin resurssikalenterin “oma tiimi” (työnjohtajan HR-tiimi).
+          </p>
           <div className="max-h-[55vh] space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-2">
             {people.map((person) => { const checked = teamUserIds.includes(person.userId); return <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-3 hover:bg-slate-50"><Checkbox checked={checked} onCheckedChange={(value) => toggleTeamUser(person.userId, value === true)} /><div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div><div><p className="font-medium">{person.name}</p><p className="text-xs text-slate-500">{person.role}</p></div></label>; })}
             {people.length === 0 && <p className="p-8 text-center text-sm text-slate-500">Organisaatiossa ei ole kirjautuvia käyttäjiä.</p>}

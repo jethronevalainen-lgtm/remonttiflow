@@ -205,6 +205,7 @@ export function mapProject(row: Row): Project {
     id: text(row, 'id'),
     name: text(row, 'name'),
     customer: text(row, 'customer'),
+    customerId: optionalText(row, 'customer_id'),
     status: enumValue<ProjectStatus>(row, 'status', PROJECT_STATUSES, 'Suunniteltu'),
     startDate: text(row, 'start_date'),
     endDate: text(row, 'end_date'),
@@ -450,6 +451,7 @@ export async function createProject(
       ...basePayload(organizationId, createdBy),
       name: project.name,
       customer: project.customer,
+      customer_id: project.customerId ?? null,
       status: project.status,
       start_date: project.startDate || null,
       end_date: project.endDate || null,
@@ -470,6 +472,7 @@ export async function patchProject(
   const payload: Row = {};
   if (updates.name !== undefined) payload.name = updates.name;
   if (updates.customer !== undefined) payload.customer = updates.customer;
+  if (updates.customerId !== undefined) payload.customer_id = updates.customerId || null;
   if (updates.status !== undefined) payload.status = updates.status;
   if (updates.startDate !== undefined) payload.start_date = updates.startDate || null;
   if (updates.endDate !== undefined) payload.end_date = updates.endDate || null;
