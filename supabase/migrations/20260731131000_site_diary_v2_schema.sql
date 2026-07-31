@@ -27,15 +27,15 @@ alter table public.diary_entries
 
 update public.diary_entries
 set
-  prepared_by = coalesce(prepared_by, created_by),
-  site_address = coalesce(site_address, p.location),
-  contract_number = coalesce(contract_number, p.project_number),
-  responsible_supervisor_id = coalesce(responsible_supervisor_id, p.responsible_supervisor_id),
-  status = case status
+  prepared_by = coalesce(diary_entries.prepared_by, diary_entries.created_by),
+  site_address = coalesce(diary_entries.site_address, p.location),
+  contract_number = coalesce(diary_entries.contract_number, p.project_number),
+  responsible_supervisor_id = coalesce(diary_entries.responsible_supervisor_id, p.responsible_supervisor_id),
+  status = case diary_entries.status
     when 'Lähetetty' then 'Tarkastettavana'
     when 'Hyväksytty' then 'Tarkastettu'
     when 'Valmis' then 'Tarkastettu'
-    else status
+    else diary_entries.status
   end
 from public.projects p
 where p.id = diary_entries.project_id
