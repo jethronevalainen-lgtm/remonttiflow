@@ -51,10 +51,9 @@ const workerBottomItems: BottomItem[] = [
   { path: '/dashboard', label: 'Tänään', icon: Home },
   { path: '/tyomaaraykset', label: 'Työni', icon: ClipboardCheck },
   { path: '/tuntikirjaukset', label: 'Työaika', icon: Clock },
-  { path: '/tarkastukset', label: 'Puutteet', icon: ClipboardList },
+  { path: '/tarkastukset', label: 'Tarkastukset', icon: ClipboardList },
   { label: 'Lisää', icon: Menu, menu: true },
 ];
-
 const customerBottomItems: BottomItem[] = [
   { path: '/tilaajan-tyot', label: 'Yhteenveto', icon: Home },
   { path: '/projektikeskustelut', label: 'Viestit', icon: MessageCircle },
@@ -66,7 +65,7 @@ const managementBottomItems: BottomItem[] = [
   { path: '/dashboard', label: 'Tänään', icon: Home },
   { path: '/projektit', label: 'Projektit', icon: FolderKanban },
   { path: '/tyomaaraykset', label: 'Työt', icon: ClipboardCheck },
-  { path: '/aikataulutus', label: 'Aikataulu', icon: CalendarClock },
+  { path: '/aikataulutus', label: 'Aikataulutus', icon: CalendarClock },
   { label: 'Lisää', icon: Menu, menu: true },
 ];
 

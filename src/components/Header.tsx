@@ -30,38 +30,11 @@ import {
   filterHeaderRoutes,
   notificationPathAllowed,
   type HeaderAlert,
-  type HeaderRoute,
 } from '@/lib/headerInsights';
+import { HEADER_SEARCH_ROUTES, routeLabel } from '@/lib/routeLabels';
 import type { AppNotification, AppNotificationSeverity } from '@/lib/supabase/appNotifications';
 
-const routes: HeaderRoute[] = [
-  { path: '/dashboard', label: 'Dashboard' },
-  { path: '/tyonjohto', label: 'Työnjohto' },
-  { path: '/projektit', label: 'Projektit' },
-  { path: '/aikataulutus', label: 'Aikataulutus' },
-  { path: '/paivakirjat', label: 'Päiväkirjat' },
-  { path: '/kuittaukset', label: 'Kuittaukset' },
-  { path: '/laskenta', label: 'Laskenta' },
-  { path: '/maaralaskenta', label: 'Määrälaskenta' },
-  { path: '/jatehuolto', label: 'Jätehuolto' },
-  { path: '/tyomaaraykset', label: 'Työmääräykset' },
-  { path: '/tyovuorokalenteri', label: 'Työvuorokalenteri' },
-  { path: '/tuntikirjaukset', label: 'Tuntikirjaukset' },
-  { path: '/matkakulut', label: 'Matkakulut' },
-  { path: '/tyoturvallisuus', label: 'Työturvallisuus' },
-  { path: '/crm', label: 'CRM' },
-  { path: '/asiakkaat', label: 'Asiakkaat' },
-  { path: '/ai', label: 'AI-työkalut' },
-  { path: '/viestinta', label: 'Viestintä' },
-  { path: '/kalusto', label: 'Kalusto' },
-  { path: '/henkilosto', label: 'Henkilöstö' },
-  { path: '/lomakkeet', label: 'Lomakkeet' },
-  { path: '/raportit', label: 'Raportit' },
-  { path: '/hallinta', label: 'Organisaation hallinta' },
-  { path: '/kayttajaesikatselu', label: 'Käyttäjänäkymän esikatselu' },
-];
-
-const routeLabelMap = new Map(routes.map((route) => [route.path, route.label]));
+const routes = HEADER_SEARCH_ROUTES;
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -114,7 +87,10 @@ export default function Header({ onMenuClick }: HeaderProps) {
   const [searchValue, setSearchValue] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
 
-  const label = routeLabelMap.get(location.pathname) ?? BRAND.name;
+  const label = routeLabel(
+    location.pathname,
+    effectiveRole === 'worker' || effectiveRole === 'customer' ? effectiveRole : 'management',
+  ) ?? BRAND.name;
   const displayName = effectiveDisplayName;
   const hasMultipleOrgs = organizations.length > 1;
   const allowedPaths = useMemo(

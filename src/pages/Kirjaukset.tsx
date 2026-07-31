@@ -251,7 +251,7 @@ export default function Kirjaukset() {
     <div className="mx-auto max-w-[1500px] space-y-6">
       <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-orange-950 p-5 text-white shadow-xl sm:p-8">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300"><Plus size={16} /> Kirjaukset</div><h1 className="mt-3 text-3xl font-bold tracking-tight">Kaikki työmaan kirjaukset</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Työaika, kilometrit, kulut, materiaalit, koneiden käyttötunnit ja päivän selosteet samasta näkymästä.</p></div>
+          <div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-orange-300"><Plus size={16} /> Kirjaukset</div><h1 className="mt-3 text-3xl font-bold tracking-tight">Työmaakirjaukset</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">Kilometrit, kulut, materiaalit, koneiden käyttötunnit ja päivän selosteet. Tuntikirjaukset ovat omassa Työaika-näkymässään.</p></div>
           <Badge className="w-fit border-white/20 bg-white/10 px-3 py-2 text-white">{management ? 'Työnjohdon käsittelynäkymä' : 'Omat kirjaukset'}</Badge>
         </div>
       </section>

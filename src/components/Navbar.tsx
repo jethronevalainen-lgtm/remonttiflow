@@ -55,7 +55,7 @@ const workerGroups: NavGroup[] = [
       { label: 'Oma työtila', icon: LayoutDashboard, path: '/dashboard' },
       { label: 'Minun työni', icon: ClipboardCheck, path: '/tyomaaraykset' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
-      { label: 'Kaikki kirjaukset', icon: ClipboardList, path: '/kirjaukset' },
+      { label: 'Työmaakirjaukset', icon: ClipboardList, path: '/kirjaukset' },
       { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
       { label: 'Omat henkilöstö- ja palkkatiedot', icon: UserCircle, path: '/henkilokortit' },
     ],
@@ -63,11 +63,11 @@ const workerGroups: NavGroup[] = [
   {
     key: 'site-tools', title: 'Työmaan työkalut', items: [
       { label: 'Turvallisuushavainnot', icon: ShieldCheck, path: '/tyoturvallisuus' },
-      { label: 'Korjattavat puutteet', icon: ClipboardList, path: '/tarkastukset' },
+      { label: 'Puutteet ja tarkastukset', icon: ClipboardList, path: '/tarkastukset' },
       { label: 'Projektikeskustelut', icon: MessageCircle, path: '/projektikeskustelut' },
       { label: 'Kuittaukset', icon: ClipboardSignature, path: '/kuittaukset' },
       { label: 'Lomakkeet', icon: FileText, path: '/lomakkeet' },
-      { label: 'Viestit', icon: MessageSquare, path: '/viestinta' },
+      { label: 'Viestit ja tiedotteet', icon: MessageSquare, path: '/viestinta' },
     ],
   },
 ];
@@ -117,7 +117,7 @@ const managementGroups: NavGroup[] = [
       { label: 'Henkilöstö', icon: UserCircle, path: '/henkilosto' },
       { label: 'Henkilökortit ja palkat', icon: ShieldCheck, path: '/henkilokortit' },
       { label: 'Tuntikirjaukset', icon: Clock, path: '/tuntikirjaukset' },
-      { label: 'Kaikki kirjaukset', icon: ClipboardList, path: '/kirjaukset' },
+      { label: 'Työmaakirjaukset', icon: ClipboardList, path: '/kirjaukset' },
       { label: 'Palkka-aineisto', icon: BadgeEuro, path: '/palkka-aineisto' },
       { label: 'Matkakulut', icon: Car, path: '/matkakulut' },
     ],
@@ -138,7 +138,7 @@ const managementGroups: NavGroup[] = [
   },
   {
     key: 'tools', title: 'Hallinta ja työkalut', items: [
-      { label: 'Viestintä', icon: MessageSquare, path: '/viestinta' },
+      { label: 'Viestit ja tiedotteet', icon: MessageSquare, path: '/viestinta' },
       { label: 'Kalusto', icon: Wrench, path: '/kalusto' },
       { label: 'QR-kirjautumisen hallinta', icon: QrCode, path: '/qr-hallinta' },
       { label: 'AI-työkalut', icon: Sparkles, path: '/ai' },

@@ -36,6 +36,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -348,7 +349,7 @@ export default function Tyovuorokalenteri() {
       else if (!canAssignUserToWorkOrder(selectedExistingWorkOrder, form.userId, projectMemberships)) {
         next.push(
           selectedExistingWorkOrder.projectId
-            ? 'Asentajan täytyy kuulua työmääräyksen projektitiimiin ennen kohdistusta.'
+            ? 'Asentaja näkyy HR-tiimissä, mutta hänen täytyy kuulua myös työmääräyksen projektitiimiin. Lisää henkilö projektiin Projektit → Tiimi.'
             : 'Tätä työmääräystä ei voi enää kohdistaa.',
         );
       }
@@ -362,7 +363,7 @@ export default function Tyovuorokalenteri() {
         (membership) => membership.projectId === form.projectId && membership.userId === form.userId,
       )
     ) {
-      next.push('Projektiin liitettäessä asentajan täytyy kuulua projektitiimiin.');
+      next.push('Projektiin liitettäessä asentajan täytyy kuulua projektitiimiin (Projektit → Tiimi). Kalenterin HR-tiimi ei riitä.');
     }
     return next;
   };
@@ -604,8 +605,8 @@ export default function Tyovuorokalenteri() {
           <h1 className="text-3xl font-bold tracking-tight">Resurssikalenteri</h1>
           <p className="mt-2 max-w-3xl break-words text-sm leading-6 text-slate-300">
             Siirrä varaus vetämällä. Pidä Alt/Option pohjassa kopioidaksesi käsin luodun varauksen.
-            Työmääräysvaraus siirtää koko työjakson. Voit rajata näkymän omaan tiimiin tai valitun työnjohtajan tiimiin.
-            Työnjohtaja voi kohdistaa asentajan olemassa olevalle työmääräykselle tai luoda uuden suoraan kalenterista.
+            Työmääräysvaraus siirtää koko työjakson. Voit rajata näkymän omaan HR-tiimiin tai valitun työnjohtajan tiimiin
+            (ei sama asia kuin projektitiimi). Työmääräyksen kohdistus vaatii henkilön projektitiimiin.
           </p>
         </div>
         <Button onClick={() => openCreate()} className="gap-2 bg-orange-500 hover:bg-orange-600"><Plus size={16} /> Lisää kalenteriin</Button>
@@ -811,12 +812,21 @@ export default function Tyovuorokalenteri() {
           })}
 
           {!loading && rowPeople.length === 0 && (
-            <div className="p-12 text-center">
-              <UsersRound size={44} className="mx-auto mb-3 text-slate-300" />
-              <p className="font-semibold">Käyttäjiä ei löytynyt</p>
-              <p className="mt-1 break-words text-sm text-slate-500">
-                Muuta tiiminäkymää tai hakua, tai kutsu käyttäjät organisaatioon.
-              </p>
+            <div className="p-4 sm:p-6">
+              <EmptyState
+                icon={UsersRound}
+                title="Käyttäjiä ei löytynyt"
+                description={
+                  teamScope !== 'all'
+                    ? 'Valitussa HR-tiimissä ei ole jäseniä tällä haulla. Vaihda tiiminäkymää tai hae uudelleen.'
+                    : 'Muuta hakua tai kutsu käyttäjät organisaatioon. Työmääräysten kohdistus vaatii lisäksi projektitiimin.'
+                }
+                action={
+                  <Button onClick={() => openCreate()} className="gap-2">
+                    <Plus size={16} /> Lisää kalenteriin
+                  </Button>
+                }
+              />
             </div>
           )}
         </CardContent>
@@ -906,9 +916,9 @@ export default function Tyovuorokalenteri() {
               </div>
               <p className="break-words text-xs text-slate-500">
                 {bookingKind === 'work_order_existing'
-                  && 'Kohdista asentaja avoimeen työmääräykseen, tilaukseen tai keikkaan. Kalenteri synkronoituu automaattisesti.'}
+                  && 'Kohdista asentaja avoimeen työmääräykseen. Asentajan pitää olla projektitiimissä (ei vain HR-tiimissä).'}
                 {bookingKind === 'work_order_new'
-                  && 'Luo uusi työmääräys valitulle henkilölle tälle päivälle ja näytä se heti resurssikalenterissa.'}
+                  && 'Luo uusi työmääräys valitulle henkilölle tälle päivälle. Jos valitset projektin, henkilö pitää olla projektitiimissä.'}
                 {bookingKind === 'manual'
                   && 'Käsinvaraus ei luo työmääräystä — sopii koulutukseen, lomaan tai muuhun resurssivaraukseen.'}
               </p>

@@ -298,7 +298,7 @@ export default function Tilaukset() {
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-orange-200">Tilaajayhteistyön ohjaus</p>
-            <h1 className="text-3xl font-bold">Tilaajaportaali</h1>
+            <h1 className="text-3xl font-bold">Tilaukset</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
               Käsittele tilaajan työtilaukset, määritä aikataulu ja osapuolet, julkaise aineistot sekä hallitse tilaajakäyttäjien oikeuksia.
             </p>

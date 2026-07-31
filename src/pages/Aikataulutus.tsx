@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -459,11 +460,19 @@ export default function Aikataulutus() {
     }
   };
 
+  const openWorkPlanBuilder = () => {
+    if (projectFilter !== ALL_PROJECTS) {
+      navigate(`/projektit/${encodeURIComponent(projectFilter)}`);
+      return;
+    }
+    navigate('/projektit');
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <h1 className="text-hero text-text-primary">Tuotannon aikataulu</h1>
+          <h1 className="text-hero text-text-primary">Aikataulutus</h1>
           <p className="mt-1 max-w-3xl break-words text-body-sm text-text-secondary">
             Projektien työvaiheet, määräajat ja poikkeamat yhdessä näkymässä. Eteneminen tulee
             työmääräyksistä, ja vaiheiden aikataulumuutokset päivittyvät myös resurssikalenteriin.
@@ -473,8 +482,9 @@ export default function Aikataulutus() {
           <Button variant="outline" onClick={() => navigate('/tyovuorokalenteri')} className="gap-2">
             <UsersRound size={16} /> Resurssikalenteri
           </Button>
-          <Button onClick={() => navigate('/projektit')} className="gap-2">
-            <FolderKanban size={16} /> Rakenna työkokonaisuus
+          <Button onClick={openWorkPlanBuilder} className="gap-2">
+            <FolderKanban size={16} />
+            {projectFilter !== ALL_PROJECTS ? 'Avaa projektin työt' : 'Rakenna työkokonaisuus'}
           </Button>
         </div>
       </div>
@@ -654,19 +664,21 @@ export default function Aikataulutus() {
             ))}
 
             {!loading && !hasProjectRows && (
-              <Card className="min-h-72">
-                <CardContent className="flex h-full flex-col items-center justify-center p-10 text-center sm:p-12">
-                  <CalendarDays size={44} className="mb-3 text-text-muted" />
-                  <p className="font-semibold">Ei aikataulutettuja työvaiheita</p>
-                  <p className="mt-1 max-w-xl break-words text-sm text-text-secondary">
-                    Työvaiheet luodaan projektin työkokonaisuudesta. Näin kohteet, työmääräykset,
-                    tekijät ja kalenterivaraukset pysyvät samassa rakenteessa.
-                  </p>
-                  <Button onClick={() => navigate('/projektit')} className="mt-4 gap-2">
-                    <FolderKanban size={16} /> Avaa projektit
+              <EmptyState
+                icon={CalendarDays}
+                title="Ei aikataulutettuja työvaiheita"
+                description={
+                  projectFilter !== ALL_PROJECTS
+                    ? 'Avaa valittu projekti ja rakenna työkokonaisuus, jotta työvaiheet ja työmääräykset ilmestyvät aikatauluun.'
+                    : 'Valitse projekti tai avaa projektit ja rakenna työkokonaisuus. Näin kohteet, työmääräykset, tekijät ja kalenterivaraukset pysyvät samassa rakenteessa.'
+                }
+                action={
+                  <Button onClick={openWorkPlanBuilder} className="gap-2">
+                    <FolderKanban size={16} />
+                    {projectFilter !== ALL_PROJECTS ? 'Avaa projektin työt' : 'Avaa projektit'}
                   </Button>
-                </CardContent>
-              </Card>
+                }
+              />
             )}
           </div>
 

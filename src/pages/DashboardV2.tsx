@@ -12,7 +12,7 @@ export default function DashboardV2() {
       <AnnouncementSection
         placement="dashboard"
         title="Ajankohtaiset tiedotteet"
-        description="Sinulle kohdistetut voimassa olevat tiedotteet. Kaikki tiedotteet löytyvät Viestintä-osiosta."
+        description="Sinulle kohdistetut voimassa olevat tiedotteet. Kaikki tiedotteet löytyvät Viestit ja tiedotteet -osiosta."
         compact
         limit={4}
       />

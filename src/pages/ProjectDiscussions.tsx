@@ -5,6 +5,7 @@ import { AlertTriangle, ChevronRight, MessageCircle, RefreshCw } from 'lucide-re
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { useOrganization } from '@/contexts/OrganizationContext';
 import {
   loadAccessibleProjectConversations,
@@ -85,7 +86,16 @@ export default function ProjectDiscussions() {
       </div>
 
       {!loading && projects.length === 0 && (
-        <Card className="border-dashed"><CardContent className="p-12 text-center"><MessageCircle size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold text-slate-800">Ei keskusteltavia projekteja</p><p className="mt-1 text-sm text-slate-500">Projektit näkyvät täällä, kun käyttäjä on liitetty projektiin tai tilaaja-asiakkuuteen.</p></CardContent></Card>
+        <EmptyState
+          icon={MessageCircle}
+          title="Ei keskusteltavia projekteja"
+          description="Projektit näkyvät täällä, kun käyttäjä on liitetty projektitiimiin tai tilaaja-asiakkuuteen. Työnjohto voi lisätä jäsenet Projektit → Tiimi."
+          action={
+            <Button variant="outline" onClick={() => navigate('/projektit')}>
+              Avaa projektit
+            </Button>
+          }
+        />
       )}
     </div>
   );

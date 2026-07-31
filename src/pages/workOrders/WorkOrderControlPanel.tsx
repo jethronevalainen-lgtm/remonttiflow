@@ -50,6 +50,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -77,6 +78,10 @@ import {
 } from '@/lib/supabase/workOrderControl';
 import { deleteManagedWorkOrders } from '@/lib/supabase/workOrderBulkDelete';
 import { cn } from '@/lib/utils';
+import {
+  WORK_ORDER_REVIEW_HELP,
+  WORK_ORDER_STATUS_HELP,
+} from '@/lib/workOrderStatusHelp';
 import type { Project, WorkOrderPriority, WorkOrderStatus } from '@/types';
 
 const REVIEW_STATUS = 'Hyväksyttävänä';
@@ -934,6 +939,25 @@ export default function WorkOrderControlPanel({
               />
               <Popover>
                 <PopoverTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    Tilojen merkitys
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 space-y-2 p-4 text-sm">
+                  {(['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'] as WorkOrderStatus[]).map((status) => (
+                    <div key={status}>
+                      <p className="font-semibold text-slate-900">{status}</p>
+                      <p className="break-words text-xs text-slate-600">{WORK_ORDER_STATUS_HELP[status]}</p>
+                    </div>
+                  ))}
+                  <div>
+                    <p className="font-semibold text-slate-900">{REVIEW_STATUS}</p>
+                    <p className="break-words text-xs text-slate-600">{WORK_ORDER_REVIEW_HELP}</p>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <Popover>
+                <PopoverTrigger asChild>
                   <Button variant="outline" className={cn('gap-2', activeFilterCount > 0 && 'border-orange-300 bg-orange-50 text-orange-800')}>
                     <SlidersHorizontal size={15} /> Lisää rajauksia{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
                   </Button>
@@ -1001,7 +1025,30 @@ export default function WorkOrderControlPanel({
         {(loading || controlQuery.isLoading) && <div className="flex min-h-64 items-center justify-center text-slate-500"><Loader2 size={24} className="mr-2 animate-spin" /> Ladataan työmääräyksiä…</div>}
 
         {!loading && !controlQuery.isLoading && pageOrders.length === 0 && (
-          <div className="p-12 text-center"><BriefcaseBusiness size={44} className="mx-auto mb-3 text-slate-300" /><p className="font-semibold text-slate-800">Rajauksilla ei löytynyt työmääräyksiä</p><p className="mt-1 text-sm text-slate-500">Muuta hakua tai tyhjennä rajauksia.</p></div>
+          <div className="p-4 sm:p-6">
+            <EmptyState
+              icon={BriefcaseBusiness}
+              title={orders.length === 0 ? 'Työmääräyksiä ei ole vielä' : 'Rajauksilla ei löytynyt työmääräyksiä'}
+              description={
+                orders.length === 0
+                  ? 'Luo uusi työmääräys yläreunasta. Voit kohdistaa työn henkilöille tai koko projektitiimille.'
+                  : 'Muuta hakua tai tyhjennä rajauksia nähdäksesi työmääräykset.'
+              }
+              action={
+                orders.length > 0 ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setFilters(defaultFilters(projectFilterId));
+                      setPage(1);
+                    }}
+                  >
+                    Tyhjennä rajaukset
+                  </Button>
+                ) : undefined
+              }
+            />
+          </div>
         )}
 
         {!loading && !controlQuery.isLoading && pageOrders.length > 0 && (
@@ -1226,7 +1273,13 @@ export default function WorkOrderControlPanel({
                         ) : (
                           <Select value={order.status} disabled={saving} onValueChange={(value: WorkOrderStatus) => void runPatch([order.id], { status: value }, 'Tila päivitettiin')}>
                             <SelectTrigger className={cn('h-9 w-full border text-xs font-semibold', statusClass(order.status))}><SelectValue /></SelectTrigger>
-                            <SelectContent>{(['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'] as WorkOrderStatus[]).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+                            <SelectContent>
+                              {(['Avoin', 'Käynnissä', 'Odottaa', 'Valmis', 'Peruttu'] as WorkOrderStatus[]).map((value) => (
+                                <SelectItem key={value} value={value} title={WORK_ORDER_STATUS_HELP[value]}>
+                                  {value}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
                           </Select>
                         )}
                       </div>
