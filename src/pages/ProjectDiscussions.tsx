@@ -24,9 +24,13 @@ function dateTime(value: string | null) {
 export default function ProjectDiscussions() {
   const navigate = useNavigate();
   const { currentOrg } = useOrganization();
+  const { effectiveRole } = useViewAs();
   const [projects, setProjects] = useState<ProjectConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const canOpenProjects = effectiveRole === 'admin'
+    || effectiveRole === 'supervisor'
+    || effectiveRole === 'project_coordinator';
 
   const refresh = useCallback(async () => {
     if (!currentOrg) return;
@@ -90,11 +94,17 @@ export default function ProjectDiscussions() {
         <EmptyState
           icon={MessageCircle}
           title="Ei keskusteltavia projekteja"
-          description="Projektit näkyvät täällä, kun käyttäjä on liitetty projektitiimiin tai tilaaja-asiakkuuteen. Työnjohto voi lisätä jäsenet Projektit → Tiimi."
+          description={
+            canOpenProjects
+              ? 'Projektit näkyvät täällä, kun käyttäjä on liitetty projektitiimiin tai tilaaja-asiakkuuteen. Lisää jäsenet Projektit → Tiimi.'
+              : 'Projektit näkyvät täällä, kun sinut on liitetty projektitiimiin tai tilaaja-asiakkuuteen.'
+          }
           action={
-            <Button variant="outline" onClick={() => navigate('/projektit')}>
-              Avaa projektit
-            </Button>
+            canOpenProjects ? (
+              <Button variant="outline" onClick={() => navigate('/projektit')}>
+                Avaa projektit
+              </Button>
+            ) : undefined
           }
         />
       )}
