@@ -56,9 +56,7 @@ export async function upsertWeatherObservation(input: {
   workImpact?: string;
   source?: WeatherSource;
 }): Promise<void> {
-  const payload = {
-    ...(input.id ? { id: input.id } : {}),
-    diary_id: input.diaryId,
+  const values = {
     observation_time: input.observationTime,
     temperature_c: input.temperatureC ?? null,
     weather_condition: input.weatherCondition?.trim() || null,
@@ -67,11 +65,25 @@ export async function upsertWeatherObservation(input: {
     precipitation_mm: input.precipitationMm ?? null,
     work_impact: input.workImpact?.trim() || null,
     source: input.source ?? 'manual',
-    created_by: input.userId,
   };
+
+  if (input.id) {
+    const { error } = await supabase
+      .from('site_diary_weather_observations')
+      .update(values)
+      .eq('id', input.id)
+      .eq('diary_id', input.diaryId);
+    await assertNoError(error, 'Säähavainnon tallennus epäonnistui.');
+    return;
+  }
+
   const { error } = await supabase
     .from('site_diary_weather_observations')
-    .upsert(payload, { onConflict: 'diary_id,observation_time' });
+    .upsert({
+      diary_id: input.diaryId,
+      created_by: input.userId,
+      ...values,
+    }, { onConflict: 'diary_id,observation_time' });
   await assertNoError(error, 'Säähavainnon tallennus epäonnistui.');
 }
 
