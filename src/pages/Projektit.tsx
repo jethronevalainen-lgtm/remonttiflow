@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -410,7 +410,7 @@ export default function Projektit() {
           { label: 'Projektit', value: projects.length, detail: 'kaikki kohteet', icon: FolderKanban },
           { label: 'Käynnissä', value: runningProjects.length, detail: `${lateProjects.length} myöhässä`, icon: Play },
           { label: 'Budjetti', value: money(totalBudget), detail: `${money(totalSpent)} toteutunut`, icon: Calendar },
-          { label: 'Tiimipaikat', value: projectMemberships.length, detail: 'käyttäjä–projekti-kohdistusta', icon: UsersRound },
+          { label: 'Tiimijäsenyyksiä', value: projectMemberships.length, detail: 'nykyisiä käyttäjä–projekti-kohdistuksia', icon: UsersRound },
         ].map((item) => <Card key={item.label} className="border-slate-200 shadow-sm"><CardContent className="p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">{item.label}</p><p className="mt-2 break-words font-mono text-2xl font-bold">{item.value}</p><p className="mt-1 text-xs text-slate-500">{item.detail}</p></div><item.icon size={20} className="text-orange-600" /></div></CardContent></Card>)}
       </div>
 
@@ -545,9 +545,21 @@ export default function Projektit() {
             Projektitiimi määrittää, kenelle työmääräyksiä voi kohdistaa tälle projektille.
             Se on eri asia kuin resurssikalenterin “oma tiimi” (työnjohtajan HR-tiimi).
           </p>
+          <p className="break-words rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Listassa näkyvät vain kirjautuvat käyttäjät, joille on lähetetty VaKantti-kutsu.
+            Pelkkä henkilöstökortti ei riitä — kutsu henkilö ensin{' '}
+            <Link to="/henkilosto" className="font-semibold text-orange-800 underline underline-offset-2" onClick={() => setTeamProject(null)}>
+              Henkilöstö
+            </Link>
+            -näkymässä (“Luo tili ja lähetä kutsu”).
+          </p>
           <div className="max-h-[55vh] space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-2">
             {people.map((person) => { const checked = teamUserIds.includes(person.userId); return <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-lg p-3 hover:bg-slate-50"><Checkbox checked={checked} onCheckedChange={(value) => toggleTeamUser(person.userId, value === true)} /><div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{initials(person.name)}</div><div><p className="font-medium">{person.name}</p><p className="text-xs text-slate-500">{person.role}</p></div></label>; })}
-            {people.length === 0 && <p className="p-8 text-center text-sm text-slate-500">Organisaatiossa ei ole kirjautuvia käyttäjiä.</p>}
+            {people.length === 0 && (
+              <p className="p-8 text-center text-sm text-slate-500">
+                Organisaatiossa ei ole vielä kirjautuvia käyttäjiä. Lisää henkilö Henkilöstö-näkymässä ja valitse “Luo tili ja lähetä kutsu”.
+              </p>
+            )}
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setTeamProject(null)}>Peruuta</Button><Button onClick={() => void saveTeam()} disabled={savingTeam}>{savingTeam ? 'Tallennetaan…' : 'Tallenna tiimi'}</Button></DialogFooter>
         </DialogContent>

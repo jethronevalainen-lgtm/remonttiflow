@@ -329,7 +329,7 @@ export default function HenkilostoIntegrated() {
       employmentType: employee.employmentType ?? '',
       emergencyContactName: employee.emergencyContactName ?? '',
       emergencyContactPhone: employee.emergencyContactPhone ?? '',
-      accountMode: employee.userId ? 'invite' : 'record_only',
+      accountMode: employee.userId ? 'invite' : (canInviteInternalUsers ? 'invite' : 'record_only'),
       accessRole: membership && membership.role !== 'customer' ? membership.role : 'worker',
     });
     setSelectedSupervisorUserId(supervisorByEmployeeId.get(employee.id) ?? NONE);
@@ -339,6 +339,10 @@ export default function HenkilostoIntegrated() {
     setSuccessMessage(null);
     setEmployeeDialog(true);
   };
+
+  const editingWithoutLogin = Boolean(editingEmployee && !editingEmployee.userId);
+  const willInvite = employeeForm.accountMode === 'invite' && (!editingEmployee || editingWithoutLogin);
+  const useInviteReviewFlow = !editingEmployee || (editingWithoutLogin && employeeForm.accountMode === 'invite');
 
   const parsedHourlyCost = () => employeeForm.hourlyCost === ''
     ? undefined
@@ -353,7 +357,7 @@ export default function HenkilostoIntegrated() {
     if (employeeForm.email && !/^\S+@\S+\.\S+$/.test(employeeForm.email)) {
       nextErrors.push('Sähköpostiosoite ei ole kelvollinen.');
     }
-    if (!editingEmployee && employeeForm.accountMode === 'invite') {
+    if (willInvite) {
       if (!canInviteInternalUsers) nextErrors.push('Vain ylläpitäjä voi lähettää sisäisen käyttäjän kutsun.');
       if (!employeeForm.email.trim()) nextErrors.push('Sähköposti on pakollinen kutsua varten.');
       if (employeeForm.accessRole === 'worker' && supervisors.length > 0 && selectedSupervisorUserId === NONE) {
@@ -398,6 +402,19 @@ export default function HenkilostoIntegrated() {
     setOperationError(null);
     setSuccessMessage(null);
     try {
+      const onboarding: EmployeeOnboardingInput = {
+        jobTitle: payload.role,
+        department: payload.department,
+        phone: payload.phone,
+        startDate: payload.startDate,
+        status: payload.status,
+        hourlyCostCents: payload.hourlyCostCents ?? null,
+        employmentType: payload.employmentType ?? '',
+        emergencyContactName: payload.emergencyContactName ?? '',
+        emergencyContactPhone: payload.emergencyContactPhone ?? '',
+        supervisorUserId: selectedSupervisorUserId === NONE ? null : selectedSupervisorUserId,
+      };
+
       if (editingEmployee) {
         await updateEmployeeRecord(currentOrg.id, editingEmployee.id, payload);
         if (canManageSupervisors) {
@@ -407,20 +424,19 @@ export default function HenkilostoIntegrated() {
             supervisorUserId: selectedSupervisorUserId === NONE ? null : selectedSupervisorUserId,
           });
         }
-        setSuccessMessage('Henkilön tiedot päivitettiin.');
+        if (!editingEmployee.userId && employeeForm.accountMode === 'invite') {
+          const result = await inviteOrganizationMember({
+            organizationId: currentOrg.id,
+            email: payload.email,
+            fullName: payload.name,
+            role: employeeForm.accessRole,
+            employee: onboarding,
+          });
+          setSuccessMessage(result.message);
+        } else {
+          setSuccessMessage('Henkilön tiedot päivitettiin.');
+        }
       } else if (employeeForm.accountMode === 'invite') {
-        const onboarding: EmployeeOnboardingInput = {
-          jobTitle: payload.role,
-          department: payload.department,
-          phone: payload.phone,
-          startDate: payload.startDate,
-          status: payload.status,
-          hourlyCostCents: payload.hourlyCostCents ?? null,
-          employmentType: payload.employmentType ?? '',
-          emergencyContactName: payload.emergencyContactName ?? '',
-          emergencyContactPhone: payload.emergencyContactPhone ?? '',
-          supervisorUserId: selectedSupervisorUserId === NONE ? null : selectedSupervisorUserId,
-        };
         const result = await inviteOrganizationMember({
           organizationId: currentOrg.id,
           email: payload.email,
@@ -758,14 +774,18 @@ export default function HenkilostoIntegrated() {
 
       <Dialog open={employeeDialog} onOpenChange={(open) => { setEmployeeDialog(open); if (!open) setReviewingInvite(false); }}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader><DialogTitle>{editingEmployee ? 'Henkilön asetukset' : reviewingInvite ? 'Tarkista kutsu' : 'Lisää henkilö'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{reviewingInvite ? 'Tarkista kutsu' : editingEmployee ? 'Henkilön asetukset' : 'Lisää henkilö'}</DialogTitle></DialogHeader>
           {errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{errors.map((item) => <p className="break-words" key={item}>{item}</p>)}</div>}
 
-          {!editingEmployee && reviewingInvite ? (
+          {reviewingInvite ? (
             <div className="space-y-5">
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
                 <div className="flex items-center gap-2 font-semibold text-blue-950"><ShieldCheck size={18} /> Kutsun yhteenveto</div>
-                <p className="mt-2 text-sm leading-6 text-blue-900">Kutsuttava ei täytä henkilöstö-, rooli- tai tiimitietoja itse. Alla olevat tiedot tallennetaan ennen kutsun lähettämistä.</p>
+                <p className="mt-2 text-sm leading-6 text-blue-900">
+                  {editingWithoutLogin
+                    ? 'Olemassa olevaan henkilöstökorttiin liitetään VaKantti-tunnus. Alla olevat tiedot tallennetaan ennen kutsun lähettämistä.'
+                    : 'Kutsuttava ei täytä henkilöstö-, rooli- tai tiimitietoja itse. Alla olevat tiedot tallennetaan ennen kutsun lähettämistä.'}
+                </p>
               </div>
               <dl className="grid gap-4 rounded-xl border border-slate-200 p-5 sm:grid-cols-2">
                 <div><dt className="text-xs font-medium text-text-secondary">Henkilö</dt><dd className="mt-1 break-words font-semibold">{employeeForm.name}</dd></div>
@@ -791,11 +811,19 @@ export default function HenkilostoIntegrated() {
                   <p className="mt-1 text-sm leading-6 text-blue-900">Täytä henkilöstötiedot, käyttöoikeusrooli ja tiimi. Kutsu lähetetään vasta yhteenvedon hyväksymisen jälkeen.</p>
                 </div>
               )}
+              {editingWithoutLogin && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 sm:col-span-2">
+                  <p className="font-semibold text-amber-950">Ei sovellustunnusta</p>
+                  <p className="mt-1 text-sm leading-6 text-amber-900">
+                    Henkilöstökortti on olemassa, mutta ilman VaKantti-kutsua henkilöä ei voi lisätä projektitiimiin eikä kohdistaa työmääräyksiin. Valitse “Luo tili ja lähetä kutsu”.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2 sm:col-span-2"><Label>Nimi *</Label><Input value={employeeForm.name} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, name: event.target.value }))} /></div>
               <div className="space-y-2"><Label>Tehtävänimike *</Label><Input value={employeeForm.role} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, role: event.target.value }))} placeholder="Esimerkiksi kirvesmies" /></div>
               <div className="space-y-2"><Label>Osasto *</Label><Input value={employeeForm.department} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, department: event.target.value }))} placeholder="Esimerkiksi korjausrakentaminen" /></div>
               <div className="space-y-2"><Label>Puhelin</Label><Input value={employeeForm.phone} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, phone: event.target.value }))} /></div>
-              <div className="space-y-2"><Label>Sähköposti{!editingEmployee && employeeForm.accountMode === 'invite' ? ' *' : ''}</Label><Input type="email" disabled={Boolean(editingEmployee?.userId)} value={employeeForm.email} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, email: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>Sähköposti{willInvite ? ' *' : ''}</Label><Input type="email" disabled={Boolean(editingEmployee?.userId)} value={employeeForm.email} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, email: event.target.value }))} /></div>
               <div className="space-y-2"><Label>Aloituspäivä</Label><Input type="date" value={employeeForm.startDate} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, startDate: event.target.value }))} /></div>
               <div className="space-y-2"><Label>Tila</Label><Select value={employeeForm.status} onValueChange={(status: EmployeeStatus) => setEmployeeForm((previous) => ({ ...previous, status }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{EMPLOYEE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Työsuhdetyyppi</Label><Input value={employeeForm.employmentType} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, employmentType: event.target.value }))} placeholder="Esimerkiksi vakituinen" /></div>
@@ -803,11 +831,11 @@ export default function HenkilostoIntegrated() {
               <div className="space-y-2"><Label>Hätäyhteyshenkilö</Label><Input value={employeeForm.emergencyContactName} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactName: event.target.value }))} /></div>
               <div className="space-y-2"><Label>Hätäyhteyshenkilön puhelin</Label><Input value={employeeForm.emergencyContactPhone} onChange={(event) => setEmployeeForm((previous) => ({ ...previous, emergencyContactPhone: event.target.value }))} /></div>
 
-              {!editingEmployee && (
+              {(!editingEmployee || editingWithoutLogin) && (
                 <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:col-span-2">
                   <div>
                     <div className="flex items-center gap-2 font-semibold"><ShieldCheck size={17} className="text-primary" />Sovelluksen käyttö</div>
-                    <p className="mt-1 text-sm leading-6 text-text-secondary">Valitse lähetetäänkö henkilölle VaKantti-kutsu vai luodaanko vain henkilöstökortti.</p>
+                    <p className="mt-1 text-sm leading-6 text-text-secondary">Valitse lähetetäänkö henkilölle VaKantti-kutsu vai säilytetäänkö vain henkilöstökortti.</p>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2"><Label>Käyttäjätili</Label><Select value={employeeForm.accountMode} onValueChange={(accountMode: AccountMode) => setEmployeeForm((previous) => ({ ...previous, accountMode }))} disabled={!canInviteInternalUsers}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="invite">Luo tili ja lähetä kutsu</SelectItem><SelectItem value="record_only">Vain henkilöstökortti</SelectItem></SelectContent></Select>{!canInviteInternalUsers && <p className="text-xs text-text-secondary">Työnjohtaja voi luoda henkilöstökortin. Ylläpitäjä lähettää sovelluskutsun.</p>}</div>
@@ -837,12 +865,19 @@ export default function HenkilostoIntegrated() {
 
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => reviewingInvite ? setReviewingInvite(false) : setEmployeeDialog(false)} disabled={saving}>{reviewingInvite ? 'Muokkaa tietoja' : 'Peruuta'}</Button>
-            {editingEmployee ? (
-              <Button onClick={() => void saveEmployee()} disabled={saving}>{saving ? 'Tallennetaan…' : 'Tallenna muutokset'}</Button>
-            ) : reviewingInvite ? (
-              <Button onClick={() => void saveEmployee()} disabled={saving} className="gap-2">{employeeForm.accountMode === 'invite' ? <Send size={16} /> : <UserCheck size={16} />}{saving ? 'Tallennetaan…' : employeeForm.accountMode === 'invite' ? 'Luo henkilö ja lähetä kutsu' : 'Luo henkilöstökortti'}</Button>
-            ) : (
+            {useInviteReviewFlow && !reviewingInvite ? (
               <Button onClick={openInviteReview} disabled={saving}>Tarkista tiedot</Button>
+            ) : (
+              <Button onClick={() => void saveEmployee()} disabled={saving} className="gap-2">
+                {willInvite ? <Send size={16} /> : editingEmployee ? null : <UserCheck size={16} />}
+                {saving
+                  ? 'Tallennetaan…'
+                  : willInvite
+                    ? (editingWithoutLogin ? 'Lähetä kutsu' : 'Luo henkilö ja lähetä kutsu')
+                    : editingEmployee
+                      ? 'Tallenna muutokset'
+                      : 'Luo henkilöstökortti'}
+              </Button>
             )}
           </DialogFooter>
         </DialogContent>

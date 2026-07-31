@@ -525,6 +525,9 @@ export default function ProjectContactsFilesPanel({
           <DialogHeader>
             <DialogTitle>Muokkaa projektitiimiä</DialogTitle>
           </DialogHeader>
+          <p className="break-words rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Listassa näkyvät vain kirjautuvat käyttäjät. Jos henkilö puuttuu, kutsu hänet ensin Henkilöstö-näkymässä (“Luo tili ja lähetä kutsu”). Pelkkä HR-henkilöstökortti ei riitä.
+          </p>
           <div className="space-y-2">
             {people.map((person) => {
               const checked = teamUserIds.includes(person.userId);
@@ -551,7 +554,9 @@ export default function ProjectContactsFilesPanel({
               );
             })}
             {people.length === 0 && (
-              <p className="text-sm text-slate-500">Organisaatiossa ei ole vielä valittavia henkilöitä.</p>
+              <p className="text-sm text-slate-500">
+                Organisaatiossa ei ole vielä kirjautuvia käyttäjiä. Kutsu henkilö Henkilöstö-näkymässä.
+              </p>
             )}
           </div>
           <DialogFooter>
