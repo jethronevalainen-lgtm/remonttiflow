@@ -12,13 +12,15 @@ function escapeHtml(value: unknown): string {
 }
 
 export async function printDiary(bundle: SiteDiaryBundle): Promise<void> {
+  // Open synchronously from the click handler so mobile browsers do not block it.
+  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  if (!popup) throw new Error('Tulostusikkunaa ei voitu avata. Salli ponnahdusikkunat ja yritä uudelleen.');
+
   const imageAttachments = bundle.attachments.filter((attachment) => attachment.mimeType.startsWith('image/'));
   const imageUrls = await Promise.all(imageAttachments.map(async (attachment) => ({
     attachment,
     url: await createSiteDiaryAttachmentUrl(attachment.storagePath),
   })));
-  const popup = window.open('', '_blank', 'noopener,noreferrer');
-  if (!popup) throw new Error('Tulostusikkunaa ei voitu avata. Salli ponnahdusikkunat ja yritä uudelleen.');
 
   const groupedWork = (['started', 'ongoing', 'completed'] as WorkItemState[])
     .map((state) => {
